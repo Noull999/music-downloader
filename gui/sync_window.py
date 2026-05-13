@@ -15,6 +15,7 @@ from sync.sync_manager import SyncManager
 from sync.scheduler import AutoSyncScheduler
 from sync.soundcloud_api import SoundCloudAPIClient
 from notifications.notifier import Notifier
+from gui.likes_preview_window import LikesPreviewWindow
 
 logger = logging.getLogger(__name__)
 
@@ -302,12 +303,29 @@ class SyncWindow(ctk.CTkFrame):
         """Panel de opciones avanzadas."""
         container = ctk.CTkFrame(parent, fg_color="transparent")
         container.grid(row=8, column=0, sticky="ew", padx=16, pady=12)
-        container.grid_columnconfigure(1, weight=1)
+        for i in range(4):
+            container.grid_columnconfigure(i, weight=1)
 
         ctk.CTkLabel(
             container, text="Opciones Avanzadas",
             font=ctk.CTkFont(size=13, weight="bold")
         ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+
+        # Botón "Preview de Likes"
+        preview_btn = ctk.CTkButton(
+            container, text="📺 Preview de Likes",
+            fg_color="#8b5cf6", hover_color="#7c3aed",
+            command=self._on_show_likes_preview
+        )
+        preview_btn.grid(row=1, column=0, sticky="ew", padx=(0, 8))
+
+        # Botón "Sincronizar Archivos"
+        sync_files_btn = ctk.CTkButton(
+            container, text="🔄 Sync Filesystem",
+            fg_color="#06b6d4", hover_color="#0891b2",
+            command=self._on_sync_filesystem
+        )
+        sync_files_btn.grid(row=1, column=1, sticky="ew", padx=(0, 8))
 
         # Botón "Solo Verificar"
         self._scan_only_btn = ctk.CTkButton(
@@ -315,24 +333,24 @@ class SyncWindow(ctk.CTkFrame):
             fg_color="#7c3aed", hover_color="#6d28d9",
             command=self._on_scan_only
         )
-        self._scan_only_btn.grid(row=1, column=0, sticky="ew", padx=(0, 8))
+        self._scan_only_btn.grid(row=1, column=2, sticky="ew", padx=(0, 8))
 
         # Descargar desde índice
         ctk.CTkLabel(container, text="Índice inicio:").grid(
-            row=1, column=1, sticky="e", padx=(0, 8)
+            row=2, column=1, sticky="e", padx=(0, 8)
         )
         self._start_index_entry = ctk.CTkEntry(
             container, placeholder_text="0 = 1ra, 50 = 51ra..."
         )
         self._start_index_entry.insert(0, "0")
-        self._start_index_entry.grid(row=1, column=2, sticky="ew", padx=(0, 8))
+        self._start_index_entry.grid(row=2, column=2, sticky="ew", padx=(0, 8))
 
         self._sync_from_index_btn = ctk.CTkButton(
             container, text="Descargar desde...",
             fg_color="#7c3aed", hover_color="#6d28d9",
             command=self._on_sync_from_index
         )
-        self._sync_from_index_btn.grid(row=1, column=3, sticky="ew")
+        self._sync_from_index_btn.grid(row=2, column=0, sticky="ew", padx=(0, 8))
 
     def _build_stats_panel(self, parent):
         """Panel de estadísticas."""
@@ -653,6 +671,51 @@ class SyncWindow(ctk.CTkFrame):
         ))
         self.after(0, lambda: self._refresh_stats())
 
+    def _on_show_likes_preview(self):
+        """Abre la ventana de preview de likes."""
+        if not self.manager:
+            messagebox.showerror("Error", "Primero verifica tus credenciales")
+            return
+
+        # Crear ventana flotante
+        preview_window = ctk.CTkToplevel(self)
+        preview_window.title("Preview de Likes de SoundCloud")
+        preview_window.geometry("1000x600")
+        preview_window.resizable(True, True)
+
+        # Insertar panel de preview
+        preview_panel = LikesPreviewWindow(preview_window, self.manager, self.downloader)
+        preview_panel.pack(fill="both", expand=True)
+
+    def _on_sync_filesystem(self):
+        """Sincroniza archivos del filesystem con la base de datos."""
+        if not self.manager:
+            messagebox.showerror("Error", "Verifica tus credenciales primero")
+            return
+
+        def sync():
+            try:
+                results = self.manager.sync_filesystem_to_db()
+                self.after(0, lambda: self._on_sync_filesystem_complete(results))
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("Error", str(e)))
+
+        messagebox.showinfo(
+            "Sincronizando",
+            "Escaneando archivos locales...\nEsto puede tomar un momento."
+        )
+        threading.Thread(target=sync, daemon=True).start()
+
+    def _on_sync_filesystem_complete(self, results):
+        """Muestra resultado de sincronización de filesystem."""
+        msg = (
+            f"✓ Sincronización completada\n\n"
+            f"Archivos agregados: {results['added']}\n"
+            f"Archivos ya rastreados: {results['already_tracked']}\n"
+            f"Total encontrado: {results['total_found']}"
+        )
+        messagebox.showinfo("Sync Filesystem", msg)
+
     def _show_help(self):
         """Muestra ayuda sobre cómo obtener credenciales."""
         help_text = """
@@ -704,6 +767,17 @@ ADVERTENCIA:
             # Validar credenciales en el nuevo client para obtener user_id
             self.manager.validate_credentials()
             logger.info(f"SyncManager inicializado (threshold: {threshold}%) y validado")
+
+            # Sincronizar filesystem con DB para recuperar archivos anteriores
+            def sync_fs():
+                try:
+                    results = self.manager.sync_filesystem_to_db()
+                    logger.info(f"Sync FS: +{results['added']} archivos, "
+                               f"{results['already_tracked']} rastreados")
+                except Exception as e:
+                    logger.warning(f"Error sincronizando filesystem: {e}")
+
+            threading.Thread(target=sync_fs, daemon=True).start()
 
             # Cargar likes guardados sin necesidad de verificar de nuevo
             self._load_saved_likes()
