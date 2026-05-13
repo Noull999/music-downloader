@@ -684,7 +684,7 @@ class SyncWindow(ctk.CTkFrame):
         preview_window.resizable(True, True)
 
         # Insertar panel de preview
-        preview_panel = LikesPreviewWindow(preview_window, self.manager, None)
+        preview_panel = LikesPreviewWindow(preview_window, self.manager, self.downloader)
         preview_panel.pack(fill="both", expand=True)
 
     def _on_sync_filesystem(self):
