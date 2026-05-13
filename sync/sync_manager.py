@@ -6,6 +6,7 @@ import threading
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Callable, Optional
 
 from .soundcloud_api import SoundCloudAPIClient, SoundCloudTrack
@@ -700,3 +701,112 @@ class SyncManager:
     def get_last_sync_info(self) -> dict | None:
         """Obtiene info de la última sincronización."""
         return self.history.get_last_sync()
+
+    def sync_filesystem_to_db(self) -> dict:
+        """
+        Sincroniza archivos locales con la BD.
+        Busca archivos de audio que NO están en el historial y los agrega.
+        Útil para recuperar archivos descargados antes de usar la app.
+
+        Returns:
+            {
+                'added': int,       # Archivos agregados al historial
+                'already_tracked': int,  # Archivos ya en el historial
+                'total_found': int  # Total de archivos de audio encontrados
+            }
+        """
+        if not os.path.exists(self.download_folder):
+            logger.warning(f"Carpeta no existe: {self.download_folder}")
+            return {'added': 0, 'already_tracked': 0, 'total_found': 0}
+
+        logger.info("Sincronizando filesystem con BD...")
+        audio_extensions = {'.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus', '.aac'}
+        added = 0
+        already_tracked = 0
+        total = 0
+
+        try:
+            for file_path in Path(self.download_folder).rglob('*'):
+                if not file_path.is_file():
+                    continue
+                if file_path.suffix.lower() not in audio_extensions:
+                    continue
+
+                total += 1
+                filename = file_path.stem
+                artist_dir = file_path.parent.name
+
+                # Verificar si ya está en historial
+                existing = self.history.conn.execute(
+                    "SELECT 1 FROM downloads WHERE file_path = ?",
+                    (str(file_path),)
+                ).fetchone()
+
+                if existing:
+                    already_tracked += 1
+                    continue
+
+                # Agregar a historial
+                try:
+                    self.history.mark_downloaded(
+                        url=f"local://{file_path}",
+                        title=filename,
+                        artist=artist_dir,
+                        file_path=str(file_path),
+                        platform="local"
+                    )
+                    added += 1
+                    logger.debug(f"Agregado al historial: {filename}")
+                except Exception as e:
+                    logger.warning(f"Error agregando {filename} al historial: {e}")
+
+        except (OSError, PermissionError) as e:
+            logger.error(f"Error explorando carpeta: {e}")
+
+        logger.info(
+            f"Sync filesystem: +{added} archivos agregados, "
+            f"{already_tracked} ya rastreados, {total} total encontrados"
+        )
+
+        return {
+            'added': added,
+            'already_tracked': already_tracked,
+            'total_found': total
+        }
+
+    def get_likes_with_status(self) -> list[dict]:
+        """
+        Obtiene todos los likes guardados con su estado de descarga.
+
+        Returns:
+            Lista de {
+                'id': int,
+                'url': str,
+                'title': str,
+                'artist': str,
+                'downloaded': bool,
+                'file_path': str | None,
+                'created_at': str,
+                'genre': str | None
+            }
+        """
+        likes = self.history.load_likes()
+        downloads = {d['url']: d for d in self.history.get_all_downloads()}
+
+        result = []
+        for like in likes:
+            download_info = downloads.get(like['url'])
+            result.append({
+                'id': like['id'],
+                'url': like['url'],
+                'title': like['title'],
+                'artist': like['artist'],
+                'downloaded': download_info is not None,
+                'file_path': download_info['file_path'] if download_info else None,
+                'created_at': like['created_at'],
+                'genre': like['genre'],
+                'duration_ms': like['duration_ms'],
+                'artwork_url': like['artwork_url']
+            })
+
+        return result
