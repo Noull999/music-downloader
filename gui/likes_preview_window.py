@@ -6,6 +6,7 @@ Permite seleccionar y descargar específicamente.
 import threading
 import logging
 from tkinter import messagebox
+from pathlib import Path
 
 import customtkinter as ctk
 
@@ -135,23 +136,43 @@ class LikesPreviewWindow(ctk.CTkFrame):
         """Construye la barra de acciones."""
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.grid(row=2, column=0, sticky="ew", padx=16, pady=12)
+        footer.grid_columnconfigure(1, weight=1)
 
         # Stats
         self._stats_label = ctk.CTkLabel(
             footer, text="Cargando...",
             text_color="#9ca3af", font=ctk.CTkFont(size=10)
         )
-        self._stats_label.pack(side="left", padx=(0, 16))
+        self._stats_label.grid(row=0, column=0, sticky="w")
+
+        # Progreso (hidden por defecto)
+        self._progress_frame = ctk.CTkFrame(footer, fg_color="transparent")
+        self._progress_frame.grid(row=0, column=1, sticky="ew", padx=(16, 0))
+        self._progress_frame.grid_columnconfigure(0, weight=1)
+
+        self._progress_bar = ctk.CTkProgressBar(self._progress_frame, height=4)
+        self._progress_bar.set(0)
+        self._progress_bar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+
+        self._progress_label = ctk.CTkLabel(
+            self._progress_frame, text="",
+            text_color="#10b981", font=ctk.CTkFont(size=8)
+        )
+        self._progress_label.grid(row=1, column=0, sticky="w")
+        self._progress_frame.grid_remove()  # Hidden
 
         # Botones
+        buttons_frame = ctk.CTkFrame(footer, fg_color="transparent")
+        buttons_frame.grid(row=0, column=2, sticky="e", padx=(16, 0))
+
         ctk.CTkButton(
-            footer, text="Descargar seleccionados",
+            buttons_frame, text="Descargar seleccionados",
             fg_color="#10b981", hover_color="#059669",
             command=self._download_selected
         ).pack(side="right", padx=(8, 0))
 
         ctk.CTkButton(
-            footer, text="Seleccionar todo",
+            buttons_frame, text="Seleccionar todo",
             fg_color="#6b7280", hover_color="#4b5563",
             command=self._select_all
         ).pack(side="right", padx=(8, 0))
@@ -304,11 +325,8 @@ class LikesPreviewWindow(ctk.CTkFrame):
 
     def _download_single(self, like: dict):
         """Descarga una canción específica."""
-        # TODO: Implementar descarga individual
-        messagebox.showinfo(
-            "Descarga",
-            f"Descargando: {like['artist']} - {like['title']}\n\nProximamente..."
-        )
+        self._selected_tracks = {like['url']}
+        self._download_selected()
 
     def _download_selected(self):
         """Descarga todas las canciones seleccionadas."""
@@ -316,17 +334,129 @@ class LikesPreviewWindow(ctk.CTkFrame):
             messagebox.showwarning("Sin selección", "Selecciona al menos una canción")
             return
 
-        count = len(self._selected_tracks)
-        messagebox.showinfo(
-            "Descargas",
-            f"Iniciando descargas de {count} canción(es)...\n\nProximamente..."
+        # Obtener tracks seleccionados
+        selected_likes = [
+            l for l in self._likes if l['url'] in self._selected_tracks
+        ]
+
+        if not selected_likes:
+            messagebox.showwarning("Error", "No se encontraron canciones seleccionadas")
+            return
+
+        # Confirmar descarga
+        count = len(selected_likes)
+        response = messagebox.askyesno(
+            "Confirmar descarga",
+            f"¿Descargar {count} canción(es)?\n\n"
+            f"Esto no marcará como duplicado,\n"
+            f"descargará directamente sin sincronizar."
         )
+
+        if not response:
+            return
+
+        # Ejecutar descarga en thread
+        def download():
+            self._perform_batch_download(selected_likes)
+
+        threading.Thread(target=download, daemon=True).start()
+
+    def _perform_batch_download(self, likes: list):
+        """Ejecuta descarga en batch de múltiples canciones."""
+        if not self.sync_manager or not self.downloader:
+            self.after(0, lambda: messagebox.showerror(
+                "Error", "SyncManager no inicializado"
+            ))
+            return
+
+        # Mostrar progress bar
+        self.after(0, self._show_progress_bar)
+
+        logger.info(f"Iniciando descarga de {len(likes)} canciones...")
+        downloaded = 0
+        errors = 0
+
+        for i, like in enumerate(likes):
+            try:
+                # Actualizar UI
+                progress = int((i / len(likes)) * 100)
+                msg = f"Descargando {i+1}/{len(likes)}: {like['artist']} - {like['title']}"
+                self.after(0, lambda p=progress, m=msg: self._update_download_status(p, m))
+
+                # Descargar
+                output_path = self.sync_manager._build_output_path(
+                    like['artist'], like['title']
+                )
+                file_path = self.downloader.download(
+                    like['url'],
+                    output_path,
+                    quality_preset={
+                        "sc_format": "bestaudio/best",
+                        "yt_format": "bestaudio/best",
+                        "convert_to": "mp3",
+                        "bitrate": "320"
+                    },
+                    progress_callback=None
+                )
+
+                # Registrar en historial
+                self.sync_manager.history.mark_downloaded(
+                    like['url'],
+                    like['title'],
+                    like['artist'],
+                    file_path,
+                    platform="soundcloud"
+                )
+
+                downloaded += 1
+                logger.info(f"✓ Descargada: {like['artist']} - {like['title']}")
+
+            except Exception as e:
+                errors += 1
+                logger.error(f"Error descargando {like['artist']} - {like['title']}: {e}")
+
+        # Finalizar
+        self.after(0, lambda: self._on_batch_download_complete(downloaded, errors, len(likes)))
+
+    def _show_progress_bar(self):
+        """Muestra la barra de progreso."""
+        self._progress_frame.grid()
+        self._progress_bar.set(0)
+        self._progress_label.configure(text="Iniciando descargas...")
+
+    def _update_download_status(self, progress: int, message: str):
+        """Actualiza status durante descarga."""
+        self._progress_bar.set(progress / 100)
+        self._progress_label.configure(text=f"{progress}% - {message[:50]}")
+
+    def _on_batch_download_complete(self, downloaded: int, errors: int, total: int):
+        """Callback cuando termina descarga en batch."""
+        skipped = total - downloaded - errors
+
+        msg = (
+            f"✓ Descargas completadas\n\n"
+            f"Éxito: {downloaded}/{total}\n"
+            f"Errores: {errors}"
+        )
+
+        messagebox.showinfo("Descarga completa", msg)
+
+        # Recargar likes para actualizar status
+        self._load_likes()
+
+        logger.info(f"Batch download: +{downloaded} ✓ | !{errors} ⚠️")
 
     def _show_track_menu(self, like: dict):
         """Muestra menú de opciones para una canción."""
-        # TODO: Implementar menú contextual
         status = "descargada" if like['downloaded'] else "pendiente"
-        messagebox.showinfo(
-            "Opciones",
-            f"{like['artist']} - {like['title']}\nEstado: {status}\n\nMás opciones proximamente..."
-        )
+
+        msg = f"""
+{like['artist']} - {like['title']}
+
+Duración: {like['duration_ms'] // 1000 // 60} min
+Género: {like['genre'] or 'No especificado'}
+Estado: {status}
+URL: {like['url'][:50]}...
+        """
+
+        messagebox.showinfo("Detalles de canción", msg.strip())
