@@ -1,0 +1,25 @@
+# GUI
+customtkinter>=5.2.2
+
+# Descarga (YouTube y SoundCloud)
+yt-dlp>=2024.1.1
+
+# Metadatos de audio
+mutagen>=1.47.0
+
+# Thumbnails en la GUI
+Pillow>=10.0.0
+
+# HTTP (thumbnails, Last.fm si se agrega)
+requests>=2.31.0
+
+# Sincronización de likes de SoundCloud
+thefuzz>=0.22.0
+python-Levenshtein>=0.25.0
+plyer>=2.1.0
+schedule>=1.2.0
+
+# --- Instalacion manual (no pip) ---
+# ffmpeg: https://github.com/BtbN/FFmpeg-Builds/releases
+#   Descargar, extraer, agregar /bin al PATH del sistema.
+#   Requerido para: conversion a MP3, normalizacion de volumen.
