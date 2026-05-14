@@ -96,16 +96,15 @@ class LikesPreviewWindow(ctk.CTkFrame):
 
     def _build_table(self):
         """Construye la tabla con likes."""
-        # Container scrolleable
-        scroll = ctk.CTkScrollableFrame(
-            self, fg_color="transparent", label_text="Canciones"
-        )
-        scroll.grid(row=1, column=0, sticky="nsew", padx=16, pady=12)
-        scroll.grid_columnconfigure(0, weight=1)
+        # Container con scroll usando Frame + Canvas + Scrollbar (más estable que CTkScrollableFrame)
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.grid(row=1, column=0, sticky="nsew", padx=16, pady=12)
+        container.grid_rowconfigure(1, weight=1)
+        container.grid_columnconfigure(0, weight=1)
 
         # Headers
-        headers_frame = ctk.CTkFrame(scroll, fg_color="#1f2937", corner_radius=4)
-        headers_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        headers_frame = ctk.CTkFrame(container, fg_color="#1f2937", corner_radius=4)
+        headers_frame.grid(row=0, column=0, sticky="ew", columnspan=2)
         headers_frame.grid_columnconfigure(2, weight=1)
 
         headers = [
@@ -126,11 +125,29 @@ class LikesPreviewWindow(ctk.CTkFrame):
             if width > 0:
                 headers_frame.grid_columnconfigure(i, minsize=width)
 
-        self._table_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        self._table_frame.grid(row=1, column=0, sticky="nsew")
+        # Canvas scrolleable (más estable que CTkScrollableFrame para muchos widgets)
+        canvas = ctk.CTkCanvas(
+            container, fg_color="#0f172a", highlightthickness=0, height=400
+        )
+        canvas.grid(row=1, column=0, sticky="nsew")
+
+        scrollbar = ctk.CTkScrollbar(container, command=canvas.yview)
+        scrollbar.grid(row=1, column=1, sticky="ns")
+
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        self._table_frame = ctk.CTkFrame(canvas, fg_color="transparent")
+        self._canvas_window = canvas.create_window((0, 0), window=self._table_frame, anchor="nw")
         self._table_frame.grid_columnconfigure(2, weight=1)
 
         self._table_rows = []
+        self._canvas = canvas
+
+        # Configurar scroll con mouse wheel
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
 
     def _build_footer(self):
         """Construye la barra de acciones."""
@@ -220,6 +237,10 @@ class LikesPreviewWindow(ctk.CTkFrame):
 
         # Forzar actualización del layout
         self._table_frame.update_idletasks()
+
+        # Actualizar tamaño del canvas
+        if hasattr(self, '_canvas'):
+            self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
         # Actualizar stats
         downloaded = sum(1 for l in self._likes if l['downloaded'])
@@ -319,6 +340,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
 
             result.append(like)
 
+        logger.debug(f"Filtrado: {len(likes)} -> {len(result)} (filter={filter_type}, search='{search}')")
         return result
 
     def _filter_table(self):
