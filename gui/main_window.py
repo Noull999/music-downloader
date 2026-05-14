@@ -218,6 +218,7 @@ class MainWindow(ctk.CTk):
             config_path=CONFIG_PATH,
             download_folder=self._config.get("dest_folder", ""),
             downloader=downloader,
+            download_manager=self._manager,
         )
         self._sync_window.grid(row=0, column=0, sticky="nsew")
 
@@ -229,6 +230,10 @@ class MainWindow(ctk.CTk):
         self._par_slider.set(workers)
         self._par_lbl.configure(text=str(workers))
         self._update_preset_label()
+        # Si hay credenciales guardadas, abrir directamente en Sincronizar
+        sc = self._config.get("soundcloud", {})
+        if sc.get("oauth_token") and sc.get("client_id"):
+            self._tabs.set("Sincronizar")
 
     def _update_preset_label(self):
         preset = get_preset(self._config.get("quality_preset", "mp3_320"))
@@ -459,7 +464,8 @@ class MainWindow(ctk.CTk):
             delay=float(self._config.get("delay", 0.5)),
             on_progress=on_progress,
             on_status=on_status,
-            oauth_token=self._config.get("oauth_token", ""),
+            oauth_token=(self._config.get("soundcloud", {}).get("oauth_token", "")
+                         or self._config.get("oauth_token", "")),
         )
 
     def _handle_status(self, url: str, status: str, error_msg: str):

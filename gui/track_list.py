@@ -228,9 +228,20 @@ class TrackListFrame(ctk.CTkScrollableFrame):
         self._rows: dict[str, TrackRow] = {}
         self.grid_columnconfigure(0, weight=1)
 
+        self._empty_label = ctk.CTkLabel(
+            self,
+            text='Pegá links arriba\no abrí "Ver mis Likes" en la pestaña Sincronizar',
+            text_color="#4b5563",
+            font=ctk.CTkFont(size=13),
+            justify="center",
+        )
+        self._empty_label.grid(row=0, column=0, pady=60)
+
     def add_track(self, track: TrackInfo) -> TrackRow:
         if track.url in self._rows:
             return self._rows[track.url]
+        if not self._rows:
+            self._empty_label.grid_remove()
         row = TrackRow(
             self, track=track,
             on_download=self._on_download,
@@ -254,6 +265,7 @@ class TrackListFrame(ctk.CTkScrollableFrame):
         for row in self._rows.values():
             row.destroy()
         self._rows.clear()
+        self._empty_label.grid()
 
     def reindex_row(self, old_url: str, new_url: str):
         """Actualiza el índice cuando la URL canónica difiere de la URL original."""
