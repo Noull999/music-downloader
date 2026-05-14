@@ -208,12 +208,6 @@ class SettingsDialog(ctk.CTkToplevel):
 
         ctk.CTkButton(btn_row, text="Guardar", command=self._save).pack(side="left")
 
-    def _section_label(self, text: str, row: int):
-        ctk.CTkLabel(
-            self, text=text,
-            font=ctk.CTkFont(size=12, weight="bold"),
-        ).grid(row=row, column=0, padx=24, pady=(8, 0), sticky="w")
-
     # ------------------------------------------------------------------ #
     # Carga y guardado                                                     #
     # ------------------------------------------------------------------ #
@@ -235,7 +229,9 @@ class SettingsDialog(ctk.CTkToplevel):
         self._delay_slider.set(delay)
         self._delay_val_lbl.configure(text=f"{delay:.1f}")
 
-        token = self._config.get("oauth_token", "")
+        # Leer de la ruta unificada; mantener compatibilidad con key antigua
+        token = (self._config.get("soundcloud", {}).get("oauth_token", "")
+                 or self._config.get("oauth_token", ""))
         self._token_entry.delete(0, "end")
         if token:
             self._token_entry.insert(0, token)
@@ -258,6 +254,8 @@ class SettingsDialog(ctk.CTkToplevel):
             "filename_pattern": pattern,
             "subfolder_by_artist": self._subfolder_var.get(),
             "delay": round(self._delay_slider.get(), 1),
-            "oauth_token": self._token_entry.get().strip(),
         })
+        # Guardar token en ruta unificada y limpiar key obsoleta
+        self._config.setdefault("soundcloud", {})["oauth_token"] = self._token_entry.get().strip()
+        self._config.pop("oauth_token", None)
         self.destroy()
