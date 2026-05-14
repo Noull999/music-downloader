@@ -38,9 +38,12 @@ class LikesPreviewWindow(ctk.CTkFrame):
         # Cada elemento: (widget_row, BooleanVar, like_dict)
         self._table_rows: list[tuple] = []
         self._batch_urls: list[str] = []   # URLs en vuelo para cancelación
+        self._page = 0
+        self.PAGE_SIZE = 50
 
         self._build_header()
         self._build_table()
+        self._build_pagination()
         self._build_footer()
 
         self.after(100, self._load_likes)
@@ -107,9 +110,34 @@ class LikesPreviewWindow(ctk.CTkFrame):
         self._table_frame.grid(row=1, column=0, sticky="ew")
         self._table_frame.grid_columnconfigure(2, weight=1)
 
+    def _build_pagination(self):
+        pag = ctk.CTkFrame(self, fg_color="transparent")
+        pag.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 4))
+        pag.grid_columnconfigure(1, weight=1)
+
+        self._prev_btn = ctk.CTkButton(
+            pag, text="← Anterior", width=90, height=26,
+            fg_color="#374151", hover_color="#4b5563",
+            command=self._go_prev_page,
+        )
+        self._prev_btn.grid(row=0, column=0, sticky="w")
+
+        self._page_label = ctk.CTkLabel(
+            pag, text="",
+            text_color="#9ca3af", font=ctk.CTkFont(size=10),
+        )
+        self._page_label.grid(row=0, column=1)
+
+        self._next_btn = ctk.CTkButton(
+            pag, text="Siguiente →", width=90, height=26,
+            fg_color="#374151", hover_color="#4b5563",
+            command=self._go_next_page,
+        )
+        self._next_btn.grid(row=0, column=2, sticky="e")
+
     def _build_footer(self):
         footer = ctk.CTkFrame(self, fg_color="transparent")
-        footer.grid(row=2, column=0, sticky="ew", padx=16, pady=12)
+        footer.grid(row=3, column=0, sticky="ew", padx=16, pady=12)
         footer.grid_columnconfigure(1, weight=1)
 
         self._stats_label = ctk.CTkLabel(
@@ -190,8 +218,22 @@ class LikesPreviewWindow(ctk.CTkFrame):
             return
 
         filtered = self._apply_filters(self._likes)
-        for i, like in enumerate(filtered):
+        total_filtered = len(filtered)
+        total_pages = max(1, (total_filtered + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        self._page = max(0, min(self._page, total_pages - 1))
+
+        start = self._page * self.PAGE_SIZE
+        page_items = filtered[start:start + self.PAGE_SIZE]
+
+        for i, like in enumerate(page_items):
             self._render_like_row(i, like)
+
+        # Pagination controls
+        self._page_label.configure(
+            text=f"Página {self._page + 1} de {total_pages}  ({total_filtered} resultados)"
+        )
+        self._prev_btn.configure(state="normal" if self._page > 0 else "disabled")
+        self._next_btn.configure(state="normal" if self._page < total_pages - 1 else "disabled")
 
         downloaded = sum(1 for l in self._likes if l['downloaded'])
         total = len(self._likes)
@@ -270,6 +312,16 @@ class LikesPreviewWindow(ctk.CTkFrame):
         return result
 
     def _filter_table(self):
+        self._page = 0
+        self._render_table()
+
+    def _go_prev_page(self):
+        if self._page > 0:
+            self._page -= 1
+            self._render_table()
+
+    def _go_next_page(self):
+        self._page += 1
         self._render_table()
 
     # ── Selección ───────────────────────────────────────────────────────
