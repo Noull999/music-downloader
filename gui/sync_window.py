@@ -284,8 +284,18 @@ class SyncWindow(ctk.CTkFrame):
         )
         self._sync_now_btn.pack(side="left", padx=(0, 8))
 
+        self._recent_count_menu = ctk.CTkOptionMenu(
+            btn_row,
+            values=["10", "20", "30", "40", "50"],
+            width=70, height=28,
+            fg_color="#374151", button_color="#4b5563",
+            button_hover_color="#374151",
+        )
+        self._recent_count_menu.set("10")
+        self._recent_count_menu.pack(side="left", padx=(0, 4))
+
         self._sync_recent_btn = ctk.CTkButton(
-            btn_row, text="Ultimos 10",
+            btn_row, text="Verificar últimas",
             fg_color="#6b7280", hover_color="#4b5563",
             command=self._on_sync_recent
         )
@@ -536,17 +546,19 @@ class SyncWindow(ctk.CTkFrame):
         threading.Thread(target=sync, daemon=True).start()
 
     def _on_sync_recent(self):
-        """Inicia sincronización rápida (últimos 10)."""
+        """Inicia sincronización rápida con el rango seleccionado."""
         if not self.manager:
             messagebox.showerror("Error", "Verifica tus credenciales primero")
             return
 
+        count = int(self._recent_count_menu.get())
         self._sync_recent_btn.configure(state="disabled")
+        self._recent_count_menu.configure(state="disabled")
         self._sync_stop_btn.configure(state="normal")
 
         def sync():
             results = self.manager.sync_recent(
-                count=10,
+                count=count,
                 progress_callback=self._on_sync_progress
             )
             self.after(0, lambda: self._on_sync_complete_manual(results))
@@ -642,6 +654,7 @@ class SyncWindow(ctk.CTkFrame):
         )
         self._sync_now_btn.configure(state="normal")
         self._sync_recent_btn.configure(state="normal")
+        self._recent_count_menu.configure(state="normal")
         self._sync_from_index_btn.configure(state="normal")
         self._scan_only_btn.configure(state="normal")
         self._sync_stop_btn.configure(state="disabled")
