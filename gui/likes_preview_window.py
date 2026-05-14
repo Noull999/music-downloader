@@ -124,10 +124,10 @@ class LikesPreviewWindow(ctk.CTkFrame):
             )
             label.grid(row=0, column=i, sticky="ew", padx=8, pady=8)
             if width > 0:
-                label.grid_columnconfigure(0, minwidth=width)
+                headers_frame.grid_columnconfigure(i, minsize=width)
 
         self._table_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        self._table_frame.grid(row=1, column=0, sticky="ew")
+        self._table_frame.grid(row=1, column=0, sticky="nsew")
         self._table_frame.grid_columnconfigure(2, weight=1)
 
         self._table_rows = []
@@ -183,9 +183,12 @@ class LikesPreviewWindow(ctk.CTkFrame):
             self._stats_label.configure(text="Error: SyncManager no inicializado")
             return
 
+        self._stats_label.configure(text="Cargando likes...")
+
         def load():
             try:
                 self._likes = self.sync_manager.get_likes_with_status()
+                logger.info(f"✓ Cargados {len(self._likes)} likes del sync_manager")
                 self.after(0, self._render_table)
             except Exception as e:
                 logger.error(f"Error cargando likes: {e}")
@@ -209,9 +212,14 @@ class LikesPreviewWindow(ctk.CTkFrame):
         # Aplicar filtros
         filtered_likes = self._apply_filters(self._likes)
 
+        logger.info(f"Renderizando {len(filtered_likes)} de {len(self._likes)} likes")
+
         # Renderizar filas
         for i, like in enumerate(filtered_likes):
             self._render_like_row(i, like)
+
+        # Forzar actualización del layout
+        self._table_frame.update_idletasks()
 
         # Actualizar stats
         downloaded = sum(1 for l in self._likes if l['downloaded'])
@@ -225,6 +233,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
         row = ctk.CTkFrame(self._table_frame, fg_color="#111827", corner_radius=4)
         row.grid(row=index, column=0, sticky="ew", pady=4)
         row.grid_columnconfigure(2, weight=1)
+        self._table_frame.grid_rowconfigure(index, weight=0)
 
         # Checkbox
         var = ctk.BooleanVar(value=False)
