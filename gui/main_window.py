@@ -80,31 +80,82 @@ class MainWindow(ctk.CTk):
         ctk.CTkLabel(
             left, text="YouTube  &  SoundCloud",
             font=ctk.CTkFont(size=11), text_color="#6b7280",
-        ).grid(row=1, column=0, padx=18, pady=(0, 14), sticky="w")
+        ).grid(row=1, column=0, padx=18, pady=(0, 10), sticky="w")
 
-        # Entrada de URLs
-        ctk.CTkLabel(left, text="Pegar links (uno por linea):").grid(
-            row=2, column=0, padx=18, pady=(0, 2), sticky="w"
+        # ── Tarjeta SoundCloud (función principal) ───────────────────── #
+        sc_card = ctk.CTkFrame(left, fg_color="#1f2937", corner_radius=8)
+        sc_card.grid(row=2, column=0, padx=14, pady=(0, 6), sticky="ew")
+        sc_card.grid_columnconfigure(0, weight=1)
+
+        card_hdr = ctk.CTkFrame(sc_card, fg_color="transparent")
+        card_hdr.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 4))
+        card_hdr.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            card_hdr, text="SoundCloud Sync",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).grid(row=0, column=0, sticky="w")
+
+        ctk.CTkButton(
+            card_hdr, text="Configurar →", width=88, height=22,
+            font=ctk.CTkFont(size=10),
+            fg_color="transparent", border_width=1,
+            command=lambda: self._tabs.set("Sincronizar"),
+        ).grid(row=0, column=1, sticky="e")
+
+        self._sc_status_lbl = ctk.CTkLabel(
+            sc_card, text="○ Sin conexión",
+            text_color="#6b7280", font=ctk.CTkFont(size=10), anchor="w",
         )
-        self._url_box = ctk.CTkTextbox(left, height=150)
-        self._url_box.grid(row=3, column=0, padx=18, pady=(0, 8), sticky="ew")
+        self._sc_status_lbl.grid(row=1, column=0, padx=12, pady=(0, 8), sticky="ew")
+
+        sc_btns = ctk.CTkFrame(sc_card, fg_color="transparent")
+        sc_btns.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 10))
+        sc_btns.grid_columnconfigure((0, 1), weight=1)
+
+        ctk.CTkButton(
+            sc_btns, text="Sincronizar",
+            height=28, font=ctk.CTkFont(size=10),
+            command=lambda: self._sync_window._on_sync_manual(),
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+
+        ctk.CTkButton(
+            sc_btns, text="Ver mis Likes",
+            height=28, font=ctk.CTkFont(size=10),
+            fg_color="#8b5cf6", hover_color="#7c3aed",
+            command=lambda: self._sync_window._on_show_likes_preview(),
+        ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+
+        # Separador
+        ctk.CTkFrame(left, height=1, fg_color="#374151").grid(
+            row=3, column=0, padx=14, pady=8, sticky="ew"
+        )
+
+        # ── Descargar por link (función secundaria) ──────────────────── #
+        ctk.CTkLabel(
+            left, text="Descargar por link:",
+            font=ctk.CTkFont(size=11), text_color="#9ca3af",
+        ).grid(row=4, column=0, padx=18, pady=(0, 2), sticky="w")
+
+        self._url_box = ctk.CTkTextbox(left, height=120)
+        self._url_box.grid(row=5, column=0, padx=18, pady=(0, 8), sticky="ew")
 
         ctk.CTkButton(
             left, text="Procesar enlaces",
             command=self._on_process_urls,
-        ).grid(row=4, column=0, padx=18, pady=(0, 4), sticky="ew")
+        ).grid(row=6, column=0, padx=18, pady=(0, 4), sticky="ew")
 
         # Separador
         ctk.CTkFrame(left, height=1, fg_color="#374151").grid(
-            row=5, column=0, padx=14, pady=10, sticky="ew"
+            row=7, column=0, padx=14, pady=8, sticky="ew"
         )
 
         # Carpeta destino
         ctk.CTkLabel(left, text="Carpeta de destino:").grid(
-            row=6, column=0, padx=18, pady=(0, 2), sticky="w"
+            row=8, column=0, padx=18, pady=(0, 2), sticky="w"
         )
         dest_row = ctk.CTkFrame(left, fg_color="transparent")
-        dest_row.grid(row=7, column=0, padx=18, pady=(0, 8), sticky="ew")
+        dest_row.grid(row=9, column=0, padx=18, pady=(0, 8), sticky="ew")
         dest_row.grid_columnconfigure(0, weight=1)
 
         self._dest_lbl = ctk.CTkLabel(
@@ -119,10 +170,10 @@ class MainWindow(ctk.CTk):
 
         # Descargas paralelas
         ctk.CTkLabel(left, text="Descargas en paralelo:").grid(
-            row=8, column=0, padx=18, pady=(0, 2), sticky="w"
+            row=10, column=0, padx=18, pady=(0, 2), sticky="w"
         )
         par_row = ctk.CTkFrame(left, fg_color="transparent")
-        par_row.grid(row=9, column=0, padx=18, pady=(0, 10), sticky="ew")
+        par_row.grid(row=11, column=0, padx=18, pady=(0, 10), sticky="ew")
         par_row.grid_columnconfigure(0, weight=1)
 
         self._par_lbl = ctk.CTkLabel(par_row, text="3", width=24)
@@ -138,7 +189,7 @@ class MainWindow(ctk.CTk):
             ("Descargar todo",         "#2563eb", "#1d4ed8", self._on_download_all),
             ("Descargar seleccionados","#374151", "#4b5563", self._on_download_selected),
         ]
-        for r, (label, fg, hv, cmd) in enumerate(actions, start=10):
+        for r, (label, fg, hv, cmd) in enumerate(actions, start=12):
             ctk.CTkButton(
                 left, text=label, fg_color=fg, hover_color=hv, command=cmd,
             ).grid(row=r, column=0, padx=18, pady=3, sticky="ew")
@@ -148,36 +199,36 @@ class MainWindow(ctk.CTk):
             fg_color="#374151", hover_color="#4b5563",
             command=self._on_pause_resume,
         )
-        self._pause_btn.grid(row=12, column=0, padx=18, pady=3, sticky="ew")
+        self._pause_btn.grid(row=14, column=0, padx=18, pady=3, sticky="ew")
 
         ctk.CTkButton(
             left, text="Cancelar todo",
             fg_color="#7f1d1d", hover_color="#991b1b",
             command=self._on_cancel_all,
-        ).grid(row=13, column=0, padx=18, pady=3, sticky="ew")
+        ).grid(row=15, column=0, padx=18, pady=3, sticky="ew")
 
         ctk.CTkFrame(left, height=1, fg_color="#374151").grid(
-            row=14, column=0, padx=14, pady=10, sticky="ew"
+            row=16, column=0, padx=14, pady=10, sticky="ew"
         )
 
         ctk.CTkButton(
             left, text="Configuracion",
             fg_color="transparent", border_width=1,
             command=self._on_settings,
-        ).grid(row=15, column=0, padx=18, pady=(0, 8), sticky="ew")
+        ).grid(row=17, column=0, padx=18, pady=(0, 8), sticky="ew")
 
         # Preset activo label
         self._preset_lbl = ctk.CTkLabel(
             left, text="", font=ctk.CTkFont(size=11), text_color="#6b7280",
         )
-        self._preset_lbl.grid(row=16, column=0, padx=18, pady=(0, 4), sticky="w")
+        self._preset_lbl.grid(row=18, column=0, padx=18, pady=(0, 4), sticky="w")
 
         # Status bar
         self._status_bar = ctk.CTkLabel(
             left, text="Listo.", anchor="w",
             font=ctk.CTkFont(size=11), text_color="#9ca3af",
         )
-        self._status_bar.grid(row=17, column=0, padx=18, pady=(4, 18), sticky="ew")
+        self._status_bar.grid(row=19, column=0, padx=18, pady=(4, 18), sticky="ew")
 
         # ── Panel derecho ────────────────────────────────────────────── #
         right = ctk.CTkFrame(self, corner_radius=0)
@@ -219,6 +270,7 @@ class MainWindow(ctk.CTk):
             download_folder=self._config.get("dest_folder", ""),
             downloader=downloader,
             download_manager=self._manager,
+            on_status_update=self._on_sc_status_update,
         )
         self._sync_window.grid(row=0, column=0, sticky="nsew")
 
@@ -544,6 +596,13 @@ class MainWindow(ctk.CTk):
     # ------------------------------------------------------------------ #
     # Helpers UI                                                           #
     # ------------------------------------------------------------------ #
+
+    def _on_sc_status_update(self, user_info: dict):
+        """Actualiza la tarjeta SoundCloud del panel izquierdo tras verificar credenciales."""
+        self._sc_status_lbl.configure(
+            text=f"● {user_info['username']}  |  {user_info['likes_count']} likes",
+            text_color="#4ade80",
+        )
 
     def _set_status(self, msg: str):
         self._status_bar.configure(text=msg)

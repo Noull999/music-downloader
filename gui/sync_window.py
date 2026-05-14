@@ -27,7 +27,7 @@ class SyncWindow(ctk.CTkFrame):
     """
 
     def __init__(self, master, config_path: str, download_folder: str, downloader,
-                 download_manager=None):
+                 download_manager=None, on_status_update=None):
         """
         Args:
             master: Frame padre (tab en tabview)
@@ -35,6 +35,7 @@ class SyncWindow(ctk.CTkFrame):
             download_folder: Carpeta de descargas
             downloader: Handler de SoundCloud
             download_manager: DownloadManager compartido con MainWindow
+            on_status_update: Callback(user_info) llamado tras verificar credenciales
         """
         super().__init__(master, corner_radius=0, fg_color="transparent")
         self.grid_rowconfigure(0, weight=1)
@@ -44,6 +45,7 @@ class SyncWindow(ctk.CTkFrame):
         self.download_folder = download_folder
         self.downloader = downloader
         self._download_manager = download_manager
+        self._on_status_update = on_status_update
 
         # State
         self.manager: SyncManager | None = None
@@ -434,6 +436,9 @@ class SyncWindow(ctk.CTkFrame):
         )
         self._save_config()
         self._init_manager()
+
+        if self._on_status_update:
+            self._on_status_update(user_info)
 
         messagebox.showinfo(
             "Exito",
