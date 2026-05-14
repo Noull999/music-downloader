@@ -33,6 +33,8 @@ class DownloadManager:
         self._max_workers: int = 3
         self._executor: Optional[ThreadPoolExecutor] = None
         self._paused: bool = False
+        self._pause_event = threading.Event()
+        self._pause_event.set()  # set = no bloqueado; clear = pausado
         self._cancel_events: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
 
@@ -58,9 +60,11 @@ class DownloadManager:
 
     def pause_all(self):
         self._paused = True
+        self._pause_event.clear()  # bloquea workers en el próximo wait()
 
     def resume_all(self):
         self._paused = False
+        self._pause_event.set()  # desbloquea todos los workers
 
     @property
     def is_paused(self) -> bool:
