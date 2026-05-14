@@ -26,13 +26,15 @@ class SyncWindow(ctk.CTkFrame):
     Se inserta como una pestaña en tabview.
     """
 
-    def __init__(self, master, config_path: str, download_folder: str, downloader):
+    def __init__(self, master, config_path: str, download_folder: str, downloader,
+                 download_manager=None):
         """
         Args:
             master: Frame padre (tab en tabview)
             config_path: Ruta a config.json
             download_folder: Carpeta de descargas
             downloader: Handler de SoundCloud
+            download_manager: DownloadManager compartido con MainWindow
         """
         super().__init__(master, corner_radius=0, fg_color="transparent")
         self.grid_rowconfigure(0, weight=1)
@@ -41,6 +43,7 @@ class SyncWindow(ctk.CTkFrame):
         self.config_path = config_path
         self.download_folder = download_folder
         self.downloader = downloader
+        self._download_manager = download_manager
 
         # State
         self.manager: SyncManager | None = None
@@ -321,42 +324,42 @@ class SyncWindow(ctk.CTkFrame):
             font=ctk.CTkFont(size=13, weight="bold")
         ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
 
-        # Botón "Preview de Likes"
+        # Botón principal de likes
         preview_btn = ctk.CTkButton(
-            container, text="📺 Preview de Likes",
+            container, text="Ver mis Likes",
             fg_color="#8b5cf6", hover_color="#7c3aed",
             command=self._on_show_likes_preview
         )
         preview_btn.grid(row=1, column=0, sticky="ew", padx=(0, 8))
 
-        # Botón "Sincronizar Archivos"
+        # Reparar historial local
         sync_files_btn = ctk.CTkButton(
-            container, text="🔄 Sync Filesystem",
+            container, text="🔧 Reparar historial",
             fg_color="#06b6d4", hover_color="#0891b2",
             command=self._on_sync_filesystem
         )
         sync_files_btn.grid(row=1, column=1, sticky="ew", padx=(0, 8))
 
-        # Botón "Solo Verificar"
+        # Solo explorar sin descargar
         self._scan_only_btn = ctk.CTkButton(
-            container, text="Solo Verificar",
+            container, text="Solo explorar (sin descargar)",
             fg_color="#7c3aed", hover_color="#6d28d9",
             command=self._on_scan_only
         )
         self._scan_only_btn.grid(row=1, column=2, sticky="ew", padx=(0, 8))
 
-        # Descargar desde índice
-        ctk.CTkLabel(container, text="Índice inicio:").grid(
+        # Descargar desde posición específica
+        ctk.CTkLabel(container, text="Desde posición:").grid(
             row=2, column=1, sticky="e", padx=(0, 8)
         )
         self._start_index_entry = ctk.CTkEntry(
-            container, placeholder_text="0 = 1ra, 50 = 51ra..."
+            container, placeholder_text="0 = primera, 50 = desde la 51ra..."
         )
         self._start_index_entry.insert(0, "0")
         self._start_index_entry.grid(row=2, column=2, sticky="ew", padx=(0, 8))
 
         self._sync_from_index_btn = ctk.CTkButton(
-            container, text="Descargar desde...",
+            container, text="Descargar desde posición",
             fg_color="#7c3aed", hover_color="#6d28d9",
             command=self._on_sync_from_index
         )
@@ -534,6 +537,14 @@ class SyncWindow(ctk.CTkFrame):
             messagebox.showerror("Error", "Verifica tus credenciales primero")
             return
 
+        if not messagebox.askyesno(
+            "Confirmar sincronización completa",
+            "Esto descargará TODAS tus canciones pendientes de SoundCloud.\n\n"
+            "Si tienes muchos likes puede tomar bastante tiempo.\n\n¿Continuar?",
+            parent=self
+        ):
+            return
+
         self._sync_now_btn.configure(state="disabled")
         self._sync_stop_btn.configure(state="normal")
 
@@ -685,19 +696,23 @@ class SyncWindow(ctk.CTkFrame):
         self.after(0, lambda: self._refresh_stats())
 
     def _on_show_likes_preview(self):
-        """Abre la ventana de preview de likes."""
+        """Abre la ventana de likes para ver y descargar."""
         if not self.manager:
             messagebox.showerror("Error", "Primero verifica tus credenciales")
             return
 
-        # Crear ventana flotante
         preview_window = ctk.CTkToplevel(self)
-        preview_window.title("Preview de Likes de SoundCloud")
-        preview_window.geometry("1000x600")
+        preview_window.title("Mis Likes de SoundCloud")
+        preview_window.geometry("1000x620")
         preview_window.resizable(True, True)
 
-        # Insertar panel de preview
-        preview_panel = LikesPreviewWindow(preview_window, self.manager, self.downloader)
+        preview_panel = LikesPreviewWindow(
+            preview_window,
+            self.manager,
+            self.downloader,
+            download_manager=self._download_manager,
+            config=self._config,
+        )
         preview_panel.pack(fill="both", expand=True)
 
     def _on_sync_filesystem(self):
