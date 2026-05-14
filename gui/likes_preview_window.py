@@ -127,7 +127,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
 
         # Canvas scrolleable (más estable que CTkScrollableFrame para muchos widgets)
         canvas = ctk.CTkCanvas(
-            container, fg_color="#0f172a", highlightthickness=0, height=400
+            container, bg="#0f172a", highlightthickness=0, height=400
         )
         canvas.grid(row=1, column=0, sticky="nsew")
 
@@ -136,8 +136,8 @@ class LikesPreviewWindow(ctk.CTkFrame):
 
         canvas.configure(yscrollcommand=scrollbar.set)
 
-        self._table_frame = ctk.CTkFrame(canvas, fg_color="transparent")
-        self._canvas_window = canvas.create_window((0, 0), window=self._table_frame, anchor="nw")
+        self._table_frame = ctk.CTkFrame(canvas, fg_color="#0f172a")
+        self._canvas_window = canvas.create_window((0, 0), window=self._table_frame, anchor="nw", tags="frame")
         self._table_frame.grid_columnconfigure(2, weight=1)
 
         self._table_rows = []
@@ -240,7 +240,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
 
         # Actualizar tamaño del canvas
         if hasattr(self, '_canvas'):
-            self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+            self._canvas.configure(scrollregion=self._canvas.bbox("frame"))
 
         # Actualizar stats
         downloaded = sum(1 for l in self._likes if l['downloaded'])
