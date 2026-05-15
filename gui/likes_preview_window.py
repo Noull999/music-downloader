@@ -73,7 +73,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
         filter_frame = ctk.CTkFrame(header, fg_color="transparent")
         filter_frame.grid(row=2, column=0, columnspan=3, sticky="ew")
 
-        self._filter_var = ctk.StringVar(value="todos")
+        self._filter_var = ctk.StringVar(value="pendientes")
         filters = [
             ("Todos", "todos"),
             ("Descargados ✓", "descargados"),
@@ -95,16 +95,17 @@ class LikesPreviewWindow(ctk.CTkFrame):
         ).grid(row=2, column=3, sticky="e", padx=(8, 0))
 
     def _build_table(self):
-        """Construye la tabla con likes."""
-        # Container scrolleable con mejor soporte para muchos widgets
-        scroll = ctk.CTkScrollableFrame(
-            self, fg_color="transparent", label_text="Canciones"
-        )
-        scroll.grid(row=1, column=0, sticky="nsew", padx=16, pady=12)
-        scroll.grid_columnconfigure(0, weight=1)
+        """Construye la tabla con likes usando Canvas para mejor rendimiento."""
+        import tkinter as tk
 
-        # Headers
-        headers_frame = ctk.CTkFrame(scroll, fg_color="#1f2937", corner_radius=4)
+        # Container principal con headers fijos
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.grid(row=1, column=0, sticky="nsew", padx=16, pady=12)
+        container.grid_rowconfigure(1, weight=1)
+        container.grid_columnconfigure(0, weight=1)
+
+        # Headers fijos
+        headers_frame = ctk.CTkFrame(container, fg_color="#1f2937", corner_radius=4)
         headers_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         headers_frame.grid_columnconfigure(2, weight=1)
 
@@ -126,13 +127,49 @@ class LikesPreviewWindow(ctk.CTkFrame):
             if width > 0:
                 headers_frame.grid_columnconfigure(i, minsize=width)
 
-        # Frame contenedor de filas - sin sticky vertical para que crezca naturalmente
-        self._table_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        self._table_frame.grid(row=1, column=0, sticky="ew")
-        self._table_frame.grid_columnconfigure(2, weight=1)
+        # Canvas con scrollbar para las filas
+        canvas_frame = ctk.CTkFrame(container, fg_color="transparent")
+        canvas_frame.grid(row=1, column=0, sticky="nsew")
+        canvas_frame.grid_rowconfigure(0, weight=1)
+        canvas_frame.grid_columnconfigure(0, weight=1)
 
+        self._canvas = tk.Canvas(
+            canvas_frame, bg="#0f172a", highlightthickness=0,
+            borderwidth=0, yscrollincrement=1
+        )
+        self._canvas.grid(row=0, column=0, sticky="nsew")
+
+        scrollbar = ctk.CTkScrollbar(canvas_frame, command=self._canvas.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self._canvas.config(yscrollcommand=scrollbar.set)
+
+        # Frame dentro del canvas que contendrá las filas
+        self._table_frame = ctk.CTkFrame(self._canvas, fg_color="transparent")
+        self._canvas_window = self._canvas.create_window(
+            0, 0, window=self._table_frame, anchor="nw"
+        )
+
+        # Actualizar scroll region cuando cambie el tamaño
+        def on_frame_configure(event=None):
+            self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+            if self._table_frame.winfo_width() > 1:
+                self._canvas.itemconfig(
+                    self._canvas_window,
+                    width=self._canvas.winfo_width()
+                )
+
+        self._table_frame.bind("<Configure>", on_frame_configure)
+        self._canvas.bind("<Configure>", lambda e: self._table_frame.event_generate("<Configure>"))
+
+        # Bind mousewheel para scroll
+        def _on_mousewheel(event):
+            self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        self._canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        self._table_frame.grid_columnconfigure(2, weight=1)
         self._table_rows = []
-        self._scroll = scroll
+        self._scroll = container
 
     def _build_footer(self):
         """Construye la barra de acciones."""
@@ -189,8 +226,16 @@ class LikesPreviewWindow(ctk.CTkFrame):
 
         def load():
             try:
-                self._likes = self.sync_manager.get_likes_with_status()
-                logger.info(f"✓ Cargados {len(self._likes)} likes del sync_manager")
+                raw_likes = self.sync_manager.get_likes_with_status()
+                logger.info(f"DEBUG: sync_manager.get_likes_with_status() retornó {len(raw_likes)} items")
+
+                if raw_likes:
+                    logger.info(f"DEBUG: Primer like: {raw_likes[0].get('title', 'N/A')} - {raw_likes[0].get('artist', 'N/A')}")
+                    if len(raw_likes) > 1:
+                        logger.info(f"DEBUG: Segundo like: {raw_likes[1].get('title', 'N/A')} - {raw_likes[1].get('artist', 'N/A')}")
+
+                self._likes = raw_likes
+                logger.info(f"✓ Asignados {len(self._likes)} likes a self._likes")
                 self.after(0, self._render_table)
             except Exception as e:
                 logger.error(f"Error cargando likes: {e}")
@@ -201,27 +246,26 @@ class LikesPreviewWindow(ctk.CTkFrame):
         threading.Thread(target=load, daemon=True).start()
 
     def _render_table(self):
-        """Renderiza la tabla con los likes."""
+        """Renderiza la tabla con los likes de manera progresiva."""
+        logger.info("DEBUG: _render_table() called")
+
         # Limpiar filas anteriores
+        logger.info(f"DEBUG: Limpiando {len(self._table_rows)} filas anteriores")
         for row_widget in self._table_rows:
             row_widget.destroy()
         self._table_rows = []
         self._selected_tracks = set()
 
         if not hasattr(self, '_likes'):
+            logger.warning("DEBUG: self._likes no existe")
             return
+
+        logger.info(f"DEBUG: self._likes contiene {len(self._likes)} items")
 
         # Aplicar filtros
         filtered_likes = self._apply_filters(self._likes)
-
+        logger.info(f"DEBUG: Después de filtros: {len(filtered_likes)} items")
         logger.info(f"Renderizando {len(filtered_likes)} de {len(self._likes)} likes")
-
-        # Renderizar filas
-        for i, like in enumerate(filtered_likes):
-            self._render_like_row(i, like)
-
-        # Forzar actualización del layout
-        self._table_frame.update_idletasks()
 
         # Actualizar stats
         downloaded = sum(1 for l in self._likes if l['downloaded'])
@@ -230,10 +274,36 @@ class LikesPreviewWindow(ctk.CTkFrame):
             text=f"Total: {total} | Descargadas: {downloaded} | Pendientes: {total - downloaded}"
         )
 
+        # Renderizar en chunks para evitar lag
+        self._render_chunk(filtered_likes, 0)
+
+    def _render_chunk(self, filtered_likes: list, start_index: int, chunk_size: int = 50):
+        """Renderiza un chunk de filas de manera progresiva."""
+        end_index = min(start_index + chunk_size, len(filtered_likes))
+
+        logger.debug(f"Renderizando chunk {start_index}-{end_index} de {len(filtered_likes)}")
+
+        for i in range(start_index, end_index):
+            like = filtered_likes[i]
+            self._render_like_row(i, like)
+
+        # Actualizar canvas
+        self._table_frame.update_idletasks()
+        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+
+        # Si hay más filas, agendar el siguiente chunk
+        if end_index < len(filtered_likes):
+            self.after(50, lambda: self._render_chunk(filtered_likes, end_index, chunk_size))
+        else:
+            logger.info(f"DEBUG: Renderizado completo. Total filas: {len(self._table_rows)}")
+
     def _render_like_row(self, index: int, like: dict):
         """Renderiza una fila de la tabla."""
+        logger.debug(f"DEBUG: _render_like_row({index}, '{like.get('title', 'N/A')}')")
+
         row = ctk.CTkFrame(self._table_frame, fg_color="#111827", corner_radius=4)
-        row.pack(fill="x", pady=4, padx=0)
+        # Empacar filas verticalmente dentro del canvas
+        row.pack(fill="x", expand=False, pady=4, padx=0)
         row.grid_columnconfigure(2, weight=1)
 
         # Checkbox
@@ -264,7 +334,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
             text_color="#9ca3af",
             font=ctk.CTkFont(size=9)
         )
-        artist.grid(row=0, column=3, sticky="ew", padx=8, pady=8, minwidth=150)
+        artist.grid(row=0, column=3, sticky="ew", padx=8, pady=8)
 
         # Acciones
         actions_frame = ctk.CTkFrame(row, fg_color="transparent")

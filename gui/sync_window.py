@@ -768,7 +768,10 @@ ADVERTENCIA:
             self.manager.validate_credentials()
             logger.info(f"SyncManager inicializado (threshold: {threshold}%) y validado")
 
-            # Sincronizar filesystem con DB para recuperar archivos anteriores
+            # Cargar likes guardados sin necesidad de verificar de nuevo
+            self._load_saved_likes()
+
+            # Sincronizar filesystem con DB para recuperar archivos anteriores (después de cargar likes)
             def sync_fs():
                 try:
                     results = self.manager.sync_filesystem_to_db()
@@ -777,10 +780,8 @@ ADVERTENCIA:
                 except Exception as e:
                     logger.warning(f"Error sincronizando filesystem: {e}")
 
+            # Ejecutar en thread después de que _load_saved_likes termina
             threading.Thread(target=sync_fs, daemon=True).start()
-
-            # Cargar likes guardados sin necesidad de verificar de nuevo
-            self._load_saved_likes()
         except Exception as e:
             logger.error(f"Error inicializando SyncManager: {e}")
 
