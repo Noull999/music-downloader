@@ -11,17 +11,21 @@ import shutil
 import sys
 from typing import Optional
 
-from handlers.base_handler import ffmpeg_location
+from utils.exceptions import DependencyNotFoundError, DownloadError
+from utils.dependencies import FFmpegValidator
 
 logger = logging.getLogger(__name__)
 
+# Cache de ruta a ffmpeg validada
+_FFMPEG_CACHE: Optional[str] = None
 
-def _ffmpeg_exe() -> str:
-    loc = ffmpeg_location()
-    if not loc:
-        return "ffmpeg"
-    ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-    return os.path.join(loc, ffmpeg_name)
+
+def get_ffmpeg_exe() -> str:
+    """Obtiene ruta validada de ffmpeg. Lanza si no existe."""
+    global _FFMPEG_CACHE
+    if _FFMPEG_CACHE is None:
+        _FFMPEG_CACHE = FFmpegValidator.find_ffmpeg_executable()
+    return _FFMPEG_CACHE
 
 
 class PostProcessor:
@@ -67,15 +71,17 @@ class PostProcessor:
     # ------------------------------------------------------------------ #
 
     def _apply_ffmpeg_filters(self, input_file: str) -> str:
-        ffmpeg = _ffmpeg_exe()
-        if not os.path.isfile(ffmpeg) and not shutil.which(ffmpeg):
-            logger.warning("ffmpeg no encontrado; se omite post-procesado de audio.")
+        """Aplica filtros ffmpeg (normalización, eliminación de silencios)."""
+        try:
+            ffmpeg = get_ffmpeg_exe()
+        except DependencyNotFoundError as e:
+            logger.warning(f"FFmpeg no disponible, omitiendo post-procesado: {e}")
             return input_file
 
         filters: list[str] = []
 
         if self.normalize_volume:
-            # EBU R128 — estandar profesional de normalizacion de loudness
+            # EBU R128 — estándar profesional de normalización de loudness
             filters.append("loudnorm=I=-14:LRA=11:TP=-1")
 
         if self.remove_silence:
@@ -94,29 +100,48 @@ class PostProcessor:
             "-c:a", "libmp3lame", "-b:a", "320k",
             "-y", temp_file,
         ]
+
         try:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 timeout=120,
+                text=False,
             )
+
             if result.returncode == 0 and os.path.exists(temp_file):
                 os.replace(temp_file, input_file)
-                logger.info("Filtros ffmpeg aplicados: %s", filter_chain)
-            else:
-                logger.warning(
-                    "ffmpeg retorno %d: %s",
-                    result.returncode,
-                    result.stderr.decode(errors="replace")[:300],
-                )
-                if os.path.exists(temp_file):
-                    os.remove(temp_file)
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
-            logger.warning("Error aplicando filtros ffmpeg: %s", exc)
+                logger.info(f"✓ Filtros ffmpeg aplicados: {filter_chain}")
+                return input_file
+
+            # FFmpeg falló — log claro
+            stderr_msg = result.stderr.decode(errors="replace")[:300]
+            raise DownloadError(
+                f"FFmpeg falló (código {result.returncode}): {stderr_msg}"
+            )
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"FFmpeg timeout (>120s) en: {input_file}")
             if os.path.exists(temp_file):
                 os.remove(temp_file)
+            raise DownloadError("Post-procesado timeout")
 
-        return input_file
+        except FileNotFoundError:
+            logger.error("FFmpeg ejecutable no encontrado")
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            raise DependencyNotFoundError("FFmpeg no está accesible")
+
+        except DownloadError:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            raise
+
+        except Exception as e:
+            logger.error(f"Error inesperado en post-procesado: {e}")
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            raise DownloadError(f"Post-procesado falló: {e}")
 
     # ------------------------------------------------------------------ #
     # Embebido de tags con mutagen                                         #
