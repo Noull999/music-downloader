@@ -13,6 +13,7 @@ from .soundcloud_api import SoundCloudAPIClient, SoundCloudTrack
 from .duplicate_checker import DuplicateChecker
 from db.history import DownloadHistory
 from notifications.notifier import Notifier
+from quality.post_processor import PostProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,18 @@ class SyncManager:
         base_name = sanitize_filename(base_name)
 
         return os.path.join(folder, base_name)
+
+    def _post_process(self, file_path: str, track: "SoundCloudTrack") -> None:
+        """Embebe carátula y metadatos en el archivo descargado vía mutagen."""
+        if not file_path or not os.path.exists(file_path):
+            return
+        try:
+            pp = PostProcessor({"embed_artwork": True, "embed_metadata": True,
+                                "normalize_volume": False, "remove_silence": False})
+            pp.process(file_path, {"title": track.title, "artist": track.artist,
+                                   "album": "", "year": ""}, track.artwork_url or "")
+        except Exception as e:
+            logger.warning("Error en post-proceso de %s: %s", track.title, e)
 
     # ────────────────────────────────────────────────────────────────── #
     # Sincronización principal                                            #
@@ -368,6 +381,7 @@ class SyncManager:
                         file_path,
                         platform="soundcloud"
                     )
+                    self._post_process(file_path, track)
 
                     results['new'] += 1
                     results['tracks'].append(track)
@@ -553,6 +567,7 @@ class SyncManager:
                         file_path,
                         platform="soundcloud"
                     )
+                    self._post_process(file_path, track)
 
                     results['new'] += 1
                     results['tracks'].append(track)
@@ -670,6 +685,7 @@ class SyncManager:
                     self.history.mark_downloaded(
                         track.url, track.title, track.artist, file_path
                     )
+                    self._post_process(file_path, track)
                     results['new'] += 1
                     results['tracks'].append(track)
                 except Exception as e:

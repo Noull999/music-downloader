@@ -137,11 +137,10 @@ class SoundCloudHandler(BaseHandler):
                 "preferredcodec": convert_to,
                 "preferredquality": quality_preset.get("bitrate", "0"),
             })
-            # Solo agregar metadata y thumbnail si hay conversión
-            postprocessors += [
-                {"key": "FFmpegMetadata", "add_metadata": True},
-                {"key": "EmbedThumbnail"},
-            ]
+            # FFmpegMetadata embebe tags básicos vía ffmpeg.
+            # La carátula se embebe por PostProcessor (mutagen) para mayor confiabilidad;
+            # EmbedThumbnail de yt-dlp deja archivos .jpg sueltos cuando falla.
+            postprocessors.append({"key": "FFmpegMetadata", "add_metadata": True})
 
         ydl_opts: dict = {
             "format": sc_format,
