@@ -45,6 +45,7 @@ class SyncManager:
         similarity_threshold: int = 85,  # threshold para detectar duplicados (0-100)
         filename_pattern: str = "{artist} - {title}",
         subfolder_by_artist: bool = False,
+        activity_log_callback: Optional[Callable[[str], None]] = None,
     ):
         """
         Args:
@@ -56,6 +57,7 @@ class SyncManager:
             similarity_threshold: % de similitud para detectar duplicados (default 85)
             filename_pattern: Patrón de nombre con {artist} y {title}
             subfolder_by_artist: Si crear subcarpeta por artista
+            activity_log_callback: Función(mensaje: str) para logging en tiempo real a ActivityPanel
         """
         self.api = SoundCloudAPIClient(oauth_token, client_id)
         self.history = DownloadHistory()
@@ -65,6 +67,7 @@ class SyncManager:
         self.downloader = downloader
         self.filename_pattern = filename_pattern
         self.subfolder_by_artist = subfolder_by_artist
+        self.activity_log_callback = activity_log_callback
 
         self._stop_event = threading.Event()
         self._is_syncing = False
@@ -381,11 +384,25 @@ class SyncManager:
                         file_path,
                         platform="soundcloud"
                     )
+                    # Also register in soundcloud_likes table
+                    self.history.mark_like_downloaded(
+                        url=track.url,
+                        title=track.title,
+                        artist=track.artist,
+                        track_id=track.id,
+                        duration_ms=track.duration_ms,
+                        artwork_url=track.artwork_url,
+                        genre=track.genre,
+                        created_at=track.created_at
+                    )
                     self._post_process(file_path, track)
 
                     results['new'] += 1
                     results['tracks'].append(track)
-                    logger.info(f"✓ Descargada: {track.artist} - {track.title}")
+                    msg = f"✓ Descargada: {track.artist} - {track.title}"
+                    logger.info(msg)
+                    if self.activity_log_callback:
+                        self.activity_log_callback(msg)
 
                 except Exception as e:
                     # Si fue cancelado por el usuario, detener loop sin contar como error
@@ -685,13 +702,37 @@ class SyncManager:
                     self.history.mark_downloaded(
                         track.url, track.title, track.artist, file_path
                     )
+                    # Also register in soundcloud_likes table
+                    self.history.mark_like_downloaded(
+                        url=track.url,
+                        title=track.title,
+                        artist=track.artist,
+                        track_id=track.id,
+                        duration_ms=track.duration_ms,
+                        artwork_url=track.artwork_url,
+                        genre=track.genre,
+                        created_at=track.created_at
+                    )
                     self._post_process(file_path, track)
                     results['new'] += 1
                     results['tracks'].append(track)
+                    msg = f"⬇ Descargando: {track.artist} - {track.title}"
+                    if self.activity_log_callback:
+                        self.activity_log_callback(msg)
                 except Exception as e:
                     results['errors'] += 1
+                    msg = f"✗ Error: {track.artist} - {track.title}"
+                    if self.activity_log_callback:
+                        self.activity_log_callback(msg)
                     logger.error(f"Error en sync_recent: {e}")
 
+            # Log final con resultados precisos
+            logger.info(
+                f"✓ Sincronización reciente completada: "
+                f"+{results['new']} descargadas | "
+                f"-{results['skipped']} duplicadas | "
+                f"!{results['errors']} errores"
+            )
             return results
 
         finally:

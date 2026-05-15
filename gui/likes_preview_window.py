@@ -5,6 +5,7 @@ Permite filtrar, seleccionar y descargar individual o en lote.
 """
 import threading
 import logging
+import os
 from tkinter import messagebox
 
 import customtkinter as ctk
@@ -93,7 +94,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
         scroll.grid(row=1, column=0, sticky="nsew", padx=16, pady=12)
         scroll.grid_columnconfigure(0, weight=1)
 
-        headers_frame = ctk.CTkFrame(scroll, fg_color="#1f2937", corner_radius=4)
+        headers_frame = ctk.CTkFrame(scroll, fg_color="#1a1a1a", corner_radius=4)
         headers_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         headers_frame.grid_columnconfigure(2, weight=1)
 
@@ -104,10 +105,10 @@ class LikesPreviewWindow(ctk.CTkFrame):
                                font=ctk.CTkFont(size=10, weight="bold"))
             lbl.grid(row=0, column=i, sticky="ew", padx=8, pady=8)
             if width > 0:
-                lbl.grid_columnconfigure(0, minwidth=width)
+                headers_frame.grid_columnconfigure(i, minsize=width)
 
         self._table_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        self._table_frame.grid(row=1, column=0, sticky="ew")
+        self._table_frame.grid(row=1, column=0, sticky="nsew")
         self._table_frame.grid_columnconfigure(2, weight=1)
 
     def _build_pagination(self):
@@ -228,6 +229,19 @@ class LikesPreviewWindow(ctk.CTkFrame):
         for i, like in enumerate(page_items):
             self._render_like_row(i, like)
 
+        # Update pagination controls
+        self._page_label.configure(
+            text=f"Página {self._page + 1} de {total_pages}  ({total_filtered} resultados)"
+        )
+        self._prev_btn.configure(state="normal" if self._page > 0 else "disabled")
+        self._next_btn.configure(state="normal" if self._page < total_pages - 1 else "disabled")
+
+        downloaded = sum(1 for l in self._likes if l['downloaded'])
+        total = len(self._likes)
+        self._stats_label.configure(
+            text=f"Total: {total} | Descargadas: {downloaded} | Pendientes: {total - downloaded}"
+        )
+
         # Pagination controls
         self._page_label.configure(
             text=f"Página {self._page + 1} de {total_pages}  ({total_filtered} resultados)"
@@ -242,7 +256,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
         )
 
     def _render_like_row(self, index: int, like: dict):
-        row = ctk.CTkFrame(self._table_frame, fg_color="#111827", corner_radius=4)
+        row = ctk.CTkFrame(self._table_frame, fg_color="#0a0a0a", corner_radius=4)
         row.grid(row=index, column=0, sticky="ew", pady=4)
         row.grid_columnconfigure(2, weight=1)
 
@@ -436,6 +450,17 @@ class LikesPreviewWindow(ctk.CTkFrame):
                                     lk['url'], lk['title'], lk['artist'],
                                     tk.local_path, platform="soundcloud"
                                 )
+                                # Also register in soundcloud_likes table
+                                self.sync_manager.history.mark_like_downloaded(
+                                    url=lk['url'],
+                                    title=lk['title'],
+                                    artist=lk['artist'],
+                                    track_id=lk.get('id'),
+                                    duration_ms=lk.get('duration_ms'),
+                                    artwork_url=lk.get('artwork_url'),
+                                    genre=lk.get('genre'),
+                                    created_at=lk.get('created_at')
+                                )
                             except Exception as ex:
                                 logger.warning("Error registrando en historial: %s", ex)
                         elif status in (STATUS_ERROR, STATUS_CANCELLED):
@@ -492,9 +517,18 @@ class LikesPreviewWindow(ctk.CTkFrame):
             self.after(0, lambda p=progress, m=msg: self._update_download_status(p, m))
 
             try:
-                output_path = self.sync_manager._build_output_path(
-                    like['artist'], like['title']
-                )
+                # Construir ruta con la carpeta seleccionada
+                dest_folder = self.sync_manager.download_folder
+                safe_artist = like['artist'].replace('/', '_').replace('\\', '_')
+                safe_title = like['title'].replace('/', '_').replace('\\', '_')
+
+                if self.sync_manager.subfolder_by_artist:
+                    output_folder = os.path.join(dest_folder, safe_artist)
+                else:
+                    output_folder = dest_folder
+                os.makedirs(output_folder, exist_ok=True)
+                output_path = os.path.join(output_folder, f"{safe_title}.mp3")
+
                 file_path = self.downloader.download(
                     like['url'], output_path, quality_preset,
                     progress_callback=None, cancel_check=None
