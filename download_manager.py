@@ -73,15 +73,19 @@ class DownloadManager:
     # ── Cancelación ─────────────────────────────────────────────────── #
 
     def cancel_track(self, url: str):
+        """Cancela descarga de una URL específica."""
         with self._lock:
             ev = self._cancel_events.get(url)
         if ev:
             ev.set()
+            logger.info(f"Cancelación solicitada para: {url}")
 
     def cancel_all(self):
+        """Cancela todas las descargas en progreso."""
         with self._lock:
             for ev in self._cancel_events.values():
                 ev.set()
+        logger.info("Cancelación solicitada para todas las descargas")
 
     # ── Envío de descarga ────────────────────────────────────────────── #
 
@@ -218,6 +222,7 @@ class DownloadManager:
             err = str(exc)
             if err == "cancelled":
                 on_status(STATUS_CANCELLED, "")
+                self._cleanup_partial_files(folder, base_name)
             else:
                 on_status(STATUS_ERROR, err)
             logger.warning("Error descargando %s: %s", track.url, err)
@@ -225,6 +230,11 @@ class DownloadManager:
         except Exception as exc:
             logger.exception("Error inesperado descargando %s", track.url)
             on_status(STATUS_ERROR, str(exc)[:200])
+            # Intentar cleanup de archivos parciales
+            try:
+                self._cleanup_partial_files(folder, base_name)
+            except Exception:
+                pass
 
         finally:
             with self._lock:
@@ -232,3 +242,27 @@ class DownloadManager:
             if delay > 0:
                 import time as _t
                 _t.sleep(delay)
+
+    def _cleanup_partial_files(self, folder: str, base_name: str) -> None:
+        """Limpia archivos parciales después de cancelación o error."""
+        import glob
+
+        try:
+            # Buscar archivos parciales comunes
+            patterns = [
+                os.path.join(folder, f"{base_name}.*"),
+                os.path.join(folder, f"{base_name}.pp_temp.*"),
+                os.path.join(folder, f"{base_name}.ytdl.*"),
+                os.path.join(folder, f"{base_name}.part"),
+            ]
+
+            for pattern in patterns:
+                for file_path in glob.glob(pattern):
+                    try:
+                        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                            os.remove(file_path)
+                            logger.debug(f"Archivo parcial limpiado: {file_path}")
+                    except OSError as e:
+                        logger.warning(f"No se pudo limpiar {file_path}: {e}")
+        except Exception as e:
+            logger.warning(f"Error en cleanup de archivos parciales: {e}")
