@@ -4,11 +4,13 @@ Separa MainWindow (presentación pura) de lógica (eventos, callbacks).
 """
 import logging
 import os
+import json
 from typing import Callable, Optional
 from models import TrackInfo, STATUS_DONE, STATUS_ERROR
 from download_manager import DownloadManager
 from db.history_manager import HistoryManager
 from config.manager import ConfigManager
+from sync.soundcloud_api import SoundCloudAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -124,3 +126,96 @@ class UIController:
         """Resetea config a valores por defecto."""
         self.config.reset_to_defaults()
         logger.warning("✓ Configuración reseteada a defaults")
+
+    def import_soundcloud_likes(self) -> dict:
+        """
+        Importa tus likes de SoundCloud a la BD como "ya descargados".
+        No descarga archivos, solo guarda metadatos.
+
+        Returns:
+            {
+                'success': bool,
+                'imported': int,
+                'skipped': int,
+                'error': str or None
+            }
+        """
+        try:
+            # Cargar config con estructura anidada
+            config_path = self.config.config_path
+            with open(config_path, 'r') as f:
+                full_config = json.load(f)
+
+            sc_config = full_config.get("soundcloud", {})
+            oauth_token = sc_config.get("oauth_token", "").strip()
+            client_id = sc_config.get("client_id", "").strip()
+
+            if not oauth_token or not client_id:
+                return {
+                    'success': False,
+                    'imported': 0,
+                    'skipped': 0,
+                    'error': 'OAuth token o client_id no configurados'
+                }
+
+            # Conectar a SoundCloud
+            logger.info("🔄 Conectando a SoundCloud...")
+            api = SoundCloudAPIClient(oauth_token, client_id)
+
+            # Obtener likes
+            logger.info("📥 Obteniendo tus likes de SoundCloud...")
+            likes = api.get_likes()
+
+            if not likes:
+                return {
+                    'success': True,
+                    'imported': 0,
+                    'skipped': 0,
+                    'error': 'No hay likes en tu cuenta'
+                }
+
+            # Importar a historial
+            imported = 0
+            skipped = 0
+
+            for like in likes:
+                try:
+                    # Verificar si ya existe
+                    if self.history.is_downloaded(like.url):
+                        skipped += 1
+                        continue
+
+                    # Agregar como "ya descargado"
+                    self.history.add_download(
+                        url=like.url,
+                        title=like.title,
+                        artist=like.artist,
+                        album="",
+                        platform="soundcloud",
+                        local_path="",  # Sin archivo local
+                        duration=like.duration_ms // 1000 if like.duration_ms else 0,
+                    )
+                    imported += 1
+
+                except Exception as e:
+                    logger.error(f"Error importando {like.title}: {e}")
+                    skipped += 1
+
+            logger.info(f"✅ Importados: {imported} likes | Omitidos: {skipped}")
+
+            return {
+                'success': True,
+                'imported': imported,
+                'skipped': skipped,
+                'error': None
+            }
+
+        except Exception as e:
+            error_msg = f"Error sincronizando likes: {str(e)}"
+            logger.error(error_msg)
+            return {
+                'success': False,
+                'imported': 0,
+                'skipped': 0,
+                'error': error_msg
+            }
