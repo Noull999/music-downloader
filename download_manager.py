@@ -1,6 +1,7 @@
 """
 DownloadManager: gestiona el pool de hilos de descarga.
 Orquesta handlers + post-procesado + callbacks de progreso al GUI.
+Con optimizaciones: imagen paralela, caché, opciones yt-dlp mejoradas.
 """
 import logging
 import os
@@ -12,6 +13,7 @@ from typing import Callable, Optional
 from handlers.base_handler import BaseHandler
 from models import TrackInfo, STATUS_DOWNLOADING, STATUS_DONE, STATUS_ERROR, STATUS_SKIP, STATUS_CANCELLED
 from quality.post_processor import PostProcessor
+from utils.parallel_downloader import ParallelImageDownloader
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +183,13 @@ class DownloadManager:
 
             on_status(STATUS_DOWNLOADING, "")
 
+            # 🔄 Iniciar descarga de imagen en PARALELO (no bloquea descarga de audio)
+            image_downloader: Optional[ParallelImageDownloader] = None
+            if track.thumbnail_url and post_config.get("embed_artwork", True):
+                image_downloader = ParallelImageDownloader(timeout=5.0)
+                image_downloader.download_async(track.thumbnail_url)
+                logger.debug("📸 Descarga de imagen iniciada en paralelo")
+
             def cancel_check() -> bool:
                 return cancel_event.is_set()
 
@@ -190,7 +199,7 @@ class DownloadManager:
 
             output_path = os.path.join(folder, base_name)
 
-            # Llamar al handler con kwargs extra según tipo
+            # Descargar audio
             from handlers.soundcloud_handler import SoundCloudHandler
             if isinstance(handler, SoundCloudHandler) and oauth_token:
                 downloaded = handler.download(
