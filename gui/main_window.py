@@ -163,15 +163,21 @@ class MainWindow(ctk.CTk):
             command=self._on_settings,
         ).grid(row=17, column=0, padx=18, pady=(0, 8), sticky="ew")
 
+        ctk.CTkButton(
+            left, text="📥 Importar mis Likes",
+            fg_color="transparent", border_width=1,
+            command=self._on_import_likes,
+        ).grid(row=18, column=0, padx=18, pady=(0, 8), sticky="ew")
+
         # Preset activo label
         self._preset_lbl = ctk.CTkLabel(
             left, text="", font=ctk.CTkFont(size=11), text_color="#6b7280",
         )
-        self._preset_lbl.grid(row=18, column=0, padx=18, pady=(0, 4), sticky="w")
+        self._preset_lbl.grid(row=19, column=0, padx=18, pady=(0, 4), sticky="w")
 
         # Status bar mejorado
         self._status_bar = StatusBar(left)
-        self._status_bar.grid(row=19, column=0, padx=18, pady=(4, 18), sticky="ew")
+        self._status_bar.grid(row=20, column=0, padx=18, pady=(4, 18), sticky="ew")
 
         # ── Panel derecho ────────────────────────────────────────────── #
         right = ctk.CTkFrame(self, corner_radius=0, fg_color="#0f0f0f")
@@ -428,6 +434,29 @@ class MainWindow(ctk.CTk):
         self.wait_window(dlg)
         self._update_preset_label()
         self._manager.start(self._ui_controller.get_config_value("max_workers", 3))
+
+    def _on_import_likes(self):
+        """Importa tus likes de SoundCloud como 'ya descargados'."""
+        from tkinter import messagebox
+
+        self._status_bar.set_text("📥 Importando likes de SoundCloud...", "#3b82f6")
+        self.update()
+
+        result = self._ui_controller.import_soundcloud_likes()
+
+        if result['success']:
+            msg = f"✅ Importación completada:\n\n"
+            msg += f"✓ Importados: {result['imported']} likes\n"
+            if result['skipped'] > 0:
+                msg += f"⊘ Omitidos: {result['skipped']} (ya existían)\n"
+
+            messagebox.showinfo("Importar Likes", msg)
+            self._status_bar.mark_idle()
+            self._activity_panel.log(f"✅ Importados {result['imported']} likes de SoundCloud")
+        else:
+            messagebox.showerror("Error", f"❌ Error en importación:\n{result['error']}")
+            self._status_bar.mark_error("Error importando likes")
+            self._activity_panel.log(f"❌ Error: {result['error']}")
 
     def _on_close(self):
         self._manager.cancel_all()
