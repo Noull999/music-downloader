@@ -3,6 +3,7 @@ UIController: Orquesta la lógica de negocio separada de la presentación.
 Separa MainWindow (presentación pura) de lógica (eventos, callbacks).
 """
 import logging
+import os
 from typing import Callable, Optional
 from models import TrackInfo, STATUS_DONE, STATUS_ERROR
 from download_manager import DownloadManager
@@ -21,7 +22,13 @@ class UIController:
     - Callbacks a GUI
     """
 
-    def __init__(self, config_path: str = "config.json"):
+    def __init__(self, base_dir: str = None):
+        # Construir ruta config.json a partir de base_dir
+        if base_dir:
+            config_path = os.path.join(base_dir, "config.json")
+        else:
+            config_path = "config.json"
+
         self.config = ConfigManager(config_path)
         self.history = HistoryManager()
         self.download_manager = DownloadManager()
@@ -30,12 +37,16 @@ class UIController:
         if not self.config.validate():
             logger.warning("⚠️  Configuración tiene valores inválidos")
 
+    def get_config(self) -> dict:
+        """Retorna toda la configuración."""
+        return self.config.get_all()
+
     def get_config_value(self, key: str, default=None):
         """Obtiene valor de config."""
         return self.config.get(key, default)
 
     def set_config_value(self, key: str, value) -> None:
-        """Establece valor de config."""
+        """Establece valor de config (se persiste automáticamente)."""
         self.config.set(key, value)
         logger.debug(f"Config actualizado: {key} = {value}")
 
@@ -51,12 +62,10 @@ class UIController:
         """Retorna descargas recientes."""
         return self.history.get_recent_downloads(limit)
 
-    def record_download(
-        self,
-        track: TrackInfo,
-        local_path: str,
-    ) -> None:
+    def record_download(self, track: TrackInfo) -> None:
         """Registra descarga en historial."""
+        # Usar local_path del track si existe, si no usar el track.url como fallback
+        local_path = getattr(track, 'local_path', '')
         self.history.add_download(
             url=track.url,
             title=track.title,
@@ -64,7 +73,7 @@ class UIController:
             album=track.album,
             platform=track.platform,
             local_path=local_path,
-            duration=track.duration,
+            duration=getattr(track, 'duration', 0),
         )
         logger.info(f"✓ Descarga registrada: {track.title}")
 
