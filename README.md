@@ -4,6 +4,8 @@ Una aplicación de escritorio para descargar música de **SoundCloud y YouTube**
 
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
+[![Tests](https://github.com/Noull999/music-downloader/actions/workflows/test-multiplatform.yml/badge.svg)](https://github.com/Noull999/music-downloader/actions/workflows/test-multiplatform.yml)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 
 ## ✨ Características
 
@@ -42,7 +44,30 @@ Una aplicación de escritorio para descargar música de **SoundCloud y YouTube**
 - customtkinter
 - requests
 
-## 🚀 Instalación
+## 🚀 Instalación Rápida
+
+**Instalación automatizada (recomendado):**
+
+```bash
+# Windows
+install.bat
+
+# macOS / Linux
+chmod +x install.sh
+./install.sh
+```
+
+---
+
+**Para instrucciones detalladas paso a paso**, ver [SETUP.md](SETUP.md) que incluye:
+- Requisitos previos por sistema operativo
+- Instalación manual y automatizada
+- Troubleshooting
+- Instrucciones para desarrolladores
+
+---
+
+## 📦 Instalación Manual
 
 1. Clona el repositorio:
 ```bash
@@ -50,15 +75,20 @@ git clone https://github.com/Noull999/music-downloader.git
 cd music-downloader
 ```
 
-2. Instala las dependencias:
+2. Instala Python 3.9+ y FFmpeg:
+   - Windows: `choco install ffmpeg` o descarga desde https://ffmpeg.org/download.html
+   - macOS: `brew install ffmpeg`
+   - Linux: `sudo apt install ffmpeg`
+
+3. Instala las dependencias Python:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. (Opcional) Obtén FFmpeg:
-   - Windows: `choco install ffmpeg` o descarga desde https://ffmpeg.org/download.html
-   - macOS: `brew install ffmpeg`
-   - Linux: `sudo apt install ffmpeg`
+4. Ejecuta la aplicación:
+```bash
+python main.py
+```
 
 ## ⚙️ Configuración SoundCloud
 

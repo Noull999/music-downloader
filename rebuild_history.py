@@ -1,5 +1,7 @@
 """
 Script para reconstruir historial basado en archivos existentes en una carpeta.
+Uso: python rebuild_history.py [ruta_a_carpeta_musica]
+     Si no se proporciona ruta, usa ~/Music por defecto.
 """
 import sqlite3
 import os
@@ -12,7 +14,8 @@ if sys.platform == "win32":
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-MUSIC_FOLDER = r"C:\Users\Lenovo\Desktop\serato\musik"
+# Usar argumento de línea de comandos o ~/Music por defecto
+MUSIC_FOLDER = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/Music")
 DB_PATH = Path.home() / ".music_downloader" / "history.db"
 
 def rebuild_history():

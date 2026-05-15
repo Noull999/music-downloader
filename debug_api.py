@@ -3,14 +3,17 @@ Script para debuggear qué devuelve la API de SoundCloud.
 """
 import sys
 import io
+import os
+import json
+
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 from sync.soundcloud_api import SoundCloudAPIClient
 from db.history import DownloadHistory
 
-# Lee credenciales desde el archivo de config
-config_file = r"C:\Users\Lenovo\Desktop\music_downloader\config.json"
+# Lee credenciales desde el archivo de config (relativo al directorio del script)
+config_file = os.path.join(os.path.dirname(__file__), "config.json")
 
 try:
     import json
