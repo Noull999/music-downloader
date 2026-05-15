@@ -726,7 +726,11 @@ class SyncManager:
         total = 0
 
         try:
-            for file_path in Path(self.download_folder).rglob('*'):
+            # Usar glob en lugar de rglob para evitar cuelgues (buscar solo 2 niveles)
+            all_files = list(Path(self.download_folder).glob('*'))
+            all_files.extend(Path(self.download_folder).glob('*/*'))
+
+            for file_path in all_files:
                 if not file_path.is_file():
                     continue
                 if file_path.suffix.lower() not in audio_extensions:
@@ -736,11 +740,12 @@ class SyncManager:
                 filename = file_path.stem
                 artist_dir = file_path.parent.name
 
-                # Verificar si ya está en historial
-                existing = self.history.conn.execute(
-                    "SELECT 1 FROM downloads WHERE file_path = ?",
-                    (str(file_path),)
-                ).fetchone()
+                # Verificar si ya está en historial (con lock)
+                with self.history.lock:
+                    existing = self.history.conn.execute(
+                        "SELECT 1 FROM downloads WHERE file_path = ?",
+                        (str(file_path),)
+                    ).fetchone()
 
                 if existing:
                     already_tracked += 1
