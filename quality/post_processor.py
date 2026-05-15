@@ -173,7 +173,7 @@ class PostProcessor:
                     audio.tags.add(TDRC(encoding=3, text=metadata["year"]))
 
             if self.embed_artwork and thumbnail_url:
-                img_data = self._fetch_image(thumbnail_url)
+                img_data = self._fetch_image_cached(thumbnail_url)
                 if img_data:
                     audio.tags.add(
                         APIC(
@@ -189,12 +189,42 @@ class PostProcessor:
         except Exception as exc:
             logger.warning("Error embebiendo tags en %s: %s", file_path, exc)
 
-    def _fetch_image(self, url: str) -> Optional[bytes]:
+    def _fetch_image_cached(self, url: str, timeout: float = 5.0) -> Optional[bytes]:
+        """Obtiene imagen con caché automático (evita re-descargar)."""
+        try:
+            from utils.image_cache import ImageCacheManager
+
+            # Intentar obtener del caché
+            cache = ImageCacheManager()
+            img_data = cache.get(url)
+            if img_data:
+                logger.debug(f"✓ Imagen obtenida del caché: {len(img_data)//1024}KB")
+                return img_data
+
+            # No está en caché, descargar
+            logger.debug(f"📥 Descargando imagen (no en caché)...")
+            img_data = self._fetch_image(url, timeout)
+            if img_data:
+                cache.set(url, img_data, mime_type="image/jpeg", ttl_days=30)
+            return img_data
+
+        except ImportError:
+            logger.debug("ImageCacheManager no disponible, descargando sin caché")
+            return self._fetch_image(url, timeout)
+        except Exception as exc:
+            logger.warning(f"Error en caché de imágenes: {exc}")
+            return self._fetch_image(url, timeout)
+
+    def _fetch_image(self, url: str, timeout: float = 5.0) -> Optional[bytes]:
+        """Descarga imagen con timeout corto."""
         try:
             import requests
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=timeout)
             resp.raise_for_status()
             return resp.content
+        except requests.Timeout:
+            logger.warning(f"⏱️  Timeout descargando imagen (>{timeout}s): {url[:50]}...")
+            return None
         except Exception as exc:
-            logger.warning("No se pudo descargar thumbnail para tags: %s", exc)
+            logger.warning(f"No se pudo descargar thumbnail para tags: {exc}")
             return None
