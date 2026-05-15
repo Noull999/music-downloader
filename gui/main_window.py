@@ -1,8 +1,8 @@
 """
 Ventana principal del Music Downloader.
 Panel izquierdo: controles | Panel derecho: tabs Descargas / Logs
+Integra UIController para centralizar config/historial, StatusBar para mejor feedback.
 """
-import json
 import logging
 import os
 import threading
@@ -15,6 +15,9 @@ from gui.activity_panel import ActivityPanel
 from gui.settings import SettingsDialog
 from gui.track_list import TrackListFrame
 from gui.sync_window import SyncWindow
+from gui.ui_controller import UIController
+from gui.status_bar import StatusBar
+from gui.themes import ThemeManager
 from models import TrackInfo, STATUS_PENDING, STATUS_DONE, STATUS_SKIP, STATUS_DOWNLOADING, STATUS_FETCHING, STATUS_ERROR
 from quality.presets import get_preset, effective_extension
 from url_detector import detect_handler, detect_platform_name
@@ -24,22 +27,6 @@ from handlers.soundcloud_handler import SoundCloudHandler
 logger = logging.getLogger(__name__)
 
 _BASE = os.path.dirname(os.path.dirname(__file__))
-CONFIG_PATH = os.path.join(_BASE, "config.json")
-HISTORY_PATH = os.path.join(_BASE, "history.json")
-
-_DEFAULT_CONFIG: dict = {
-    "dest_folder": os.path.expanduser("~/Music"),
-    "max_workers": 3,
-    "quality_preset": "mp3_320",
-    "filename_pattern": "{artist} - {title}",
-    "subfolder_by_artist": False,
-    "normalize_volume": False,
-    "remove_silence": False,
-    "embed_artwork": True,
-    "embed_metadata": True,
-    "oauth_token": "",
-    "delay": 0.5,
-}
 
 
 class MainWindow(ctk.CTk):
@@ -48,13 +35,17 @@ class MainWindow(ctk.CTk):
         self.title("Music Downloader — YouTube & SoundCloud")
         self.geometry("1150x720")
         self.minsize(820, 560)
-        self._set_appearance_mode("dark")
-        self._appearance_mode = "dark"
 
-        self._config = self._load_config()
-        self._history: set[str] = self._load_history()
+        # Centralizar config y historial via UIController
+        self._ui_controller = UIController(base_dir=_BASE)
         self._manager = DownloadManager()
-        self._manager.start(self._config["max_workers"])
+        self._manager.start(self._ui_controller.get_config_value("max_workers"))
+
+        # Tema
+        self._theme_manager = ThemeManager()
+        initial_theme = self._ui_controller.get_config_value("theme", "dark")
+        self._theme_manager.switch_theme(initial_theme)
+        self._set_appearance_mode(initial_theme)
 
         self._build_ui()
         self._apply_config_to_ui()
@@ -178,11 +169,8 @@ class MainWindow(ctk.CTk):
         )
         self._preset_lbl.grid(row=18, column=0, padx=18, pady=(0, 4), sticky="w")
 
-        # Status bar
-        self._status_bar = ctk.CTkLabel(
-            left, text="Listo.", anchor="w",
-            font=ctk.CTkFont(size=11), text_color="#9ca3af",
-        )
+        # Status bar mejorado
+        self._status_bar = StatusBar(left)
         self._status_bar.grid(row=19, column=0, padx=18, pady=(4, 18), sticky="ew")
 
         # ── Panel derecho ────────────────────────────────────────────── #
@@ -263,8 +251,8 @@ class MainWindow(ctk.CTk):
         downloader = SoundCloudHandler()
         self._sync_window = SyncWindow(
             tab_sync,
-            config_path=CONFIG_PATH,
-            download_folder=self._config.get("dest_folder", ""),
+            config_path=os.path.join(_BASE, "config.json"),
+            download_folder=self._ui_controller.get_config_value("dest_folder", ""),
             downloader=downloader,
             download_manager=self._manager,
             on_status_update=self._on_sc_status_update,
@@ -275,18 +263,18 @@ class MainWindow(ctk.CTk):
         self._install_log_handler()
 
     def _apply_config_to_ui(self):
-        self._dest_lbl.configure(text=_shorten(self._config.get("dest_folder", "")))
-        workers = int(self._config.get("max_workers", 3))
+        self._dest_lbl.configure(text=_shorten(self._ui_controller.get_config_value("dest_folder", "")))
+        workers = int(self._ui_controller.get_config_value("max_workers", 3))
         self._par_slider.set(workers)
         self._par_lbl.configure(text=str(workers))
         self._update_preset_label()
         # Si hay credenciales guardadas, abrir directamente en Sincronizar
-        sc = self._config.get("soundcloud", {})
+        sc = self._ui_controller.get_config_value("soundcloud", {})
         if sc.get("oauth_token") and sc.get("client_id"):
             self._tabs.set("Sincronizar")
 
     def _update_preset_label(self):
-        preset = get_preset(self._config.get("quality_preset", "mp3_320"))
+        preset = get_preset(self._ui_controller.get_config_value("quality_preset", "mp3_320"))
         self._preset_lbl.configure(text=f"Calidad: {preset['label']}")
 
     # ------------------------------------------------------------------ #
@@ -297,15 +285,15 @@ class MainWindow(ctk.CTk):
         text = self._url_box.get("1.0", "end")
         urls = parse_urls_from_text(text)
         if not urls:
-            self._set_status("No se encontraron URLs validas de YouTube o SoundCloud.")
+            self._status_bar.set_text("No se encontraron URLs validas de YouTube o SoundCloud.")
             return
 
         new_urls = [u for u in urls if not self._track_list.get_row(u)]
         if not new_urls:
-            self._set_status("Todos los enlaces ya estan en la lista.")
+            self._status_bar.set_text("Todos los enlaces ya estan en la lista.")
             return
 
-        self._set_status(f"Procesando {len(new_urls)} enlace(s)...")
+        self._status_bar.set_text(f"Procesando {len(new_urls)} enlace(s)...")
         for url in new_urls:
             placeholder = TrackInfo(url=url, title="Cargando...", platform=detect_platform_name(url))
             self._track_list.add_track(placeholder)
@@ -357,7 +345,7 @@ class MainWindow(ctk.CTk):
             self._ask_nested_playlist(original_url, first)
 
         total = len(self._track_list.get_all())
-        self._set_status(f"{total} track(s) en la lista.")
+        self._status_bar.set_text(f"{total} track(s) en la lista.")
 
     def _ask_nested_playlist(self, video_url: str, first_meta):
         """Pregunta al usuario si quiere agregar toda la playlist ademas del video."""
@@ -394,25 +382,23 @@ class MainWindow(ctk.CTk):
         for meta in tracks:
             if not self._track_list.get_row(meta.url):
                 self._track_list.add_track(TrackInfo.from_metadata(meta))
-        self._set_status(f"{len(self._track_list.get_all())} track(s) en la lista.")
+        self._status_bar.set_text(f"{len(self._track_list.get_all())} track(s) en la lista.")
 
     def _on_browse(self):
         folder = filedialog.askdirectory(
-            initialdir=self._config.get("dest_folder", ""),
+            initialdir=self._ui_controller.get_config_value("dest_folder", ""),
             title="Seleccionar carpeta de destino",
         )
         if folder:
-            self._config["dest_folder"] = folder
+            self._ui_controller.set_config_value("dest_folder", folder)
             self._dest_lbl.configure(text=_shorten(folder))
             self._sync_window.download_folder = folder
-            self._save_config()
 
     def _on_parallel_change(self, value: float):
         n = int(value)
         self._par_lbl.configure(text=str(n))
-        self._config["max_workers"] = n
+        self._ui_controller.set_config_value("max_workers", n)
         self._manager.set_max_workers(n)
-        self._save_config()
 
     def _on_single_download(self, track: TrackInfo):
         self._start_downloads([track])
@@ -424,31 +410,30 @@ class MainWindow(ctk.CTk):
     def _on_pause_resume(self):
         if self._manager.is_paused:
             self._manager.resume_all()
-            self._set_status("Descargas reanudadas.")
+            self._status_bar.mark_downloading()
             self._activity_panel.log("▶ Descargas reanudadas")
         else:
             self._manager.pause_all()
-            self._set_status("Descargas pausadas.")
+            self._status_bar.mark_paused()
             self._activity_panel.log("⏸ Descargas pausadas")
 
     def _on_cancel_all(self):
         self._manager.cancel_all()
-        self._set_status("Cancelando todas las descargas...")
+        self._status_bar.mark_idle()
         self._activity_panel.log("⊗ Cancelando todas las descargas...")
 
     def _on_settings(self):
-        dlg = SettingsDialog(self, self._config)
+        config_dict = self._ui_controller.get_config()
+        dlg = SettingsDialog(self, config_dict)
         self.wait_window(dlg)
-        self._save_config()
         self._update_preset_label()
-        self._manager.start(self._config.get("max_workers", 3))
+        self._manager.start(self._ui_controller.get_config_value("max_workers", 3))
 
     def _on_close(self):
         self._manager.cancel_all()
         self._manager.shutdown()
         if self._sync_window.scheduler:
             self._sync_window.scheduler.stop()
-        self._save_config()
         self.destroy()
 
     # ------------------------------------------------------------------ #
@@ -461,15 +446,15 @@ class MainWindow(ctk.CTk):
             if t.status not in (STATUS_DOWNLOADING, STATUS_FETCHING, STATUS_DONE, STATUS_SKIP)
         ]
         if not eligible:
-            self._set_status("Ningun track pendiente para descargar.")
+            self._status_bar.set_text("Ningun track pendiente para descargar.")
             return
 
-        dest = self._config.get("dest_folder", "")
+        dest = self._ui_controller.get_config_value("dest_folder", "")
         if not dest:
-            self._set_status("Selecciona una carpeta de destino primero.")
+            self._status_bar.set_text("Selecciona una carpeta de destino primero.")
             return
 
-        self._set_status(f"Iniciando {len(eligible)} descarga(s)...")
+        self._status_bar.set_text(f"Iniciando {len(eligible)} descarga(s)...")
         self._activity_panel.log(f"→ Iniciando {len(eligible)} descarga(s)...")
         for track in eligible:
             self._submit_one(track, dest)
@@ -482,12 +467,12 @@ class MainWindow(ctk.CTk):
             self._track_list.update_status(url, STATUS_ERROR, str(exc)[:80])
             return
 
-        preset = get_preset(self._config.get("quality_preset", "mp3_320"))
+        preset = get_preset(self._ui_controller.get_config_value("quality_preset", "mp3_320"))
         post_config = {
-            "normalize_volume": self._config.get("normalize_volume", False),
-            "remove_silence": self._config.get("remove_silence", False),
-            "embed_artwork": self._config.get("embed_artwork", True),
-            "embed_metadata": self._config.get("embed_metadata", True),
+            "normalize_volume": self._ui_controller.get_config_value("normalize_volume", False),
+            "remove_silence": self._ui_controller.get_config_value("remove_silence", False),
+            "embed_artwork": self._ui_controller.get_config_value("embed_artwork", True),
+            "embed_metadata": self._ui_controller.get_config_value("embed_metadata", True),
         }
 
         def on_progress(v: float):
@@ -511,15 +496,15 @@ class MainWindow(ctk.CTk):
             track=track,
             handler=handler,
             dest_folder=dest_folder,
-            filename_pattern=self._config.get("filename_pattern", "{artist} - {title}"),
-            subfolder_by_artist=self._config.get("subfolder_by_artist", False),
+            filename_pattern=self._ui_controller.get_config_value("filename_pattern", "{artist} - {title}"),
+            subfolder_by_artist=self._ui_controller.get_config_value("subfolder_by_artist", False),
             quality_preset=preset,
             post_config=post_config,
-            delay=float(self._config.get("delay", 0.5)),
+            delay=float(self._ui_controller.get_config_value("delay", 0.5)),
             on_progress=on_progress,
             on_status=on_status,
-            oauth_token=(self._config.get("soundcloud", {}).get("oauth_token", "")
-                         or self._config.get("oauth_token", "")),
+            oauth_token=(self._ui_controller.get_config_value("soundcloud", {}).get("oauth_token", "")
+                         or self._ui_controller.get_config_value("oauth_token", "")),
         )
 
     def _handle_status(self, url: str, status: str, error_msg: str):
@@ -527,9 +512,8 @@ class MainWindow(ctk.CTk):
 
         if status == STATUS_DONE:
             row = self._track_list.get_row(url)
-            if row and row.track.track_id:
-                self._history.add(row.track.track_id)
-                self._save_history()
+            if row:
+                self._ui_controller.record_download(row.track)
 
         if status in (STATUS_DONE, STATUS_ERROR):
             self._refresh_status_bar()
@@ -542,58 +526,8 @@ class MainWindow(ctk.CTk):
         parts = [f"Completados: {done}/{total}"]
         if errors:
             parts.append(f"Errores: {errors}")
-        self._set_status("  |  ".join(parts))
+        self._status_bar.set_text("  |  ".join(parts))
 
-    # ------------------------------------------------------------------ #
-    # Config y persistencia                                                #
-    # ------------------------------------------------------------------ #
-
-    def _load_config(self) -> dict:
-        if os.path.exists(CONFIG_PATH):
-            try:
-                with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                    return {**_DEFAULT_CONFIG, **json.load(f)}
-            except Exception:
-                pass
-        return dict(_DEFAULT_CONFIG)
-
-    def _save_config(self):
-        try:
-            # Preservar la sección soundcloud que maneja SyncWindow
-            config_to_save = self._config.copy()
-
-            # Si existe un config.json actual, preservar su sección soundcloud
-            if os.path.exists(CONFIG_PATH):
-                try:
-                    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                        existing = json.load(f)
-                        if "soundcloud" in existing:
-                            config_to_save["soundcloud"] = existing["soundcloud"]
-                        if "duplicate_checker" in existing:
-                            config_to_save["duplicate_checker"] = existing["duplicate_checker"]
-                except Exception:
-                    pass
-
-            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-                json.dump(config_to_save, f, indent=2, ensure_ascii=False)
-        except Exception as exc:
-            logger.warning("No se pudo guardar config: %s", exc)
-
-    def _load_history(self) -> set[str]:
-        if os.path.exists(HISTORY_PATH):
-            try:
-                with open(HISTORY_PATH, "r", encoding="utf-8") as f:
-                    return set(json.load(f))
-            except Exception:
-                pass
-        return set()
-
-    def _save_history(self):
-        try:
-            with open(HISTORY_PATH, "w", encoding="utf-8") as f:
-                json.dump(list(self._history), f, ensure_ascii=False)
-        except Exception as exc:
-            logger.warning("No se pudo guardar historial: %s", exc)
 
     # ------------------------------------------------------------------ #
     # Helpers UI                                                           #
@@ -605,9 +539,6 @@ class MainWindow(ctk.CTk):
             text=f"● {user_info['username']}  |  {user_info['likes_count']} likes",
             text_color="#4ade80",
         )
-
-    def _set_status(self, msg: str):
-        self._status_bar.configure(text=msg)
 
     def _install_log_handler(self):
         handler = _TextboxLogHandler(self._log_box, self)

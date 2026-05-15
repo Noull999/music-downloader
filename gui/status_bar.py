@@ -115,3 +115,7 @@ class StatusBar(ctk.CTkFrame):
     def mark_error(self, msg: str = "Error"):
         """Marca como "error"."""
         self.set_download_status(f"❌ {msg}", "#ef4444")
+
+    def set_text(self, text: str, color: str = "#9ca3af"):
+        """Establece texto personalizado en el status bar."""
+        self.set_download_status(text, color)
