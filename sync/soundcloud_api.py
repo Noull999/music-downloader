@@ -112,7 +112,10 @@ class SoundCloudAPIClient:
             "username": data.get("username", "Unknown"),
             "full_name": data.get("full_name", ""),
             "followers_count": data.get("followers_count", 0),
-            "likes_count": data.get("public_likes_count", 0),
+            "likes_count": next(
+                (data[k] for k in ("public_favorites_count", "public_likes_count", "likes_count") if k in data),
+                0
+            ),
         }
 
         logger.info(
