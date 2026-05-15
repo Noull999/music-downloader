@@ -132,6 +132,46 @@ class DownloadHistory:
             except sqlite3.Error as e:
                 logger.error(f"Error registrando descarga: {e}")
 
+    def mark_like_downloaded(
+        self,
+        url: str,
+        title: str,
+        artist: str,
+        track_id: int = None,
+        duration_ms: int = None,
+        artwork_url: str = None,
+        genre: str = None,
+        created_at: str = None
+    ):
+        """
+        Registra una canción de SoundCloud Likes cuando es descargada.
+        Añade a soundcloud_likes si no existe.
+
+        Args:
+            url: URL de SoundCloud
+            title: Título de la canción
+            artist: Nombre del artista
+            track_id: ID del track en SoundCloud
+            duration_ms: Duración en milisegundos
+            artwork_url: URL de la portada
+            genre: Género
+            created_at: Fecha de creación
+        """
+        with self.lock:
+            try:
+                self.conn.execute(
+                    """
+                    INSERT OR IGNORE INTO soundcloud_likes
+                    (id, url, title, artist, duration_ms, artwork_url, genre, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (track_id, url, title, artist, duration_ms, artwork_url, genre, created_at)
+                )
+                self.conn.commit()
+                logger.debug(f"✓ Registrada en soundcloud_likes: {artist} - {title}")
+            except sqlite3.Error as e:
+                logger.error(f"Error registrando en soundcloud_likes: {e}")
+
     def log_sync(self, new: int, skipped: int, errors: int):
         """
         Registra un evento de sincronización.

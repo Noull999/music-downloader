@@ -27,7 +27,7 @@ class SyncWindow(ctk.CTkFrame):
     """
 
     def __init__(self, master, config_path: str, download_folder: str, downloader,
-                 download_manager=None, on_status_update=None):
+                 download_manager=None, on_status_update=None, activity_panel=None):
         """
         Args:
             master: Frame padre (tab en tabview)
@@ -36,6 +36,7 @@ class SyncWindow(ctk.CTkFrame):
             downloader: Handler de SoundCloud
             download_manager: DownloadManager compartido con MainWindow
             on_status_update: Callback(user_info) llamado tras verificar credenciales
+            activity_panel: ActivityPanel para logging en tiempo real
         """
         super().__init__(master, corner_radius=0, fg_color="transparent")
         self.grid_rowconfigure(0, weight=1)
@@ -46,6 +47,7 @@ class SyncWindow(ctk.CTkFrame):
         self.downloader = downloader
         self._download_manager = download_manager
         self._on_status_update = on_status_update
+        self._activity_panel = activity_panel
 
         # State
         self.manager: SyncManager | None = None
@@ -69,7 +71,7 @@ class SyncWindow(ctk.CTkFrame):
         self._build_credentials_panel(parent)
 
         # ── Separador ──────────────────────────────────────────────── #
-        ctk.CTkFrame(parent, height=1, fg_color="#374151").grid(
+        ctk.CTkFrame(parent, height=1, fg_color="#2d2d2d").grid(
             row=1, column=0, sticky="ew", padx=16, pady=12
         )
 
@@ -77,7 +79,7 @@ class SyncWindow(ctk.CTkFrame):
         self._build_folder_panel(parent)
 
         # ── Separador ──────────────────────────────────────────────── #
-        ctk.CTkFrame(parent, height=1, fg_color="#374151").grid(
+        ctk.CTkFrame(parent, height=1, fg_color="#2d2d2d").grid(
             row=3, column=0, sticky="ew", padx=16, pady=12
         )
 
@@ -85,7 +87,7 @@ class SyncWindow(ctk.CTkFrame):
         self._build_autosync_panel(parent)
 
         # ── Separador ──────────────────────────────────────────────── #
-        ctk.CTkFrame(parent, height=1, fg_color="#374151").grid(
+        ctk.CTkFrame(parent, height=1, fg_color="#2d2d2d").grid(
             row=5, column=0, sticky="ew", padx=16, pady=12
         )
 
@@ -93,16 +95,8 @@ class SyncWindow(ctk.CTkFrame):
         self._build_progress_panel(parent)
 
         # ── Separador ──────────────────────────────────────────────── #
-        ctk.CTkFrame(parent, height=1, fg_color="#374151").grid(
+        ctk.CTkFrame(parent, height=1, fg_color="#2d2d2d").grid(
             row=7, column=0, sticky="ew", padx=16, pady=12
-        )
-
-        # ── Panel 5: Opciones Avanzadas ────────────────────────────── #
-        self._build_advanced_panel(parent)
-
-        # ── Separador ──────────────────────────────────────────────── #
-        ctk.CTkFrame(parent, height=1, fg_color="#374151").grid(
-            row=9, column=0, sticky="ew", padx=16, pady=12
         )
 
         # ── Panel 6: Stats ────────────────────────────────────────── #
@@ -293,8 +287,8 @@ class SyncWindow(ctk.CTkFrame):
             btn_row,
             values=["10", "20", "30", "40", "50"],
             width=70, height=28,
-            fg_color="#374151", button_color="#4b5563",
-            button_hover_color="#374151",
+            fg_color="#2d2d2d", button_color="#4b5563",
+            button_hover_color="#2d2d2d",
         )
         self._recent_count_menu.set("10")
         self._recent_count_menu.pack(side="left", padx=(0, 4))
@@ -312,60 +306,14 @@ class SyncWindow(ctk.CTkFrame):
             state="disabled",
             command=self._on_sync_stop
         )
-        self._sync_stop_btn.pack(side="left")
+        self._sync_stop_btn.pack(side="left", padx=(0, 8))
 
-    def _build_advanced_panel(self, parent):
-        """Panel de opciones avanzadas."""
-        container = ctk.CTkFrame(parent, fg_color="transparent")
-        container.grid(row=8, column=0, sticky="ew", padx=16, pady=12)
-        for i in range(4):
-            container.grid_columnconfigure(i, weight=1)
-
-        ctk.CTkLabel(
-            container, text="Opciones Avanzadas",
-            font=ctk.CTkFont(size=13, weight="bold")
-        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
-
-        # Botón principal de likes
-        preview_btn = ctk.CTkButton(
-            container, text="Ver mis Likes",
+        self._preview_btn = ctk.CTkButton(
+            btn_row, text="Ver mis Likes",
             fg_color="#8b5cf6", hover_color="#7c3aed",
             command=self._on_show_likes_preview
         )
-        preview_btn.grid(row=1, column=0, sticky="ew", padx=(0, 8))
-
-        # Reparar historial local
-        sync_files_btn = ctk.CTkButton(
-            container, text="🔧 Reparar historial",
-            fg_color="#06b6d4", hover_color="#0891b2",
-            command=self._on_sync_filesystem
-        )
-        sync_files_btn.grid(row=1, column=1, sticky="ew", padx=(0, 8))
-
-        # Solo explorar sin descargar
-        self._scan_only_btn = ctk.CTkButton(
-            container, text="Solo explorar (sin descargar)",
-            fg_color="#7c3aed", hover_color="#6d28d9",
-            command=self._on_scan_only
-        )
-        self._scan_only_btn.grid(row=1, column=2, sticky="ew", padx=(0, 8))
-
-        # Descargar desde posición específica
-        ctk.CTkLabel(container, text="Desde posición:").grid(
-            row=2, column=1, sticky="e", padx=(0, 8)
-        )
-        self._start_index_entry = ctk.CTkEntry(
-            container, placeholder_text="0 = primera, 50 = desde la 51ra..."
-        )
-        self._start_index_entry.insert(0, "0")
-        self._start_index_entry.grid(row=2, column=2, sticky="ew", padx=(0, 8))
-
-        self._sync_from_index_btn = ctk.CTkButton(
-            container, text="Descargar desde posición",
-            fg_color="#7c3aed", hover_color="#6d28d9",
-            command=self._on_sync_from_index
-        )
-        self._sync_from_index_btn.grid(row=2, column=0, sticky="ew", padx=(0, 8))
+        self._preview_btn.pack(side="left")
 
     def _build_stats_panel(self, parent):
         """Panel de estadísticas."""
@@ -587,74 +535,6 @@ class SyncWindow(ctk.CTkFrame):
             self.manager.stop()
             self._sync_stop_btn.configure(state="disabled")
 
-    def _on_scan_only(self):
-        """Solo verifica duplicados sin descargar."""
-        if not self.manager:
-            messagebox.showerror("Error", "Verifica tus credenciales primero")
-            return
-
-        self._scan_only_btn.configure(state="disabled")
-        self._sync_stop_btn.configure(state="normal")
-
-        def scan():
-            results = self.manager.scan_only(
-                progress_callback=self._on_sync_progress
-            )
-            self.after(0, lambda: self._on_scan_complete(results))
-
-        threading.Thread(target=scan, daemon=True).start()
-
-    def _on_scan_complete(self, results):
-        """Verificación completada."""
-        self._progress.set(1.0)
-        self._progress_msg.configure(
-            text=f"✓ Verificación: {results['new']} nuevas, {results['skipped']} ya tienes"
-        )
-        self._scan_only_btn.configure(state="normal")
-        self._sync_stop_btn.configure(state="disabled")
-
-        msg = (f"Verificación completada\n\n"
-               f"Nuevas para descargar: {results['new']}\n"
-               f"Ya tienes: {results['skipped']}")
-
-        if results['duplicates']:
-            dup_list = "\n".join([f"• {t.artist} - {t.title}"
-                                  for t, _ in results['duplicates'][:5]])
-            if len(results['duplicates']) > 5:
-                dup_list += f"\n• ... y {len(results['duplicates']) - 5} más"
-            msg += f"\n\nDuplicados encontrados:\n{dup_list}"
-
-        messagebox.showinfo("Verificación", msg)
-
-    def _on_sync_from_index(self):
-        """Descarga desde un índice específico."""
-        if not self.manager:
-            messagebox.showerror("Error", "Verifica tus credenciales primero")
-            return
-
-        try:
-            start_index = int(self._start_index_entry.get())
-        except ValueError:
-            messagebox.showerror("Error", "Índice debe ser un número")
-            return
-
-        if start_index < 0:
-            messagebox.showerror("Error", "Índice no puede ser negativo")
-            return
-
-        self._sync_from_index_btn.configure(state="disabled")
-        self._sync_now_btn.configure(state="disabled")
-        self._sync_stop_btn.configure(state="normal")
-
-        def sync():
-            results = self.manager.sync_from_index(
-                start_index=start_index,
-                progress_callback=self._on_sync_progress
-            )
-            self.after(0, lambda: self._on_sync_complete_manual(results))
-
-        threading.Thread(target=sync, daemon=True).start()
-
     def _on_sync_progress(self, pct: int, msg: str):
         """Actualiza barra de progreso."""
         self.after(0, lambda: self._progress.set(pct / 100))
@@ -671,20 +551,18 @@ class SyncWindow(ctk.CTkFrame):
         self._sync_now_btn.configure(state="normal")
         self._sync_recent_btn.configure(state="normal")
         self._recent_count_menu.configure(state="normal")
-        self._sync_from_index_btn.configure(state="normal")
-        self._scan_only_btn.configure(state="normal")
         self._sync_stop_btn.configure(state="disabled")
 
         self._refresh_stats()
 
-        if results['new'] > 0:
-            messagebox.showinfo(
-                "Exito",
-                f"Sincronizacion completada!\n\n"
-                f"Descargadas: {results['new']}\n"
-                f"Omitidas: {results['skipped']}\n"
-                f"Errores: {results['errors']}"
-            )
+        # Only show popup if there's something to report
+        if results['new'] > 0 or results['errors'] > 0:
+            msg = "Sincronizacion completada!\n\n"
+            msg += f"✓ Descargadas: {results['new']}\n"
+            msg += f"⊘ Omitidas (duplicadas): {results['skipped']}\n"
+            if results['errors'] > 0:
+                msg += f"✗ Errores: {results['errors']}"
+            messagebox.showinfo("Exito", msg)
 
     def _on_scheduler_start(self):
         """Scheduler inició sincronización."""
@@ -719,35 +597,6 @@ class SyncWindow(ctk.CTkFrame):
             config=self._config,
         )
         preview_panel.pack(fill="both", expand=True)
-
-    def _on_sync_filesystem(self):
-        """Sincroniza archivos del filesystem con la base de datos."""
-        if not self.manager:
-            messagebox.showerror("Error", "Verifica tus credenciales primero")
-            return
-
-        def sync():
-            try:
-                results = self.manager.sync_filesystem_to_db()
-                self.after(0, lambda: self._on_sync_filesystem_complete(results))
-            except Exception as e:
-                self.after(0, lambda: messagebox.showerror("Error", str(e)))
-
-        messagebox.showinfo(
-            "Sincronizando",
-            "Escaneando archivos locales...\nEsto puede tomar un momento."
-        )
-        threading.Thread(target=sync, daemon=True).start()
-
-    def _on_sync_filesystem_complete(self, results):
-        """Muestra resultado de sincronización de filesystem."""
-        msg = (
-            f"✓ Sincronización completada\n\n"
-            f"Archivos agregados: {results['added']}\n"
-            f"Archivos ya rastreados: {results['already_tracked']}\n"
-            f"Total encontrado: {results['total_found']}"
-        )
-        messagebox.showinfo("Sync Filesystem", msg)
 
     def _show_help(self):
         """Muestra ayuda sobre cómo obtener credenciales."""
@@ -789,13 +638,18 @@ ADVERTENCIA:
         threshold = self._config.get("duplicate_checker", {}).get("similarity_threshold", 85)
 
         try:
+            activity_log_callback = None
+            if self._activity_panel:
+                activity_log_callback = self._activity_panel.log
+
             self.manager = SyncManager(
                 oauth, client_id,
                 self.download_folder,
                 self.downloader,
                 similarity_threshold=threshold,
                 filename_pattern=self._config.get("filename_pattern", "{artist} - {title}"),
-                subfolder_by_artist=self._config.get("subfolder_by_artist", False)
+                subfolder_by_artist=self._config.get("subfolder_by_artist", False),
+                activity_log_callback=activity_log_callback
             )
             # Validar credenciales en el nuevo client para obtener user_id
             self.manager.validate_credentials()

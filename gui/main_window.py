@@ -11,6 +11,7 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from download_manager import DownloadManager
+from gui.activity_panel import ActivityPanel
 from gui.settings import SettingsDialog
 from gui.track_list import TrackListFrame
 from gui.sync_window import SyncWindow
@@ -47,6 +48,8 @@ class MainWindow(ctk.CTk):
         self.title("Music Downloader — YouTube & SoundCloud")
         self.geometry("1150x720")
         self.minsize(820, 560)
+        self._set_appearance_mode("dark")
+        self._appearance_mode = "dark"
 
         self._config = self._load_config()
         self._history: set[str] = self._load_history()
@@ -66,7 +69,7 @@ class MainWindow(ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
 
         # ── Panel izquierdo ──────────────────────────────────────────── #
-        left = ctk.CTkFrame(self, width=300, corner_radius=0)
+        left = ctk.CTkFrame(self, width=300, corner_radius=0, fg_color="#0a0a0a")
         left.grid(row=0, column=0, sticky="nsew")
         left.grid_propagate(False)
         left.grid_columnconfigure(0, weight=1)
@@ -83,7 +86,7 @@ class MainWindow(ctk.CTk):
         ).grid(row=1, column=0, padx=18, pady=(0, 10), sticky="w")
 
         # ── Tarjeta SoundCloud (función principal) ───────────────────── #
-        sc_card = ctk.CTkFrame(left, fg_color="#1f2937", corner_radius=8)
+        sc_card = ctk.CTkFrame(left, fg_color="#1a1a1a", corner_radius=8)
         sc_card.grid(row=2, column=0, padx=14, pady=(0, 6), sticky="ew")
         sc_card.grid_columnconfigure(0, weight=1)
 
@@ -122,40 +125,30 @@ class MainWindow(ctk.CTk):
         ctk.CTkButton(
             sc_btns, text="Ver mis Likes",
             height=28, font=ctk.CTkFont(size=10),
-            fg_color="#8b5cf6", hover_color="#7c3aed",
+            fg_color="#dc2626", hover_color="#b91c1c",
             command=lambda: self._sync_window._on_show_likes_preview(),
         ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
 
         # Separador
-        ctk.CTkFrame(left, height=1, fg_color="#374151").grid(
+        ctk.CTkFrame(left, height=1, fg_color="#2d2d2d").grid(
             row=3, column=0, padx=14, pady=8, sticky="ew"
         )
 
-        # ── Descargar por link (función secundaria) ──────────────────── #
-        ctk.CTkLabel(
-            left, text="Descargar por link:",
-            font=ctk.CTkFont(size=11), text_color="#9ca3af",
-        ).grid(row=4, column=0, padx=18, pady=(0, 2), sticky="w")
-
-        self._url_box = ctk.CTkTextbox(left, height=120)
-        self._url_box.grid(row=5, column=0, padx=18, pady=(0, 8), sticky="ew")
-
-        ctk.CTkButton(
-            left, text="Procesar enlaces",
-            command=self._on_process_urls,
-        ).grid(row=6, column=0, padx=18, pady=(0, 4), sticky="ew")
+        # ── Panel de actividad (real-time downloads) ──────────────────── #
+        self._activity_panel = ActivityPanel(left, height=180)
+        self._activity_panel.grid(row=4, column=0, padx=14, pady=(0, 8), sticky="ew")
 
         # Separador
-        ctk.CTkFrame(left, height=1, fg_color="#374151").grid(
-            row=7, column=0, padx=14, pady=8, sticky="ew"
+        ctk.CTkFrame(left, height=1, fg_color="#2d2d2d").grid(
+            row=5, column=0, padx=14, pady=8, sticky="ew"
         )
 
         # Carpeta destino
         ctk.CTkLabel(left, text="Carpeta de destino:").grid(
-            row=8, column=0, padx=18, pady=(0, 2), sticky="w"
+            row=6, column=0, padx=18, pady=(0, 2), sticky="w"
         )
         dest_row = ctk.CTkFrame(left, fg_color="transparent")
-        dest_row.grid(row=9, column=0, padx=18, pady=(0, 8), sticky="ew")
+        dest_row.grid(row=7, column=0, padx=18, pady=(0, 8), sticky="ew")
         dest_row.grid_columnconfigure(0, weight=1)
 
         self._dest_lbl = ctk.CTkLabel(
@@ -168,46 +161,8 @@ class MainWindow(ctk.CTk):
             command=self._on_browse,
         ).grid(row=0, column=1, padx=(6, 0))
 
-        # Descargas paralelas
-        ctk.CTkLabel(left, text="Descargas en paralelo:").grid(
-            row=10, column=0, padx=18, pady=(0, 2), sticky="w"
-        )
-        par_row = ctk.CTkFrame(left, fg_color="transparent")
-        par_row.grid(row=11, column=0, padx=18, pady=(0, 10), sticky="ew")
-        par_row.grid_columnconfigure(0, weight=1)
 
-        self._par_lbl = ctk.CTkLabel(par_row, text="3", width=24)
-        self._par_lbl.grid(row=0, column=1, padx=(6, 0))
-        self._par_slider = ctk.CTkSlider(
-            par_row, from_=1, to=10, number_of_steps=9,
-            command=self._on_parallel_change,
-        )
-        self._par_slider.grid(row=0, column=0, sticky="ew")
-
-        # Botones de accion
-        actions = [
-            ("Descargar todo",         "#2563eb", "#1d4ed8", self._on_download_all),
-            ("Descargar seleccionados","#374151", "#4b5563", self._on_download_selected),
-        ]
-        for r, (label, fg, hv, cmd) in enumerate(actions, start=12):
-            ctk.CTkButton(
-                left, text=label, fg_color=fg, hover_color=hv, command=cmd,
-            ).grid(row=r, column=0, padx=18, pady=3, sticky="ew")
-
-        self._pause_btn = ctk.CTkButton(
-            left, text="Pausar",
-            fg_color="#374151", hover_color="#4b5563",
-            command=self._on_pause_resume,
-        )
-        self._pause_btn.grid(row=14, column=0, padx=18, pady=3, sticky="ew")
-
-        ctk.CTkButton(
-            left, text="Cancelar todo",
-            fg_color="#7f1d1d", hover_color="#991b1b",
-            command=self._on_cancel_all,
-        ).grid(row=15, column=0, padx=18, pady=3, sticky="ew")
-
-        ctk.CTkFrame(left, height=1, fg_color="#374151").grid(
+        ctk.CTkFrame(left, height=1, fg_color="#2d2d2d").grid(
             row=16, column=0, padx=14, pady=10, sticky="ew"
         )
 
@@ -231,7 +186,7 @@ class MainWindow(ctk.CTk):
         self._status_bar.grid(row=19, column=0, padx=18, pady=(4, 18), sticky="ew")
 
         # ── Panel derecho ────────────────────────────────────────────── #
-        right = ctk.CTkFrame(self, corner_radius=0)
+        right = ctk.CTkFrame(self, corner_radius=0, fg_color="#0f0f0f")
         right.grid(row=0, column=1, sticky="nsew")
         right.grid_rowconfigure(0, weight=1)
         right.grid_columnconfigure(0, weight=1)
@@ -241,16 +196,58 @@ class MainWindow(ctk.CTk):
         self._tabs.grid_rowconfigure(0, weight=1)
 
         tab_dl = self._tabs.add("Descargas")
-        tab_dl.grid_rowconfigure(0, weight=1)
+        tab_dl.grid_rowconfigure(1, weight=1)
         tab_dl.grid_columnconfigure(0, weight=1)
 
+        # ── URL Input Section ────────────────────────────────────────── #
+        url_section = ctk.CTkFrame(tab_dl, fg_color="transparent")
+        url_section.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
+        url_section.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            url_section, text="Descargar por link:",
+            font=ctk.CTkFont(size=11, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", pady=(0, 6))
+
+        self._url_box = ctk.CTkTextbox(url_section, height=80)
+        self._url_box.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+
+        btn_row = ctk.CTkFrame(url_section, fg_color="transparent")
+        btn_row.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        btn_row.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkButton(
+            btn_row, text="Procesar enlaces",
+            command=self._on_process_urls,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+        # Descargas en paralelo
+        par_frame = ctk.CTkFrame(btn_row, fg_color="transparent")
+        par_frame.grid(row=0, column=1, sticky="ew")
+        par_frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            par_frame, text="Paralelo:",
+            font=ctk.CTkFont(size=9),
+        ).grid(row=0, column=0, sticky="e", padx=(0, 4))
+
+        self._par_lbl = ctk.CTkLabel(par_frame, text="3", width=20, font=ctk.CTkFont(size=9))
+        self._par_lbl.grid(row=0, column=2, padx=(4, 0))
+
+        self._par_slider = ctk.CTkSlider(
+            par_frame, from_=1, to=10, number_of_steps=9,
+            command=self._on_parallel_change, height=20,
+        )
+        self._par_slider.grid(row=0, column=1, sticky="ew", padx=4, ipadx=30)
+
+        # ── Track List ───────────────────────────────────────────────── #
         self._track_list = TrackListFrame(
             tab_dl,
             on_download=self._on_single_download,
             on_cancel=self._on_single_cancel,
             fg_color="transparent",
         )
-        self._track_list.grid(row=0, column=0, sticky="nsew")
+        self._track_list.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
 
         tab_log = self._tabs.add("Logs")
         tab_log.grid_rowconfigure(0, weight=1)
@@ -271,6 +268,7 @@ class MainWindow(ctk.CTk):
             downloader=downloader,
             download_manager=self._manager,
             on_status_update=self._on_sc_status_update,
+            activity_panel=self._activity_panel,
         )
         self._sync_window.grid(row=0, column=0, sticky="nsew")
 
@@ -416,35 +414,27 @@ class MainWindow(ctk.CTk):
         self._manager.set_max_workers(n)
         self._save_config()
 
-    def _on_download_all(self):
-        self._start_downloads(self._track_list.get_all())
-
-    def _on_download_selected(self):
-        selected = self._track_list.get_selected()
-        if not selected:
-            self._set_status("No hay tracks seleccionados.")
-            return
-        self._start_downloads(selected)
-
     def _on_single_download(self, track: TrackInfo):
         self._start_downloads([track])
 
     def _on_single_cancel(self, track: TrackInfo):
         self._manager.cancel_track(track.url)
+        self._activity_panel.log(f"⊗ Cancelado: {track.title[:50]}")
 
     def _on_pause_resume(self):
         if self._manager.is_paused:
             self._manager.resume_all()
-            self._pause_btn.configure(text="Pausar")
             self._set_status("Descargas reanudadas.")
+            self._activity_panel.log("▶ Descargas reanudadas")
         else:
             self._manager.pause_all()
-            self._pause_btn.configure(text="Reanudar")
             self._set_status("Descargas pausadas.")
+            self._activity_panel.log("⏸ Descargas pausadas")
 
     def _on_cancel_all(self):
         self._manager.cancel_all()
         self._set_status("Cancelando todas las descargas...")
+        self._activity_panel.log("⊗ Cancelando todas las descargas...")
 
     def _on_settings(self):
         dlg = SettingsDialog(self, self._config)
@@ -480,6 +470,7 @@ class MainWindow(ctk.CTk):
             return
 
         self._set_status(f"Iniciando {len(eligible)} descarga(s)...")
+        self._activity_panel.log(f"→ Iniciando {len(eligible)} descarga(s)...")
         for track in eligible:
             self._submit_one(track, dest)
 
@@ -503,7 +494,18 @@ class MainWindow(ctk.CTk):
             self.after(0, lambda: self._track_list.update_progress(url, v))
 
         def on_status(status: str, err: str):
-            self.after(0, lambda s=status, e=err: self._handle_status(url, s, e))
+            def log_status():
+                self._handle_status(url, status, err)
+                title = track.title if track.title != "Cargando..." else url.split("/")[-1]
+                status_emoji = {
+                    STATUS_DOWNLOADING: "⬇",
+                    STATUS_DONE: "✓",
+                    STATUS_ERROR: "✗",
+                    STATUS_SKIP: "⊘",
+                    STATUS_FETCHING: "🔍",
+                }.get(status, "•")
+                self._activity_panel.log(f"{status_emoji} {title[:50]}")
+            self.after(0, log_status)
 
         self._manager.submit_download(
             track=track,
