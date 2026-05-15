@@ -2,21 +2,47 @@
 Interfaz abstracta común que todos los handlers de plataforma deben implementar.
 """
 import os
+import sys
+import shutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 
-_FFMPEG_CANDIDATES = [
-    r"C:\ffmpeg\ffmpeg-master-latest-win64-gpl\bin",
-    r"C:\ffmpeg\bin",
-]
+_FFMPEG_CANDIDATES = {
+    "win32": [
+        r"C:\ffmpeg\ffmpeg-master-latest-win64-gpl\bin",
+        r"C:\ffmpeg\bin",
+    ],
+    "darwin": [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/local/opt/ffmpeg/bin",
+    ],
+    "linux": [
+        "/usr/bin",
+        "/usr/local/bin",
+        "/usr/local/opt/ffmpeg/bin",
+    ]
+}
 
 
 def ffmpeg_location() -> str | None:
-    """Retorna la carpeta bin de ffmpeg si existe en una ruta conocida, sino None."""
-    for path in _FFMPEG_CANDIDATES:
-        if os.path.isfile(os.path.join(path, "ffmpeg.exe")):
+    """Retorna la carpeta bin de ffmpeg si existe en una ruta conocida, sino None.
+    Busca en rutas específicas por SO, con fallback a PATH del sistema."""
+    platform = sys.platform
+    candidates = _FFMPEG_CANDIDATES.get(platform, [])
+    ffmpeg_name = "ffmpeg.exe" if platform == "win32" else "ffmpeg"
+
+    # Buscar en rutas conocidas
+    for path in candidates:
+        if os.path.isfile(os.path.join(path, ffmpeg_name)):
             return path
+
+    # Fallback: buscar en PATH del sistema
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path:
+        return os.path.dirname(ffmpeg_path)
+
     return None
 
 

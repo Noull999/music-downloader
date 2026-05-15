@@ -8,6 +8,7 @@ import logging
 import os
 import subprocess
 import shutil
+import sys
 from typing import Optional
 
 from handlers.base_handler import ffmpeg_location
@@ -17,7 +18,10 @@ logger = logging.getLogger(__name__)
 
 def _ffmpeg_exe() -> str:
     loc = ffmpeg_location()
-    return os.path.join(loc, "ffmpeg.exe") if loc else "ffmpeg"
+    if not loc:
+        return "ffmpeg"
+    ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+    return os.path.join(loc, ffmpeg_name)
 
 
 class PostProcessor:
