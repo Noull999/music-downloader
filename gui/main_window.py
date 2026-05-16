@@ -400,11 +400,28 @@ class MainWindow(ctk.CTk):
         self.after(0, lambda: self._add_playlist_tracks(tracks))
 
     def _add_playlist_tracks(self, tracks):
-        for meta in tracks:
-            if not self._track_list.get_row(meta.url):
+        """Agrega filas por lotes para no bloquear el hilo principal."""
+        pending = [m for m in tracks if not self._track_list.get_row(m.url)]
+        if not pending:
+            return
+
+        def add_chunk(i=0):
+            if self._closing:
+                return
+            # Agregar 20 filas a la vez
+            chunk = pending[i:i + 20]
+            for meta in chunk:
                 self._track_list.add_track(TrackInfo.from_metadata(meta))
-        self._track_list.update()  # Forzar redibujado inmediato
-        self._status_bar.set_text(f"{len(self._track_list.get_all())} track(s) en la lista.")
+
+            # Si hay más, agenda el siguiente lote
+            if i + 20 < len(pending):
+                self.after(10, lambda: add_chunk(i + 20))
+            else:
+                self._status_bar.set_text(
+                    f"{len(self._track_list.get_all())} track(s) en la lista."
+                )
+
+        add_chunk()
 
     def _on_browse(self):
         folder = filedialog.askdirectory(
@@ -593,23 +610,27 @@ class MainWindow(ctk.CTk):
             return
 
         try:
-            logger.debug(f"_handle_status: {status} for {url}")
             self._track_list.update_status(url, status, error_msg)
 
             if status == STATUS_DONE:
                 try:
                     row = self._track_list.get_row(url)
                     if row:
-                        logger.debug(f"Recording download for {url}")
-                        self._ui_controller.record_download(row.track)
+                        thread = threading.Thread(
+                            target=self._ui_controller.record_download,
+                            args=(row.track,),
+                            daemon=True
+                        )
+                        thread.start()
                 except Exception as rec_exc:
                     logger.error(f"Error recording download: {rec_exc}", exc_info=True)
 
             if status in (STATUS_DONE, STATUS_ERROR):
-                try:
-                    self._refresh_status_bar()
-                except Exception as refresh_exc:
-                    logger.error(f"Error refreshing status bar: {refresh_exc}", exc_info=True)
+                thread = threading.Thread(
+                    target=self._refresh_status_bar,
+                    daemon=True
+                )
+                thread.start()
         except Exception as e:
             logger.exception(f"Error in _handle_status for {url}: {e}")
 

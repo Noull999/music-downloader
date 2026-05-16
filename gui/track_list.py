@@ -250,10 +250,6 @@ class TrackListFrame(ctk.CTkScrollableFrame):
         )
         self._rows[track.url] = row
         row.grid(row=len(self._rows) - 1, column=0, sticky="ew", padx=6, pady=4)
-        try:
-            row.update_idletasks()  # Forzar renderizado de la fila
-        except Exception:
-            pass
         return row
 
     def get_row(self, url: str) -> TrackRow | None:

@@ -150,6 +150,7 @@ class DownloadManager:
 
         folder = None
         base_name = None
+        last_progress = -0.1
 
         try:
             # Esperar si está en pausa
@@ -210,11 +211,14 @@ class DownloadManager:
                 return cancel_event.is_set()
 
             def progress_cb(v: float):
+                nonlocal last_progress
                 try:
-                    if not self._paused:
-                        on_progress(v)
+                    if v - last_progress >= 0.50 or v >= 0.99:
+                        if not self._paused:
+                            on_progress(v)
+                        last_progress = v
                 except Exception:
-                    pass  # silently ignore callback errors
+                    pass
 
             output_path = os.path.join(folder, base_name)
 
@@ -240,9 +244,7 @@ class DownloadManager:
                         "album": track.album,
                         "year": track.year,
                     }
-                    logger.debug("Iniciando post-procesado de: %s", downloaded)
                     pp.process(downloaded, metadata, track.thumbnail_url)
-                    logger.debug("Post-procesado completado")
                 except Exception as pp_exc:
                     logger.warning("Error en post-procesado: %s (continuando)", pp_exc)
 

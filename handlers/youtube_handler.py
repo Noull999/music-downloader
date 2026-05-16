@@ -137,14 +137,15 @@ class YouTubeHandler(BaseHandler):
         return self._parse(info, url)
 
     def _fetch_playlist(self, url: str) -> list[TrackMetadata]:
-        """Extrae lista de tracks con max_playlist_items para ir más rápido."""
+        """Extrae lista de tracks de una playlist de YouTube."""
         opts = {
             "quiet": True,
             "no_warnings": True,
             "extract_flat": "in_playlist",
             "skip_download": True,
-            "socket_timeout": 10,
-            "retries": 1,
+            "socket_timeout": 30,  # Aumentado de 10 para playlists grandes
+            "retries": 3,          # Aumentado de 1 para mayor robustez
+            "ignoreerrors": True,  # Continuar si una entrada falla
         }
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -159,7 +160,11 @@ class YouTubeHandler(BaseHandler):
         tracks = []
         for entry in entries:
             if entry:
-                tracks.append(self._parse(entry, url))
+                try:
+                    tracks.append(self._parse(entry, url))
+                except Exception as e:
+                    logger.debug(f"Error parseando entrada de playlist: {e}")
+                    continue
         return tracks
 
     def _parse(self, info: dict, base_url: str = "") -> TrackMetadata:
