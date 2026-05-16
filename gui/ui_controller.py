@@ -141,26 +141,50 @@ class UIController:
             }
         """
         try:
-            # Cargar config con estructura anidada
+            # Cargar config con estructura anidada - intenta 2 métodos
             config_path = self.config.config_path
-            with open(config_path, 'r') as f:
-                full_config = json.load(f)
+
+            # Método 1: Leer archivo directamente
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    full_config = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                # Fallback: usar lo que ya está en memoria
+                full_config = self.config.get_all()
 
             sc_config = full_config.get("soundcloud", {})
             oauth_token = sc_config.get("oauth_token", "").strip()
             client_id = sc_config.get("client_id", "").strip()
+
+            # Debug logging
+            logger.debug(f"Config path: {config_path}")
+            logger.debug(f"SoundCloud config keys: {list(sc_config.keys())}")
+            logger.debug(f"Token presente: {bool(oauth_token)}")
+            logger.debug(f"Client ID presente: {bool(client_id)}")
 
             if not oauth_token or not client_id:
                 return {
                     'success': False,
                     'imported': 0,
                     'skipped': 0,
-                    'error': 'OAuth token o client_id no configurados'
+                    'error': f'OAuth token o client_id no configurados. Config path: {config_path}'
                 }
 
             # Conectar a SoundCloud
             logger.info("🔄 Conectando a SoundCloud...")
             api = SoundCloudAPIClient(oauth_token, client_id)
+
+            # Validar credenciales
+            logger.info("🔐 Validando credenciales...")
+            user_info = api.validate_credentials()
+            if not user_info:
+                return {
+                    'success': False,
+                    'imported': 0,
+                    'skipped': 0,
+                    'error': 'Credenciales inválidas o token expirado'
+                }
+            logger.info(f"✓ Conectado como: {user_info.get('full_name', 'Unknown')}")
 
             # Obtener likes
             logger.info("📥 Obteniendo tus likes de SoundCloud...")
