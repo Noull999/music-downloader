@@ -6,6 +6,7 @@ import threading
 import logging
 import os
 import re
+import sqlite3
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -799,10 +800,18 @@ class SyncManager:
 
                 # Verificar si ya está en historial (con lock)
                 with self.history.lock:
-                    existing = self.history.conn.execute(
-                        "SELECT 1 FROM downloads WHERE file_path = ?",
-                        (str(file_path),)
-                    ).fetchone()
+                    try:
+                        # Intenta con local_path (esquema nuevo)
+                        existing = self.history.conn.execute(
+                            "SELECT 1 FROM downloads WHERE local_path = ?",
+                            (str(file_path),)
+                        ).fetchone()
+                    except sqlite3.OperationalError:
+                        # Fallback a file_path (esquema viejo)
+                        existing = self.history.conn.execute(
+                            "SELECT 1 FROM downloads WHERE file_path = ?",
+                            (str(file_path),)
+                        ).fetchone()
 
                 if existing:
                     already_tracked += 1
