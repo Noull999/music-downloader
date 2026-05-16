@@ -215,7 +215,7 @@ class DBViewerWindow(ctk.CTkToplevel):
                 url=download['url'],
                 title=download['title'],
                 artist=download['artist'],
-                platform=download['platform']
+                platform=download['platform'] or "soundcloud"
             )
             tracks.append(track)
 

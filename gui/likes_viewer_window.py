@@ -203,8 +203,9 @@ class LikesViewerWindow(ctk.CTkToplevel):
                 url=like.url,
                 title=like.title or "Unknown",
                 artist=like.artist or "Unknown",
-                artwork_url=like.artwork_url,
-                duration_ms=like.duration_ms or 0
+                thumbnail_url=like.artwork_url or "",
+                duration=int((like.duration_ms or 0) / 1000),  # Convertir ms a segundos
+                platform="soundcloud"
             )
             tracks.append(track)
 
