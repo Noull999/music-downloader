@@ -169,11 +169,17 @@ class MainWindow(ctk.CTk):
             command=self._on_import_likes,
         ).grid(row=18, column=0, padx=18, pady=(0, 8), sticky="ew")
 
+        ctk.CTkButton(
+            left, text="📊 Ver BD de Likes (341)",
+            fg_color="transparent", border_width=1,
+            command=self._on_view_db,
+        ).grid(row=19, column=0, padx=18, pady=(0, 8), sticky="ew")
+
         # Preset activo label
         self._preset_lbl = ctk.CTkLabel(
             left, text="", font=ctk.CTkFont(size=11), text_color="#6b7280",
         )
-        self._preset_lbl.grid(row=19, column=0, padx=18, pady=(0, 4), sticky="w")
+        self._preset_lbl.grid(row=20, column=0, padx=18, pady=(0, 4), sticky="w")
 
         # Status bar mejorado
         self._status_bar = StatusBar(left)
@@ -457,6 +463,11 @@ class MainWindow(ctk.CTk):
             messagebox.showerror("Error", f"❌ Error en importación:\n{result['error']}")
             self._status_bar.mark_error("Error importando likes")
             self._activity_panel.log(f"❌ Error: {result['error']}")
+
+    def _on_view_db(self):
+        """Abre ventana para ver y descargar likes de la BD."""
+        from gui.db_viewer_window import DBViewerWindow
+        DBViewerWindow(self, self._ui_controller)
 
     def _on_close(self):
         self._manager.cancel_all()
