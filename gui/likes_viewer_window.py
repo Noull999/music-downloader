@@ -99,6 +99,14 @@ class LikesViewerWindow(ctk.CTkToplevel):
                 return
 
             api = SoundCloudAPIClient(oauth_token, client_id)
+
+            # Validar credenciales primero
+            user_info = api.validate_credentials()
+            if not user_info:
+                messagebox.showerror("Error", "No se pudieron validar las credenciales")
+                self.destroy()
+                return
+
             likes = api.get_likes()
 
             self._all_likes = likes
