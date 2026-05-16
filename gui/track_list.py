@@ -248,8 +248,12 @@ class TrackListFrame(ctk.CTkScrollableFrame):
             on_cancel=self._on_cancel,
             fg_color=("#1e293b", "#0f172a"),
         )
-        row.grid(row=len(self._rows), column=0, sticky="ew", padx=6, pady=4)
         self._rows[track.url] = row
+        row.grid(row=len(self._rows) - 1, column=0, sticky="ew", padx=6, pady=4)
+        try:
+            row.update_idletasks()  # Forzar renderizado de la fila
+        except Exception:
+            pass
         return row
 
     def get_row(self, url: str) -> TrackRow | None:
@@ -273,14 +277,20 @@ class TrackListFrame(ctk.CTkScrollableFrame):
             self._rows[new_url] = self._rows.pop(old_url)
 
     def update_progress(self, url: str, value: float):
-        row = self._rows.get(url)
-        if row:
-            row.update_progress(value)
+        try:
+            row = self._rows.get(url)
+            if row:
+                row.update_progress(value)
+        except Exception:
+            pass  # silently ignore if row is being destroyed
 
     def update_status(self, url: str, status: str, error_msg: str = ""):
-        row = self._rows.get(url)
-        if row:
-            row.update_status(status, error_msg)
+        try:
+            row = self._rows.get(url)
+            if row:
+                row.update_status(status, error_msg)
+        except Exception:
+            pass  # silently ignore if row is being destroyed
 
     def count_by_status(self, *statuses) -> int:
         return sum(1 for r in self._rows.values() if r.track.status in statuses)

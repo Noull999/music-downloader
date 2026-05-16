@@ -36,6 +36,9 @@ class MainWindow(ctk.CTk):
         self.geometry("1150x720")
         self.minsize(820, 560)
 
+        # Flag para evitar callbacks mientras se cierra
+        self._closing = False
+
         # Centralizar config y historial via UIController
         self._ui_controller = UIController(base_dir=_BASE)
         self._manager = DownloadManager()
@@ -400,6 +403,7 @@ class MainWindow(ctk.CTk):
         for meta in tracks:
             if not self._track_list.get_row(meta.url):
                 self._track_list.add_track(TrackInfo.from_metadata(meta))
+        self._track_list.update()  # Forzar redibujado inmediato
         self._status_bar.set_text(f"{len(self._track_list.get_all())} track(s) en la lista.")
 
     def _on_browse(self):
@@ -487,11 +491,18 @@ class MainWindow(ctk.CTk):
         DBViewerWindow(self, self._ui_controller)
 
     def _on_close(self):
-        self._manager.cancel_all()
-        self._manager.shutdown()
-        if self._sync_window.scheduler:
-            self._sync_window.scheduler.stop()
-        self.destroy()
+        try:
+            logger.info("Cerrando aplicación...")
+            self._closing = True  # Evitar callbacks mientras se limpia
+            self._manager.cancel_all()
+            self._manager.shutdown()
+            if self._sync_window and self._sync_window.scheduler:
+                self._sync_window.scheduler.stop()
+            logger.info("Aplicación cerrada")
+        except Exception as e:
+            logger.error(f"Error al cerrar: {e}", exc_info=True)
+        finally:
+            self.destroy()
 
     # ------------------------------------------------------------------ #
     # Descarga                                                             #
@@ -533,21 +544,32 @@ class MainWindow(ctk.CTk):
         }
 
         def on_progress(v: float):
-            self.after(0, lambda: self._track_list.update_progress(url, v))
+            if not self._closing:
+                try:
+                    self.after(0, lambda: self._track_list.update_progress(url, v))
+                except Exception:
+                    pass  # Ignore errors if widget is destroyed
 
         def on_status(status: str, err: str):
             def log_status():
-                self._handle_status(url, status, err)
-                title = track.title if track.title != "Cargando..." else url.split("/")[-1]
-                status_emoji = {
-                    STATUS_DOWNLOADING: "⬇",
-                    STATUS_DONE: "✓",
-                    STATUS_ERROR: "✗",
-                    STATUS_SKIP: "⊘",
-                    STATUS_FETCHING: "🔍",
-                }.get(status, "•")
-                self._activity_panel.log(f"{status_emoji} {title[:50]}")
-            self.after(0, log_status)
+                if not self._closing:
+                    self._handle_status(url, status, err)
+                    try:
+                        title = track.title if track.title != "Cargando..." else url.split("/")[-1]
+                        status_emoji = {
+                            STATUS_DOWNLOADING: "⬇",
+                            STATUS_DONE: "✓",
+                            STATUS_ERROR: "✗",
+                            STATUS_SKIP: "⊘",
+                            STATUS_FETCHING: "🔍",
+                        }.get(status, "•")
+                        self._activity_panel.log(f"{status_emoji} {title[:50]}")
+                    except Exception:
+                        pass  # Ignore logging errors
+            try:
+                self.after(0, log_status)
+            except Exception:
+                pass  # Ignore after() errors if widget is destroyed
 
         self._manager.submit_download(
             track=track,
@@ -565,25 +587,47 @@ class MainWindow(ctk.CTk):
         )
 
     def _handle_status(self, url: str, status: str, error_msg: str):
-        self._track_list.update_status(url, status, error_msg)
+        # Evitar callbacks mientras se cierra la app
+        if self._closing:
+            logger.debug(f"Ignoring status callback (app closing): {status}")
+            return
 
-        if status == STATUS_DONE:
-            row = self._track_list.get_row(url)
-            if row:
-                self._ui_controller.record_download(row.track)
+        try:
+            logger.debug(f"_handle_status: {status} for {url}")
+            self._track_list.update_status(url, status, error_msg)
 
-        if status in (STATUS_DONE, STATUS_ERROR):
-            self._refresh_status_bar()
+            if status == STATUS_DONE:
+                try:
+                    row = self._track_list.get_row(url)
+                    if row:
+                        logger.debug(f"Recording download for {url}")
+                        self._ui_controller.record_download(row.track)
+                except Exception as rec_exc:
+                    logger.error(f"Error recording download: {rec_exc}", exc_info=True)
+
+            if status in (STATUS_DONE, STATUS_ERROR):
+                try:
+                    self._refresh_status_bar()
+                except Exception as refresh_exc:
+                    logger.error(f"Error refreshing status bar: {refresh_exc}", exc_info=True)
+        except Exception as e:
+            logger.exception(f"Error in _handle_status for {url}: {e}")
 
     def _refresh_status_bar(self):
-        tracks = self._track_list.get_all()
-        done = sum(1 for t in tracks if t.status == STATUS_DONE)
-        errors = sum(1 for t in tracks if t.status == STATUS_ERROR)
-        total = len(tracks)
-        parts = [f"Completados: {done}/{total}"]
-        if errors:
-            parts.append(f"Errores: {errors}")
-        self._status_bar.set_text("  |  ".join(parts))
+        try:
+            tracks = self._track_list.get_all()
+            done = sum(1 for t in tracks if t.status == STATUS_DONE)
+            errors = sum(1 for t in tracks if t.status == STATUS_ERROR)
+            total = len(tracks)
+            if total == 0:
+                self._status_bar.set_text("Listo")
+            else:
+                parts = [f"Completados: {done}/{total}"]
+                if errors:
+                    parts.append(f"Errores: {errors}")
+                self._status_bar.set_text("  |  ".join(parts))
+        except Exception as e:
+            logger.exception(f"Error refreshing status bar: {e}")
 
 
     # ------------------------------------------------------------------ #

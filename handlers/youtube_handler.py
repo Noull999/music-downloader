@@ -137,12 +137,14 @@ class YouTubeHandler(BaseHandler):
         return self._parse(info, url)
 
     def _fetch_playlist(self, url: str) -> list[TrackMetadata]:
-        """Extrae la lista de tracks de una playlist usando extract_flat (rápido)."""
+        """Extrae lista de tracks con max_playlist_items para ir más rápido."""
         opts = {
             "quiet": True,
             "no_warnings": True,
             "extract_flat": "in_playlist",
             "skip_download": True,
+            "socket_timeout": 10,
+            "retries": 1,
         }
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -186,6 +188,11 @@ class YouTubeHandler(BaseHandler):
         duration = int(info.get("duration") or 0)
         thumbnail = info.get("thumbnail") or ""
         album = info.get("album") or ""
+
+        # Si no hay thumbnail pero tenemos video_id, generar una URL de thumbnail estándar
+        if not thumbnail and info.get("id"):
+            video_id = info["id"]
+            thumbnail = f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
 
         # Año: preferir release_year, fallback a upload_date
         year = str(info.get("release_year") or "")

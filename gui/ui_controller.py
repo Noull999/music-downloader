@@ -66,18 +66,24 @@ class UIController:
 
     def record_download(self, track: TrackInfo) -> None:
         """Registra descarga en historial."""
-        # Usar local_path del track si existe, si no usar el track.url como fallback
-        local_path = getattr(track, 'local_path', '')
-        self.history.add_download(
-            url=track.url,
-            title=track.title,
-            artist=track.artist,
-            album=track.album,
-            platform=track.platform,
-            local_path=local_path,
-            duration=getattr(track, 'duration', 0),
-        )
-        logger.info(f"✓ Descarga registrada: {track.title}")
+        try:
+            # Usar local_path del track si existe, si no usar el track.url como fallback
+            local_path = getattr(track, 'local_path', '')
+
+            logger.debug(f"Registrando descarga: {track.title} (url: {track.url[:50]}...)")
+
+            self.history.add_download(
+                url=track.url,
+                title=track.title,
+                artist=track.artist,
+                album=track.album,
+                platform=track.platform,
+                local_path=local_path,
+                duration=getattr(track, 'duration', 0),
+            )
+            logger.info(f"✓ Descarga registrada: {track.title}")
+        except Exception as e:
+            logger.error(f"Error registrando descarga: {e}", exc_info=True)
 
     def start_download_manager(self) -> None:
         """Inicia el thread pool de descargas."""
