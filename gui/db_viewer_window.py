@@ -4,6 +4,7 @@ Ventana simple para ver y descargar canciones de la BD de historial.
 import tkinter as tk
 from tkinter import ttk, messagebox
 import customtkinter as ctk
+import sqlite3
 
 from db.history_manager import HistoryManager
 
@@ -26,8 +27,21 @@ class DBViewerWindow(ctk.CTkToplevel):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=10, pady=10)
 
-        ctk.CTkLabel(header, text="341 Canciones en la BD",
+        ctk.CTkLabel(header, text="Canciones en la BD",
                     font=("Arial", 16, "bold")).pack(side="left")
+
+        # Buscador
+        search_frame = ctk.CTkFrame(self, fg_color="transparent")
+        search_frame.pack(fill="x", padx=10, pady=5)
+
+        ctk.CTkLabel(search_frame, text="Buscar:").pack(side="left", padx=5)
+        self.search_var = tk.StringVar()
+        self.search_var.trace("w", self._on_search)
+        search_entry = ctk.CTkEntry(search_frame, textvariable=self.search_var,
+                                    placeholder_text="Artista o canción...")
+        search_entry.pack(side="left", fill="x", expand=True, padx=5)
+
+        self._all_downloads = []
 
         # Tabla con scrollbar
         table_frame = ctk.CTkFrame(self)
@@ -48,6 +62,9 @@ class DBViewerWindow(ctk.CTkToplevel):
         # Scrollbar
         scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
+
+        # Bind click para seleccionar
+        self.tree.bind("<Button-1>", self._on_tree_click)
 
         self.tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -72,7 +89,6 @@ class DBViewerWindow(ctk.CTkToplevel):
     def _load_likes(self):
         """Carga todos los likes de la BD."""
         try:
-            import sqlite3
             db_path = self.history.db_path
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
@@ -83,14 +99,47 @@ class DBViewerWindow(ctk.CTkToplevel):
             except sqlite3.OperationalError:
                 cursor.execute("SELECT url, title, artist, platform FROM downloads ORDER BY downloaded_at DESC")
 
+            self._all_downloads = []
             for row in cursor.fetchall():
                 url, title, artist, platform = row
-                self.tree.insert("", "end", iid=url,
-                               text="☐", values=(artist or "Unknown", title or "Unknown", platform or "soundcloud"))
+                self._all_downloads.append({
+                    'url': url,
+                    'title': title,
+                    'artist': artist,
+                    'platform': platform
+                })
 
+            self._render_downloads(self._all_downloads)
             conn.close()
         except Exception as e:
             messagebox.showerror("Error", f"Error cargando likes: {e}")
+
+    def _render_downloads(self, downloads):
+        """Renderiza los downloads en la tabla."""
+        # Limpiar tabla
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        # Agregar downloads
+        for download in downloads:
+            self.tree.insert("", "end", iid=download['url'],
+                           text="☐", values=(download['artist'] or "Unknown",
+                                            download['title'] or "Unknown",
+                                            download['platform'] or "soundcloud"))
+
+    def _on_search(self, *args):
+        """Filtra la tabla en tiempo real."""
+        search_text = self.search_var.get().lower()
+
+        if not search_text:
+            self._render_downloads(self._all_downloads)
+            return
+
+        filtered = [d for d in self._all_downloads
+                   if search_text in (d['artist'] or "").lower() or
+                      search_text in (d['title'] or "").lower()]
+
+        self._render_downloads(filtered)
 
     def _select_all(self):
         """Selecciona todas las canciones."""
@@ -103,6 +152,21 @@ class DBViewerWindow(ctk.CTkToplevel):
         self._selected_urls.clear()
         for item in self.tree.get_children():
             self.tree.item(item, text="☐")
+
+    def _on_tree_click(self, event):
+        """Maneja clicks en la tabla para marcar/desmarcar."""
+        item = self.tree.identify("item", event.x, event.y)
+        if not item:
+            return
+
+        current = self.tree.item(item, "text")
+        new_text = "☑" if current == "☐" else "☐"
+        self.tree.item(item, text=new_text)
+
+        if new_text == "☑":
+            self._selected_urls.add(item)
+        else:
+            self._selected_urls.discard(item)
 
     def get_all_downloads(self):
         """Retorna todos los downloads de la BD en el formato esperado."""
