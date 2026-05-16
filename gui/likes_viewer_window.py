@@ -192,7 +192,26 @@ class LikesViewerWindow(ctk.CTkToplevel):
         # Obtener datos de las seleccionadas
         selected_likes = [like for like in self._all_likes if like.url in self._selected_urls]
 
+        # Convertir SoundCloudTrack a TrackInfo
+        from models import TrackInfo
+        tracks = []
+        for like in selected_likes:
+            track = TrackInfo(
+                url=like.url,
+                title=like.title or "Unknown",
+                artist=like.artist or "Unknown",
+                artwork_url=like.artwork_url,
+                duration_ms=like.duration_ms or 0
+            )
+            tracks.append(track)
+
+        # Enviar al panel principal para descargar
         messagebox.showinfo("Descargar",
-                           f"Se descargarán {len(selected_likes)} canciones.\n"
-                           "Esta funcionalidad se implementará pronto.")
+                           f"Se descargarán {len(tracks)} canciones.\n"
+                           "Revisa el panel de descargas.")
+
+        # Llamar al callback de descarga del padre
+        if hasattr(self.master, '_on_batch_download'):
+            self.master._on_batch_download(tracks)
+
         self.destroy()

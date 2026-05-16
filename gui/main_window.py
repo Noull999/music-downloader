@@ -470,6 +470,12 @@ class MainWindow(ctk.CTk):
             self._status_bar.mark_error("Error importando likes")
             self._activity_panel.log(f"❌ Error: {result['error']}")
 
+    def _on_batch_download(self, tracks: list):
+        """Inicia descarga de un lote de tracks."""
+        if not tracks:
+            return
+        self._start_downloads(tracks)
+
     def _on_view_likes(self):
         """Abre ventana para ver y descargar tus likes de SoundCloud."""
         from gui.likes_viewer_window import LikesViewerWindow

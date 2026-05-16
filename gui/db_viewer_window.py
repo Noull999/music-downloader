@@ -204,6 +204,25 @@ class DBViewerWindow(ctk.CTkToplevel):
             messagebox.showwarning("Aviso", "Selecciona al menos una canción")
             return
 
-        messagebox.showinfo("Descargar", f"Se descargarán {len(selected_downloads)} canciones.\n"
-                           "Esta funcionalidad se implementará pronto.")
+        # Convertir a TrackInfo
+        from models import TrackInfo
+        tracks = []
+        for download in selected_downloads:
+            track = TrackInfo(
+                url=download['url'],
+                title=download['title'],
+                artist=download['artist'],
+                platform=download['platform']
+            )
+            tracks.append(track)
+
+        # Enviar al panel principal para descargar
+        messagebox.showinfo("Descargar",
+                           f"Se descargarán {len(tracks)} canciones.\n"
+                           "Revisa el panel de descargas.")
+
+        # Llamar al callback de descarga del padre
+        if hasattr(self.master, '_on_batch_download'):
+            self.master._on_batch_download(tracks)
+
         self.destroy()
