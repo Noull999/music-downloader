@@ -276,10 +276,18 @@ class DownloadHistory:
         """
         with self.lock:
             try:
-                cursor = self.conn.execute(
-                    "SELECT url, title, artist, file_path, platform, downloaded_at "
-                    "FROM downloads ORDER BY downloaded_at DESC"
-                )
+                # Intenta con local_path (esquema nuevo), fallback a file_path (viejo)
+                try:
+                    cursor = self.conn.execute(
+                        "SELECT url, title, artist, local_path, platform, download_date "
+                        "FROM downloads ORDER BY download_date DESC"
+                    )
+                except sqlite3.OperationalError:
+                    cursor = self.conn.execute(
+                        "SELECT url, title, artist, file_path, platform, downloaded_at "
+                        "FROM downloads ORDER BY downloaded_at DESC"
+                    )
+
                 return [
                     {
                         "url": row[0],
