@@ -119,14 +119,26 @@ class DownloadHistory:
         """
         with self.lock:
             try:
-                self.conn.execute(
-                    """
-                    INSERT OR REPLACE INTO downloads
-                    (url, title, artist, file_path, platform)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (url, title, artist, file_path, platform)
-                )
+                # Intenta con esquema nuevo (local_path)
+                try:
+                    self.conn.execute(
+                        """
+                        INSERT OR REPLACE INTO downloads
+                        (url, title, artist, local_path, platform, download_date)
+                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        """,
+                        (url, title, artist, file_path, platform)
+                    )
+                except sqlite3.OperationalError:
+                    # Fallback a esquema viejo (file_path)
+                    self.conn.execute(
+                        """
+                        INSERT OR REPLACE INTO downloads
+                        (url, title, artist, file_path, platform)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (url, title, artist, file_path, platform)
+                    )
                 self.conn.commit()
                 logger.debug(f"✓ Registrada descarga: {artist} - {title}")
             except sqlite3.Error as e:
