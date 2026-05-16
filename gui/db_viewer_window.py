@@ -188,6 +188,9 @@ class DBViewerWindow(ctk.CTkToplevel):
 
     def _download_selected(self):
         """Descarga las canciones seleccionadas."""
+        import logging
+        logger = logging.getLogger(__name__)
+
         # Obtener datos de las seleccionadas
         selected_downloads = []
         for item in self.tree.get_children():
@@ -216,6 +219,8 @@ class DBViewerWindow(ctk.CTkToplevel):
             )
             tracks.append(track)
 
+        logger.info(f"📥 Iniciando descarga de {len(tracks)} canciones desde DB Viewer")
+
         # Enviar al panel principal para descargar
         messagebox.showinfo("Descargar",
                            f"Se descargarán {len(tracks)} canciones.\n"
@@ -223,6 +228,15 @@ class DBViewerWindow(ctk.CTkToplevel):
 
         # Llamar al callback de descarga del padre
         if hasattr(self.master, '_on_batch_download'):
-            self.master._on_batch_download(tracks)
+            logger.info("✓ Encontrado _on_batch_download en master")
+            try:
+                self.master._on_batch_download(tracks)
+                logger.info("✓ Descarga iniciada")
+            except Exception as e:
+                logger.error(f"❌ Error en _on_batch_download: {e}")
+                messagebox.showerror("Error", f"Error iniciando descarga: {e}")
+        else:
+            logger.error("❌ No se encontró _on_batch_download en master")
+            messagebox.showerror("Error", "No se pudo conectar al panel de descargas")
 
         self.destroy()
