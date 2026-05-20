@@ -8,7 +8,7 @@ from quality.presets import QUALITY_PRESETS, PRESET_ORDER, DEFAULT_PRESET
 class SettingsDialog(ctk.CTkToplevel):
     """Ventana modal de configuracion avanzada."""
 
-    def __init__(self, parent, config: dict):
+    def __init__(self, parent, config: dict, on_save_callback=None):
         super().__init__(parent)
         self.title("Configuracion")
         self.geometry("540x700")
@@ -17,6 +17,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self.transient(parent)
 
         self._config = config
+        self._on_save_callback = on_save_callback
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
@@ -245,7 +246,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
     def _save(self):
         pattern = self._pattern_entry.get().strip() or "{artist} - {title}"
-        self._config.update({
+        updates = {
             "quality_preset": self._quality_var.get(),
             "normalize_volume": self._normalize_var.get(),
             "remove_silence": self._silence_var.get(),
@@ -254,8 +255,13 @@ class SettingsDialog(ctk.CTkToplevel):
             "filename_pattern": pattern,
             "subfolder_by_artist": self._subfolder_var.get(),
             "delay": round(self._delay_slider.get(), 1),
-        })
+        }
         # Guardar token en ruta unificada y limpiar key obsoleta
-        self._config.setdefault("soundcloud", {})["oauth_token"] = self._token_entry.get().strip()
-        self._config.pop("oauth_token", None)
+        updates.setdefault("soundcloud", {})["oauth_token"] = self._token_entry.get().strip()
+        updates.pop("oauth_token", None)
+
+        # Llamar callback para persistir cambios
+        if self._on_save_callback:
+            self._on_save_callback(updates)
+
         self.destroy()

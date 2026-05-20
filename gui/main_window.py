@@ -463,7 +463,13 @@ class MainWindow(ctk.CTk):
 
     def _on_settings(self):
         config_dict = self._ui_controller.get_config()
-        dlg = SettingsDialog(self, config_dict)
+
+        def on_settings_save(updates: dict):
+            """Callback para guardar cambios de configuración."""
+            for key, value in updates.items():
+                self._ui_controller.set_config_value(key, value)
+
+        dlg = SettingsDialog(self, config_dict, on_save_callback=on_settings_save)
         self.wait_window(dlg)
         self._update_preset_label()
         self._manager.start(self._ui_controller.get_config_value("max_workers", 3))
@@ -541,10 +547,12 @@ class MainWindow(ctk.CTk):
 
         self._status_bar.set_text(f"Iniciando {len(eligible)} descarga(s)...")
         self._activity_panel.log(f"→ Iniciando {len(eligible)} descarga(s)...")
-        for track in eligible:
-            self._submit_one(track, dest)
+        for idx, track in enumerate(eligible, 1):
+            title = track.title if track.title != "Cargando..." else track.url.split("/")[-1]
+            self._activity_panel.log(f"⬇ [{idx}/{len(eligible)}] {title[:60]}...")
+            self._submit_one(track, dest, idx, len(eligible))
 
-    def _submit_one(self, track: TrackInfo, dest_folder: str):
+    def _submit_one(self, track: TrackInfo, dest_folder: str, idx: int = 0, total: int = 0):
         url = track.url
         try:
             handler = detect_handler(url)
@@ -559,6 +567,8 @@ class MainWindow(ctk.CTk):
             "embed_artwork": self._ui_controller.get_config_value("embed_artwork", True),
             "embed_metadata": self._ui_controller.get_config_value("embed_metadata", True),
         }
+
+        counter_str = f"[{idx}/{total}] " if total > 0 else ""
 
         def on_progress(v: float):
             if not self._closing:
@@ -580,7 +590,7 @@ class MainWindow(ctk.CTk):
                             STATUS_SKIP: "⊘",
                             STATUS_FETCHING: "🔍",
                         }.get(status, "•")
-                        self._activity_panel.log(f"{status_emoji} {title[:50]}")
+                        self._activity_panel.log(f"{status_emoji} {counter_str}{title[:50]}")
                     except Exception:
                         pass  # Ignore logging errors
             try:
