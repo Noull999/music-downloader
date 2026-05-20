@@ -222,15 +222,13 @@ class PostProcessor:
             return self._fetch_image(url, timeout)
 
     def _fetch_image(self, url: str, timeout: float = 5.0) -> Optional[bytes]:
-        """Descarga imagen con timeout corto."""
+        """Descarga imagen usando sesión global con pooling."""
         try:
-            import requests
-            resp = requests.get(url, timeout=timeout)
+            from utils.http_session import get_session
+            session = get_session()
+            resp = session.get(url, timeout=timeout)
             resp.raise_for_status()
             return resp.content
-        except requests.Timeout:
-            logger.warning(f"⏱️  Timeout descargando imagen (>{timeout}s): {url[:50]}...")
-            return None
         except Exception as exc:
             logger.warning(f"No se pudo descargar thumbnail para tags: {exc}")
             return None

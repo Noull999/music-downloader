@@ -111,13 +111,14 @@ class MainWindow(ctk.CTk):
         sc_btns.grid_columnconfigure((0, 1), weight=1)
 
         ctk.CTkButton(
-            sc_btns, text="Sincronizar",
+            sc_btns, text="🔄 Sincronizar",
             height=28, font=ctk.CTkFont(size=10),
+            fg_color="#3b82f6", hover_color="#2563eb",
             command=lambda: self._sync_window._on_sync_manual(),
         ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
 
         ctk.CTkButton(
-            sc_btns, text="Ver mis Likes",
+            sc_btns, text="❤️ Mis Likes",
             height=28, font=ctk.CTkFont(size=10),
             fg_color="#dc2626", hover_color="#b91c1c",
             command=lambda: self._sync_window._on_show_likes_preview(),
@@ -521,6 +522,17 @@ class MainWindow(ctk.CTk):
             self._manager.shutdown()
             if self._sync_window and self._sync_window.scheduler:
                 self._sync_window.scheduler.stop()
+            # Cleanup de resources paralelos
+            try:
+                from quality.ffmpeg_queue import FFmpegQueue
+                FFmpegQueue().shutdown()
+            except Exception as e:
+                logger.warning(f"Error cerrando FFmpeg queue: {e}")
+            try:
+                from utils.http_session import close_session
+                close_session()
+            except Exception as e:
+                logger.warning(f"Error cerrando sesión HTTP: {e}")
             logger.info("Aplicación cerrada")
         except Exception as e:
             logger.error(f"Error al cerrar: {e}", exc_info=True)

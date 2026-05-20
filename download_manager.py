@@ -32,7 +32,7 @@ class DownloadManager:
     """
 
     def __init__(self):
-        self._max_workers: int = 3
+        self._max_workers: int = 6  # Aumentado de 3 a 6 para paralelismo agresivo
         self._executor: Optional[ThreadPoolExecutor] = None
         self._paused: bool = False
         self._pause_event = threading.Event()
@@ -234,19 +234,26 @@ class DownloadManager:
                     track.url, output_path, quality_preset, progress_cb, cancel_check
                 )
 
-            # Post-procesado (normalización, silencios)
+            # Post-procesado (normalización, silencios) — encolado asincrónico
             if downloaded and os.path.exists(downloaded):
                 try:
-                    pp = PostProcessor(post_config)
+                    from quality.ffmpeg_queue import FFmpegQueue
+                    queue = FFmpegQueue()
                     metadata = {
                         "title": track.title,
                         "artist": track.artist,
                         "album": track.album,
                         "year": track.year,
                     }
-                    pp.process(downloaded, metadata, track.thumbnail_url)
+                    queue.enqueue(
+                        downloaded,
+                        metadata,
+                        post_config,
+                        thumbnail_url=track.thumbnail_url,
+                    )
+                    logger.debug("📊 Post-procesado encolado (no bloquea descarga)")
                 except Exception as pp_exc:
-                    logger.warning("Error en post-procesado: %s (continuando)", pp_exc)
+                    logger.warning("Error encolando post-procesado: %s (continuando)", pp_exc)
 
                 try:
                     track.local_path = downloaded
