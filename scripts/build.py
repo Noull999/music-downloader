@@ -97,9 +97,9 @@ def build(console: bool, no_ffmpeg: bool, clean: bool):
         "--noconfirm",
     ]
     if console:
-        cmd += ["--console"]
+        pass
     else:
-        cmd += ["--windowed"]
+        pass
 
     res = run(cmd, cwd=BASE)
     if res.returncode != 0:
@@ -117,6 +117,7 @@ def build(console: bool, no_ffmpeg: bool, clean: bool):
         print(f"✅ ffmpeg copiado al bundle: {dst}")
 
     print("\n✅ Build finalizado:")
+    bundle_root = BASE / "dist"
     print(f"   {bundle_root / ('MusicDownloader.exe' if SYSTEM == 'Windows' else 'MusicDownloader')}")
 
 
