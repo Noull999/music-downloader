@@ -40,17 +40,25 @@ class FFmpegValidator:
     """Valida existencia, ubicación y versión de FFmpeg."""
 
     @staticmethod
+    @staticmethod
     def find_ffmpeg_executable() -> str:
         """
         Busca ffmpeg en rutas conocidas + PATH del sistema.
-
         Retorna: ruta completa a ffmpeg ejecutable
         Lanza: DependencyNotFoundError si no encuentra
         """
         platform = sys.platform
         ffmpeg_name = "ffmpeg.exe" if platform == "win32" else "ffmpeg"
 
-        # 1️⃣ Buscar en rutas conocidas del SO
+        # 1️⃣ PyInstaller bundle (_MEIPASS)
+        meipass = getattr(sys, "_MEIPASS", "")
+        if meipass:
+            candidate = os.path.join(meipass, "ffmpeg", ffmpeg_name)
+            if os.path.isfile(candidate):
+                logger.info(f"FFmpeg encontrado en bundle: {candidate}")
+                return candidate
+
+        # 2️⃣ Buscar en rutas conocidas del SO
         candidates = _FFMPEG_CANDIDATES.get(platform, [])
         for path in candidates:
             candidate = os.path.join(path, ffmpeg_name)
@@ -58,13 +66,13 @@ class FFmpegValidator:
                 logger.info(f"FFmpeg encontrado en: {candidate}")
                 return candidate
 
-        # 2️⃣ Buscar en PATH del sistema
+        # 3️⃣ Buscar en PATH del sistema
         ffmpeg_path = shutil.which(ffmpeg_name)
         if ffmpeg_path:
             logger.info(f"FFmpeg encontrado en PATH: {ffmpeg_path}")
             return ffmpeg_path
 
-        # 3️⃣ No encontrado → Error claro
+        # 4️⃣ No encontrado → Error claro
         raise DependencyNotFoundError(
             f"FFmpeg no está instalado en tu sistema.\n\n"
             f"Descargas:\n"
