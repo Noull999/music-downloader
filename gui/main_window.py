@@ -23,10 +23,17 @@ from quality.presets import get_preset, effective_extension
 from url_detector import detect_handler, detect_platform_name
 from utils.validators import parse_urls_from_text
 from handlers.soundcloud_handler import SoundCloudHandler
+import os
+import sys
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_BASE = os.path.dirname(os.path.dirname(__file__))
+# ── Base portable: desarrollo (.py) y PyInstaller (.exe) ───────────────
+if getattr(sys, "frozen", False):
+    _BASE = str(Path(sys.executable).parent)
+else:
+    _BASE = str(Path(__file__).resolve().parent.parent)
 
 
 class MainWindow(ctk.CTk):
