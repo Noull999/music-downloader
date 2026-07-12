@@ -1,0 +1,10 @@
+[Unit]
+Description=Music Downloader - Auto-sync SoundCloud
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/music-downloader
+ExecStart=/root/music-downloader/.venv/bin/python3 /root/music-downloader/scripts/auto_sync.py --once
+StandardOutput=journal
+StandardError=journal

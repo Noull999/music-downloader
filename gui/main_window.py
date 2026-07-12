@@ -282,6 +282,9 @@ class MainWindow(ctk.CTk):
         )
         self._sync_window.grid(row=0, column=0, sticky="nsew")
 
+        # Auto-start sync al abrir la app si está configurado
+        self.after(500, self._sync_window.auto_start_if_enabled)
+
         self._install_log_handler()
 
     def _apply_config_to_ui(self):

@@ -739,3 +739,17 @@ ADVERTENCIA:
                 )
         except Exception as e:
             logger.error(f"Error cargando likes guardados: {e}")
+
+    def auto_start_if_enabled(self):
+        """Auto-inicia el scheduler de sync si la config lo requiere."""
+        sc = self._load_config().get("soundcloud", {})
+        if not sc.get("auto_sync"):
+            return
+        if not sc.get("oauth_token") or not sc.get("client_id"):
+            logger.warning("Auto-sync activado en config pero sin credenciales")
+            return
+        interval = int(sc.get("sync_interval_minutes", 30))
+        self._autosync_var.set(True)
+        self._interval_entry.delete(0, "end")
+        self._interval_entry.insert(0, str(interval))
+        self._on_autosync_toggle()
