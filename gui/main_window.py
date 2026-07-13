@@ -186,8 +186,9 @@ class MainWindow(ctk.CTk):
             command=self._on_view_likes,
         ).grid(row=19, column=0, padx=18, pady=(0, 8), sticky="ew")
 
+        db_count = self._ui_controller.get_download_count()
         ctk.CTkButton(
-            left, text="📊 Ver BD de Likes (341)",
+            left, text=f"📊 Historial de descargas ({db_count})",
             fg_color="transparent", border_width=1,
             command=self._on_view_db,
         ).grid(row=20, column=0, padx=18, pady=(0, 8), sticky="ew")
@@ -200,7 +201,7 @@ class MainWindow(ctk.CTk):
 
         # Status bar mejorado
         self._status_bar = StatusBar(left)
-        self._status_bar.grid(row=20, column=0, padx=18, pady=(4, 18), sticky="ew")
+        self._status_bar.grid(row=22, column=0, padx=18, pady=(4, 18), sticky="ew")
 
         # ── Panel derecho ────────────────────────────────────────────── #
         right = ctk.CTkFrame(self, corner_radius=0, fg_color="#0f0f0f")

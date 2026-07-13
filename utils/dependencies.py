@@ -124,6 +124,13 @@ class FFmpegValidator:
         Retorna: -1 si v1 < v2, 0 si v1 == v2, 1 si v1 > v2
         Ej: compare_versions("5.1", "6.0") → -1
         """
+        # Builds git de ffmpeg ("N-124445-g22d06b39ce") son master, siempre
+        # más nuevos que cualquier release numerada.
+        if version1.startswith("N-"):
+            return 1
+        if version2.startswith("N-"):
+            return -1
+
         def normalize(v):
             parts = v.split('.')
             return [int(x) for x in parts[:3]]  # Mayor.Menor.Parche
@@ -180,26 +187,17 @@ class YtDlpValidator:
     @staticmethod
     def validate() -> str:
         """
-        Valida yt-dlp.
+        Valida yt-dlp importando el módulo (no el CLI: dentro del .exe
+        empaquetado solo existe el módulo, no el comando en PATH).
         Retorna: versión de yt-dlp
         Lanza: DependencyNotFoundError
         """
         try:
-            result = subprocess.run(
-                ["yt-dlp", "--version"],
-                capture_output=True,
-                timeout=5,
-                text=True
-            )
-
-            if result.returncode != 0:
-                raise DependencyNotFoundError("yt-dlp no funciona correctamente")
-
-            version = result.stdout.strip()
+            import yt_dlp
+            version = yt_dlp.version.__version__
             logger.info(f"✓ yt-dlp validado: {version}")
             return version
-
-        except FileNotFoundError:
+        except ImportError:
             raise DependencyNotFoundError(
                 "yt-dlp no está instalado.\n"
                 "Instala: pip install yt-dlp"
@@ -220,7 +218,13 @@ class MutagenValidator:
         """
         try:
             import mutagen
-            logger.info(f"✓ mutagen validado: {mutagen.__version__}")
+            # mutagen >= 1.47 ya no expone __version__; usar metadata del paquete
+            try:
+                from importlib.metadata import version as _pkg_version
+                mutagen_version = _pkg_version("mutagen")
+            except Exception:
+                mutagen_version = getattr(mutagen, "__version__", "desconocida")
+            logger.info(f"✓ mutagen validado: {mutagen_version}")
             return True
         except ImportError:
             raise DependencyNotFoundError(

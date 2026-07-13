@@ -4,7 +4,6 @@ Ventana simple para ver y descargar canciones de la BD de historial.
 import tkinter as tk
 from tkinter import ttk, messagebox
 import customtkinter as ctk
-import sqlite3
 
 from db.history import DownloadHistory
 
@@ -13,7 +12,7 @@ class DBViewerWindow(ctk.CTkToplevel):
 
     def __init__(self, master, ui_controller):
         super().__init__(master)
-        self.title("Ver BD de Likes - 341 Canciones")
+        self.title("Historial de descargas")
         self.geometry("900x600")
         self.ui_controller = ui_controller
         self.history = DownloadHistory()
@@ -87,32 +86,13 @@ class DBViewerWindow(ctk.CTkToplevel):
                      fg_color="green").pack(side="right", padx=5)
 
     def _load_likes(self):
-        """Carga todos los likes de la BD."""
+        """Carga todas las descargas registradas en la BD."""
         try:
-            db_path = self.history.db_path
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-
-            # Query directa - soporta ambos esquemas
-            try:
-                cursor.execute("SELECT url, title, artist, platform FROM downloads ORDER BY download_date DESC")
-            except sqlite3.OperationalError:
-                cursor.execute("SELECT url, title, artist, platform FROM downloads ORDER BY downloaded_at DESC")
-
-            self._all_downloads = []
-            for row in cursor.fetchall():
-                url, title, artist, platform = row
-                self._all_downloads.append({
-                    'url': url,
-                    'title': title,
-                    'artist': artist,
-                    'platform': platform
-                })
-
+            self._all_downloads = self.history.get_all_downloads()
+            self.title(f"Historial de descargas - {len(self._all_downloads)} canciones")
             self._render_downloads(self._all_downloads)
-            conn.close()
         except Exception as e:
-            messagebox.showerror("Error", f"Error cargando likes: {e}")
+            messagebox.showerror("Error", f"Error cargando historial: {e}")
 
     def _render_downloads(self, downloads):
         """Renderiza los downloads en la tabla."""

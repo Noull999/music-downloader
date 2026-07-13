@@ -13,6 +13,7 @@ import argparse
 import json
 import logging
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -22,6 +23,7 @@ from handlers.soundcloud_handler import SoundCloudHandler
 
 
 LOG_FMT = "%(asctime)s %(levelname)s %(name)s - %(message)s"
+LOG_FILE = Path.home() / ".music_downloader" / "auto_sync.log"
 
 
 def load_config(path: str) -> dict:
@@ -34,10 +36,16 @@ def load_config(path: str) -> dict:
 
 
 def setup_logging(level: str = "INFO"):
+    # Log a archivo además de stdout: cuando corre vía Task Scheduler no hay
+    # consola visible, y sin archivo no queda rastro de si la sync funcionó.
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    file_handler = RotatingFileHandler(
+        LOG_FILE, maxBytes=2 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
         format=LOG_FMT,
-        handlers=[logging.StreamHandler(sys.stdout)],
+        handlers=[logging.StreamHandler(sys.stdout), file_handler],
     )
 
 
@@ -73,20 +81,21 @@ def main():
     try:
         manager.validate_credentials()
     except Exception as e:
-        print(f"❌ Credenciales inválidas: {e}")
+        logging.getLogger("auto_sync").error(f"❌ Credenciales inválidas: {e}")
         raise SystemExit(1)
 
     if args.validate:
         print("✅ Credenciales válidas, no se descarga nada (--validate)")
         raise SystemExit(0)
 
+    log = logging.getLogger("auto_sync")
     try:
         results = manager.sync_once()
     except Exception as e:
-        print(f"❌ Error durante la sincronización: {e}")
+        log.error(f"❌ Error durante la sincronización: {e}")
         raise SystemExit(1)
 
-    print(
+    log.info(
         f"✅ Sync completa: +{results['new']} nuevas | "
         f"{results['skipped']} ya tenías | {results['errors']} errores"
     )

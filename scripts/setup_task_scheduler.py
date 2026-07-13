@@ -34,10 +34,31 @@ def _load_interval_from_config(config_path: str) -> int:
         return 1440
 
 
+def _silent_python() -> str:
+    """Prefiere pythonw.exe (sin ventana de consola) si existe junto al python actual."""
+    exe = Path(sys.executable)
+    pythonw = exe.with_name("pythonw.exe")
+    return str(pythonw) if pythonw.exists() else str(exe)
+
+
+def _allow_battery(task_name: str) -> bool:
+    """Permite que la tarea corra con batería (schtasks no expone estos flags)."""
+    ps = (
+        f"$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries "
+        f"-DontStopIfGoingOnBatteries; "
+        f"Set-ScheduledTask -TaskName '{task_name}' -Settings $s"
+    )
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-Command", ps],
+        capture_output=True, text=True,
+    )
+    return result.returncode == 0
+
+
 def register(interval_minutes: int) -> tuple[bool, str]:
     """Crea (o reemplaza) la tarea programada para el usuario actual."""
     script = BASE / "scripts" / "auto_sync.py"
-    tr = f'"{sys.executable}" "{script}" --config "{BASE / "config.json"}"'
+    tr = f'"{_silent_python()}" "{script}" --config "{BASE / "config.json"}"'
 
     # schtasks: HOURLY solo acepta /mo entre 1 y 23 (24 horas = un día,
     # eso ya es DAILY). MINUTE se usa para intervalos menores a una hora.
@@ -57,6 +78,13 @@ def register(interval_minutes: int) -> tuple[bool, str]:
     result = subprocess.run(args, capture_output=True, text=True)
     ok = result.returncode == 0
     msg = result.stdout.strip() if ok else result.stderr.strip()
+
+    if ok:
+        if _allow_battery(TASK_NAME):
+            msg += "\n✓ Habilitada la ejecución con batería"
+        else:
+            msg += "\n⚠️  No se pudo habilitar ejecución con batería (la tarea igual corre enchufada)"
+
     return ok, msg
 
 
