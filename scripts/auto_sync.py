@@ -10,11 +10,18 @@ Uso:
     python scripts/auto_sync.py [--config config.json] [--validate]
 """
 import argparse
+import io
 import json
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+# Corre vía Task Scheduler con pythonw.exe (sin consola): sys.stdout/stderr
+# son None ahí, y cualquier print()/log a consola tira AttributeError.
+for _name in ("stdout", "stderr"):
+    if getattr(sys, _name) is None:
+        setattr(sys, _name, io.StringIO())
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

@@ -23,7 +23,6 @@ from quality.presets import get_preset, effective_extension
 from url_detector import detect_handler, detect_platform_name
 from utils.validators import parse_urls_from_text
 from handlers.soundcloud_handler import SoundCloudHandler
-import os
 import sys
 from pathlib import Path
 
@@ -32,8 +31,14 @@ logger = logging.getLogger(__name__)
 # ── Base portable: desarrollo (.py) y PyInstaller (.exe) ───────────────
 if getattr(sys, "frozen", False):
     _BASE = str(Path(sys.executable).parent)
+    # Los datas empaquetados (assets/, etc.) se extraen a _MEIPASS, no a
+    # la carpeta del .exe.
+    _RESOURCES = getattr(sys, "_MEIPASS", _BASE)
 else:
     _BASE = str(Path(__file__).resolve().parent.parent)
+    _RESOURCES = _BASE
+
+_ICON_PATH = os.path.join(_RESOURCES, "assets", "icon.ico")
 
 
 class MainWindow(ctk.CTk):
@@ -42,6 +47,12 @@ class MainWindow(ctk.CTk):
         self.title("Music Downloader — YouTube & SoundCloud")
         self.geometry("1150x720")
         self.minsize(820, 560)
+
+        if os.path.isfile(_ICON_PATH):
+            try:
+                self.iconbitmap(_ICON_PATH)
+            except Exception as e:
+                logger.debug(f"No se pudo aplicar el ícono de la ventana: {e}")
 
         # Flag para evitar callbacks mientras se cierra
         self._closing = False

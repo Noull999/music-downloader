@@ -132,8 +132,13 @@ class FFmpegValidator:
             return -1
 
         def normalize(v):
-            parts = v.split('.')
-            return [int(x) for x in parts[:3]]  # Mayor.Menor.Parche
+            # Toma solo el prefijo numérico "X.Y.Z" e ignora sufijos como
+            # "-essentials_build-www.gyan.dev" (builds de Windows de ffmpeg).
+            import re
+            match = re.match(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?", v)
+            if not match:
+                raise ValueError(f"No se pudo parsear versión: {v}")
+            return [int(g) if g else 0 for g in match.groups()]
 
         try:
             v1 = normalize(version1)

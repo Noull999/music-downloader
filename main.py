@@ -7,8 +7,25 @@ Ejecutar: python main.py
 3. Inicia GUI
 """
 import sys
+import io
 import logging
 import traceback
+
+# En el .exe empaquetado (console=False) stdout/stderr o no son una consola
+# real (caen a cp1252, que no puede codificar los emojis de los prints/logs
+# de abajo) o directamente son None (windowed sin consola alguna) -> crash
+# no capturado al abrir la app. Se arregla ANTES de cualquier print/import
+# que pueda emitir uno.
+for _name in ("stdout", "stderr"):
+    _stream = getattr(sys, _name)
+    if _stream is None:
+        setattr(sys, _name, io.StringIO())
+    elif hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 import customtkinter as ctk
 from tkinter import messagebox
 
