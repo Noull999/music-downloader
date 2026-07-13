@@ -84,7 +84,12 @@ def build(console: bool, no_ffmpeg: bool, clean: bool):
         for folder in [BASE / "build", BASE / "dist"]:
             if folder.exists():
                 print(f"🧹 Borrando {folder}")
-                shutil.rmtree(folder)
+                try:
+                    shutil.rmtree(folder)
+                except OSError as e:
+                    # Archivos bloqueados (ej: el log de una instancia abierta
+                    # de la app) no impiden el build: PyInstaller pisa el exe.
+                    print(f"⚠️  No se pudo borrar todo {folder} ({e}); se continúa")
 
     # 2️⃣ ffmpeg
     ffmpeg_path = None if no_ffmpeg else ensure_ffmpeg()
