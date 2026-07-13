@@ -41,3 +41,4 @@ history.db
 
 # Configuración local
 .claude/settings.local.json
+config.json
