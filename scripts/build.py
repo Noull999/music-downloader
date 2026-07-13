@@ -90,31 +90,22 @@ def build(console: bool, no_ffmpeg: bool, clean: bool):
     ffmpeg_path = None if no_ffmpeg else ensure_ffmpeg()
 
     # 3️⃣ PyInstaller
+    # (ffmpeg se embebe leyendo build/ffmpeg/ffmpeg.exe desde el propio .spec,
+    # ya que el build es onefile y no existe dist/_internal para copiarlo después)
     cmd = [
         PYTHON, "-m", "PyInstaller",
-        str(BASE / "music-downloader.spec"),
+        str(BASE / "MusicDownloader.spec"),
         "--clean",
         "--noconfirm",
     ]
-    if console:
-        pass
-    else:
-        pass
 
     res = run(cmd, cwd=BASE)
     if res.returncode != 0:
         print("❌ PyInstaller falló")
         raise SystemExit(res.returncode)
 
-    # 4️⃣ Mover ffmpeg al bundle
     if ffmpeg_path and ffmpeg_path.exists():
-        # En Windows el .exe queda en dist/MusicDownloader.exe y los datos en dist/_internal
-        bundle_root = BASE / "dist"
-        internal = bundle_root / "_internal" / "ffmpeg"
-        internal.mkdir(parents=True, exist_ok=True)
-        dst = internal / ffmpeg_path.name
-        shutil.copy2(ffmpeg_path, dst)
-        print(f"✅ ffmpeg copiado al bundle: {dst}")
+        print(f"✅ ffmpeg embebido en el .exe (bundle onefile): {ffmpeg_path}")
 
     print("\n✅ Build finalizado:")
     bundle_root = BASE / "dist"
