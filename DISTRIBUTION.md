@@ -3,10 +3,12 @@
 ## Build para Windows (.exe)
 
 ```bash
-python build_windows.py
+python scripts/build.py --clean
 ```
 
-Genera: `dist/MusicDownloader.exe` (~150-200MB)
+O simplemente ejecutar `build.bat` (instala PyInstaller si falta y corre el script).
+
+Genera: `dist/MusicDownloader.exe`, con ffmpeg descargado y embebido automáticamente.
 
 **Requisitos previos:**
 - Python 3.9+
@@ -17,6 +19,10 @@ Genera: `dist/MusicDownloader.exe` (~150-200MB)
 pip install -r requirements.txt
 pip install pyinstaller
 ```
+
+**Opciones:**
+- `--no-ffmpeg`: no descarga/embebe ffmpeg
+- `--clean`: borra `build/` y `dist/` antes de compilar
 
 ---
 

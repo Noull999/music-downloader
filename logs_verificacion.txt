@@ -1,6 +1,0 @@
-16:21:26 [INFO] sync.soundcloud_api: \u2705 Credenciales válidas | Usuario: joseasencio | Likes: 0
-16:21:26 [INFO] gui.sync_window: Config guardada
-16:21:26 [INFO] db.history: \u2705 Base de datos inicializada en C:\Users\Lenovo\.music_downloader\history.db
-16:21:26 [INFO] sync.soundcloud_api: \u2705 Credenciales válidas | Usuario: joseasencio | Likes: 0
-16:21:26 [INFO] sync.sync_manager: \u2705 Credenciales válidas para: joseasencio
-16:21:26 [INFO] gui.sync_window: SyncManager inicializado (threshold: 85%) y validado

@@ -6,7 +6,7 @@ from tkinter import ttk, messagebox
 import customtkinter as ctk
 import sqlite3
 
-from db.history_manager import HistoryManager
+from db.history import DownloadHistory
 
 class DBViewerWindow(ctk.CTkToplevel):
     """Ventana para ver y descargar canciones desde la BD."""
@@ -16,7 +16,7 @@ class DBViewerWindow(ctk.CTkToplevel):
         self.title("Ver BD de Likes - 341 Canciones")
         self.geometry("900x600")
         self.ui_controller = ui_controller
-        self.history = HistoryManager()
+        self.history = DownloadHistory()
         self._selected_urls = set()
 
         self._build_ui()

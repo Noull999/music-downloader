@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from gui.ui_controller import UIController
-from db.history_manager import HistoryManager
+from db.history import DownloadHistory
 from utils.image_cache import ImageCacheManager
 from models import TrackInfo
 from download_manager import DownloadManager
@@ -110,7 +110,7 @@ class AppTestSuite:
         print("-" * 70)
 
         db_path = os.path.join(self.base_dir, "test_history.db")
-        history = HistoryManager(db_path=db_path)
+        history = DownloadHistory(db_path=db_path)
 
         # Simular descarga de canción 1
         track1 = TrackInfo(
@@ -282,7 +282,7 @@ class AppTestSuite:
 
         # 2. Add download to history
         db_path = os.path.join(self.base_dir, "test_history.db")
-        history = HistoryManager(db_path=db_path)
+        history = DownloadHistory(db_path=db_path)
         history.add_download(
             url="https://soundcloud.com/test/song",
             title="Test Song",
@@ -296,7 +296,7 @@ class AppTestSuite:
         # 3. Simular "restart" - crear nueva instancia
         controller_restarted = UIController(base_dir=self.base_dir)
         db_path = os.path.join(self.base_dir, "test_history.db")
-        history_restarted = HistoryManager(db_path=db_path)
+        history_restarted = DownloadHistory(db_path=db_path)
 
         # 4. Verificar que todo persiste
         assert controller_restarted.get_config_value("quality_preset") == "mp3_320"
@@ -322,7 +322,7 @@ class AppTestSuite:
         print("-" * 70)
 
         db_path = os.path.join(self.base_dir, "test_history.db")
-        history = HistoryManager(db_path=db_path)
+        history = DownloadHistory(db_path=db_path)
 
         # Agregar 100 canciones
         for i in range(100):
@@ -360,7 +360,7 @@ class AppTestSuite:
         print("-" * 70)
 
         db_path = os.path.join(self.base_dir, "test_history.db")
-        history = HistoryManager(db_path=db_path)
+        history = DownloadHistory(db_path=db_path)
 
         # Test empty URL
         is_downloaded = history.is_downloaded("")

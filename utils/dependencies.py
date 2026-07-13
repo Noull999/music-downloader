@@ -40,7 +40,6 @@ class FFmpegValidator:
     """Valida existencia, ubicación y versión de FFmpeg."""
 
     @staticmethod
-    @staticmethod
     def find_ffmpeg_executable() -> str:
         """
         Busca ffmpeg en rutas conocidas + PATH del sistema.

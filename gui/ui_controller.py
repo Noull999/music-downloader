@@ -8,7 +8,7 @@ import json
 from typing import Callable, Optional
 from models import TrackInfo, STATUS_DONE, STATUS_ERROR
 from download_manager import DownloadManager
-from db.history_manager import HistoryManager
+from db.history import DownloadHistory
 from config.manager import ConfigManager
 from sync.soundcloud_api import SoundCloudAPIClient
 
@@ -19,7 +19,7 @@ class UIController:
     """
     Controlador central que orquesta:
     - ConfigManager (persistencia)
-    - HistoryManager (BD de descargas)
+    - DownloadHistory (BD de descargas)
     - DownloadManager (descarga)
     - Callbacks a GUI
     """
@@ -32,7 +32,7 @@ class UIController:
             config_path = "config.json"
 
         self.config = ConfigManager(config_path)
-        self.history = HistoryManager()
+        self.history = DownloadHistory()
         self.download_manager = DownloadManager()
 
         # Validar config en startup
