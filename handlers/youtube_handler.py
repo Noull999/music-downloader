@@ -236,12 +236,15 @@ class YouTubeHandler(BaseHandler):
         quality_preset: dict,
         progress_callback: Callable[[float], None],
         cancel_check: Optional[Callable[[], bool]] = None,
+        on_speed: Optional[Callable[[str, str], None]] = None,
     ) -> str:
 
         def hook(d: dict):
             if cancel_check and cancel_check():
                 raise yt_dlp.utils.DownloadError("Cancelado por el usuario")
             if d["status"] == "downloading":
+                if on_speed:
+                    on_speed(d.get("_speed_str", "").strip(), d.get("_eta_str", "").strip())
                 frag_idx = d.get("fragment_index") or 0
                 frag_total = d.get("fragment_count") or 0
                 if frag_total and progress_callback:

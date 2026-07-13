@@ -105,6 +105,8 @@ class DownloadManager:
         on_status: Callable[[str, str], None],
         # Opcional: token OAuth para SoundCloud
         oauth_token: str = "",
+        # Opcional: velocidad/ETA en vivo, formato (speed_str, eta_str)
+        on_speed: Optional[Callable[[str, str], None]] = None,
     ) -> Future:
         if not self._executor:
             self.start(self._max_workers)
@@ -127,6 +129,7 @@ class DownloadManager:
             on_status,
             cancel_event,
             oauth_token,
+            on_speed,
         )
 
     # ── Hilo de descarga ─────────────────────────────────────────────── #
@@ -145,12 +148,27 @@ class DownloadManager:
         on_status: Callable[[str, str], None],
         cancel_event: threading.Event,
         oauth_token: str,
+        on_speed: Optional[Callable[[str, str], None]] = None,
     ):
         import time
 
         folder = None
         base_name = None
         last_progress = -0.1
+        last_speed_ts = 0.0
+
+        def speed_cb(speed: str, eta: str):
+            nonlocal last_speed_ts
+            if not on_speed:
+                return
+            now = time.monotonic()
+            if now - last_speed_ts < 1.0:
+                return
+            last_speed_ts = now
+            try:
+                on_speed(speed, eta)
+            except Exception:
+                pass
 
         try:
             # Esperar si está en pausa
@@ -227,11 +245,12 @@ class DownloadManager:
             if isinstance(handler, SoundCloudHandler) and oauth_token:
                 downloaded = handler.download(
                     track.url, output_path, quality_preset, progress_cb, cancel_check,
-                    oauth_token=oauth_token,
+                    oauth_token=oauth_token, on_speed=speed_cb,
                 )
             else:
                 downloaded = handler.download(
-                    track.url, output_path, quality_preset, progress_cb, cancel_check
+                    track.url, output_path, quality_preset, progress_cb, cancel_check,
+                    on_speed=speed_cb,
                 )
 
             # Post-procesado (normalización, silencios) — encolado asincrónico

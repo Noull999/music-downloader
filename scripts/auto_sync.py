@@ -1,27 +1,30 @@
 #!/usr/bin/env python3
 """
-Auto-sync standalone: ejecuta una sincronización de likes de SoundCloud
-sin necesidad de abrir la GUI.
+Auto-sync standalone: valida credenciales y ejecuta una sincronización real
+de likes de SoundCloud sin necesidad de abrir la GUI.
+
+Pensado para correr periódicamente vía Programador de tareas de Windows
+(ver scripts/setup_task_scheduler.py) o cron/systemd en Linux/macOS.
 
 Uso:
-    python scripts/auto_sync.py [--once] [--validate]
+    python scripts/auto_sync.py [--config config.json] [--validate]
 """
 import argparse
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sync.soundcloud_api import SoundCloudAPIClient
+from sync.sync_manager import SyncManager
+from handlers.soundcloud_handler import SoundCloudHandler
 
 
 LOG_FMT = "%(asctime)s %(levelname)s %(name)s - %(message)s"
 
 
-def load_config(path: str = "config.json") -> dict:
+def load_config(path: str) -> dict:
     p = Path(path)
     if not p.exists():
         print(f"ERROR: No se encontró {p.resolve()}")
@@ -42,7 +45,7 @@ def main():
     parser = argparse.ArgumentParser(description="Auto-sync SoundCloud (CLI)")
     parser.add_argument("--config", default="config.json", help="Ruta a config.json")
     parser.add_argument("--once", action="store_true", help="(No usado, se admite por compatibilidad)")
-    parser.add_argument("--validate", action="store_true", help="Solo valida credenciales y sale")
+    parser.add_argument("--validate", action="store_true", help="Solo valida credenciales y sale (no descarga)")
     args = parser.parse_args()
 
     setup_logging()
@@ -51,20 +54,43 @@ def main():
     sc_cfg = config.get("soundcloud", {})
     oauth_token = sc_cfg.get("oauth_token", "")
     client_id = sc_cfg.get("client_id", "")
-    download_folder = config.get("dest_folder", os.path.expanduser("~/Music"))
+    download_folder = config.get("dest_folder", str(Path.home() / "Music"))
+    threshold = config.get("duplicate_checker", {}).get("similarity_threshold", 85)
 
     if not oauth_token or not client_id:
-        print("ERROR: Configurá oauth_token y client_id en config.json")
+        print("ERROR: Configurá soundcloud.oauth_token y soundcloud.client_id en config.json")
         raise SystemExit(1)
 
+    manager = SyncManager(
+        oauth_token, client_id,
+        download_folder,
+        SoundCloudHandler(),
+        similarity_threshold=threshold,
+        filename_pattern=config.get("filename_pattern", "{artist} - {title}"),
+        subfolder_by_artist=config.get("subfolder_by_artist", False),
+    )
+
     try:
-        api = SoundCloudAPIClient(oauth_token, client_id)
-        user = api.validate_credentials()
-        print(f"✅ Credenciales válidas: {user.get('username')} | {user.get('likes_count')} likes")
-        raise SystemExit(0)
+        manager.validate_credentials()
     except Exception as e:
         print(f"❌ Credenciales inválidas: {e}")
         raise SystemExit(1)
+
+    if args.validate:
+        print("✅ Credenciales válidas, no se descarga nada (--validate)")
+        raise SystemExit(0)
+
+    try:
+        results = manager.sync_once()
+    except Exception as e:
+        print(f"❌ Error durante la sincronización: {e}")
+        raise SystemExit(1)
+
+    print(
+        f"✅ Sync completa: +{results['new']} nuevas | "
+        f"{results['skipped']} ya tenías | {results['errors']} errores"
+    )
+    raise SystemExit(0 if results["errors"] == 0 else 1)
 
 
 if __name__ == "__main__":

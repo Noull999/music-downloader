@@ -12,7 +12,6 @@ from tkinter import messagebox, filedialog
 import customtkinter as ctk
 
 from sync.sync_manager import SyncManager
-from sync.scheduler import AutoSyncScheduler
 from sync.soundcloud_api import SoundCloudAPIClient
 from notifications.notifier import Notifier
 from gui.likes_preview_window import LikesPreviewWindow
@@ -51,7 +50,6 @@ class SyncWindow(ctk.CTkFrame):
 
         # State
         self.manager: SyncManager | None = None
-        self.scheduler: AutoSyncScheduler | None = None
         self._config = self._load_config()
 
         # UI
@@ -199,7 +197,7 @@ class SyncWindow(ctk.CTkFrame):
         ).grid(row=1, column=1)
 
     def _build_autosync_panel(self, parent):
-        """Panel de auto-sincronización."""
+        """Panel de configuración del intervalo para la tarea programada externa."""
         container = ctk.CTkFrame(parent, fg_color="transparent")
         container.grid(row=4, column=0, sticky="ew", padx=16, pady=12)
         container.grid_columnconfigure(1, weight=1)
@@ -209,46 +207,36 @@ class SyncWindow(ctk.CTkFrame):
             font=ctk.CTkFont(size=13, weight="bold")
         ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
 
-        # Toggle
-        self._autosync_var = ctk.BooleanVar(
-            value=self._config.get("soundcloud", {}).get("auto_sync", False)
-        )
-        self._autosync_toggle = ctk.CTkSwitch(
-            container, text="Activar auto-sync",
-            variable=self._autosync_var,
-            command=self._on_autosync_toggle
-        )
-        self._autosync_toggle.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
-
-        # Intervalo
+        # Intervalo (se guarda en config.json; lo usa scripts/setup_task_scheduler.py
+        # para registrar la tarea programada de Windows/systemd timer, no hay
+        # scheduler corriendo dentro de la app)
         ctk.CTkLabel(container, text="Cada:").grid(
-            row=2, column=0, sticky="e", padx=(0, 8)
+            row=1, column=0, sticky="e", padx=(0, 8)
         )
 
         interval_frame = ctk.CTkFrame(container, fg_color="transparent")
-        interval_frame.grid(row=2, column=1, sticky="ew")
+        interval_frame.grid(row=1, column=1, sticky="ew")
         interval_frame.grid_columnconfigure(1, weight=1)
 
         self._interval_entry = ctk.CTkEntry(
             interval_frame,
-            width=60, placeholder_text="30"
+            width=60, placeholder_text="1440"
         )
         self._interval_entry.insert(0, str(
-            self._config.get("soundcloud", {}).get("sync_interval_minutes", 30)
+            self._config.get("soundcloud", {}).get("sync_interval_minutes", 1440)
         ))
         self._interval_entry.grid(row=0, column=0, padx=(0, 8))
         self._interval_entry.bind("<KeyRelease>", lambda e: self._on_interval_change())
 
         ctk.CTkLabel(interval_frame, text="minutos").grid(row=0, column=1)
 
-        # Estado scheduler
-        self._scheduler_status = ctk.CTkLabel(
-            container, text="[Inactivo]",
-            text_color="#6b7280", font=ctk.CTkFont(size=10)
-        )
-        self._scheduler_status.grid(
-            row=3, column=0, columnspan=2, sticky="w", pady=(8, 0)
-        )
+        ctk.CTkLabel(
+            container,
+            text="Se usa al registrar la tarea programada "
+                 "(scripts/setup_task_scheduler.py), no corre dentro de la app.",
+            text_color="#6b7280", font=ctk.CTkFont(size=10),
+            wraplength=280, justify="left"
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     def _build_progress_panel(self, parent):
         """Panel de progreso durante sincronización."""
@@ -426,44 +414,8 @@ class SyncWindow(ctk.CTkFrame):
             self._folder_label.configure(text=folder)
             self._save_config()
 
-    def _on_autosync_toggle(self):
-        """Activa/desactiva auto-sync."""
-        enabled = self._autosync_var.get()
-
-        if enabled:
-            if not self.manager:
-                messagebox.showerror(
-                    "Error",
-                    "Primero verifica tus credenciales"
-                )
-                self._autosync_var.set(False)
-                return
-
-            # Iniciar scheduler
-            interval = int(self._interval_entry.get())
-            self.scheduler = AutoSyncScheduler(self.manager, interval_minutes=interval)
-            self.scheduler.on_sync_start = self._on_scheduler_start
-            self.scheduler.on_sync_complete = self._on_scheduler_complete
-            self.scheduler.start()
-
-            self._scheduler_status.configure(
-                text=f"[Activo] Proxima sync en {interval} minutos",
-                text_color="#4ade80"
-            )
-        else:
-            if self.scheduler:
-                self.scheduler.stop()
-                self.scheduler = None
-
-            self._scheduler_status.configure(
-                text="[Inactivo]",
-                text_color="#6b7280"
-            )
-
-        self._save_config()
-
     def _on_interval_change(self):
-        """Cambia el intervalo de auto-sync."""
+        """Guarda el intervalo configurado para la tarea programada externa."""
         try:
             interval = int(self._interval_entry.get())
             if interval < 5:
@@ -475,11 +427,6 @@ class SyncWindow(ctk.CTkFrame):
                 self._interval_entry.delete(0, "end")
                 self._interval_entry.insert(0, "1440")
 
-            if self.scheduler:
-                self.scheduler.set_interval(interval)
-                self._scheduler_status.configure(
-                    text=f"[Activo] Intervalo: {interval} minutos"
-                )
             self._save_config()
         except ValueError:
             pass
@@ -563,20 +510,6 @@ class SyncWindow(ctk.CTkFrame):
             if results['errors'] > 0:
                 msg += f"✗ Errores: {results['errors']}"
             messagebox.showinfo("Exito", msg)
-
-    def _on_scheduler_start(self):
-        """Scheduler inició sincronización."""
-        self.after(0, lambda: self._progress_msg.configure(text="Auto-sync en progreso..."))
-        self.after(0, lambda: self._progress.set(0))
-
-    def _on_scheduler_complete(self, results):
-        """Scheduler completó sincronización."""
-        self.after(0, lambda: self._progress_msg.configure(
-            text=f"Auto-sync: +{results['new']} | "
-                 f"-{results['skipped']} | "
-                 f"!{results['errors']}"
-        ))
-        self.after(0, lambda: self._refresh_stats())
 
     def _on_show_likes_preview(self):
         """Abre la ventana de likes para ver y descargar."""
@@ -711,7 +644,6 @@ ADVERTENCIA:
 
         config["soundcloud"]["oauth_token"] = self._oauth_entry.get().strip()
         config["soundcloud"]["client_id"] = self._client_entry.get().strip()
-        config["soundcloud"]["auto_sync"] = self._autosync_var.get()
         config["soundcloud"]["sync_interval_minutes"] = int(self._interval_entry.get())
 
         try:
@@ -739,17 +671,3 @@ ADVERTENCIA:
                 )
         except Exception as e:
             logger.error(f"Error cargando likes guardados: {e}")
-
-    def auto_start_if_enabled(self):
-        """Auto-inicia el scheduler de sync si la config lo requiere."""
-        sc = self._load_config().get("soundcloud", {})
-        if not sc.get("auto_sync"):
-            return
-        if not sc.get("oauth_token") or not sc.get("client_id"):
-            logger.warning("Auto-sync activado en config pero sin credenciales")
-            return
-        interval = int(sc.get("sync_interval_minutes", 30))
-        self._autosync_var.set(True)
-        self._interval_entry.delete(0, "end")
-        self._interval_entry.insert(0, str(interval))
-        self._on_autosync_toggle()

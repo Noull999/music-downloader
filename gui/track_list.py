@@ -120,6 +120,12 @@ class TrackRow(ctk.CTkFrame):
         )
         self._pct_lbl.grid(row=0, column=1, padx=(6, 0))
 
+        self._speed_lbl = ctk.CTkLabel(
+            progress_row, text="", width=130, anchor="w",
+            font=ctk.CTkFont(size=10), text_color="#6b7280",
+        )
+        self._speed_lbl.grid(row=0, column=2, padx=(6, 0))
+
         # Estado
         self._status_lbl = ctk.CTkLabel(
             self, text=_STATUS_LABEL[STATUS_PENDING],
@@ -155,6 +161,12 @@ class TrackRow(ctk.CTkFrame):
         self._progress.set(value)
         self._pct_lbl.configure(text=f"{int(value * 100)}%")
 
+    def update_speed(self, speed: str, eta: str):
+        text = speed
+        if eta:
+            text = f"{text} · ETA {eta}" if text else f"ETA {eta}"
+        self._speed_lbl.configure(text=text)
+
     def update_status(self, status: str, error_msg: str = ""):
         self.track.status = status
         if error_msg:
@@ -166,6 +178,9 @@ class TrackRow(ctk.CTkFrame):
 
         color = _STATUS_COLOR.get(status, "#9ca3af")
         self._status_lbl.configure(text=label, text_color=color)
+
+        if status not in (STATUS_DOWNLOADING, STATUS_FETCHING):
+            self._speed_lbl.configure(text="")
 
         is_active = status in (STATUS_DOWNLOADING, STATUS_FETCHING)
         self._cancel_btn.configure(state="normal" if is_active else "disabled")
@@ -277,6 +292,14 @@ class TrackListFrame(ctk.CTkScrollableFrame):
             row = self._rows.get(url)
             if row:
                 row.update_progress(value)
+        except Exception:
+            pass  # silently ignore if row is being destroyed
+
+    def update_speed(self, url: str, speed: str, eta: str):
+        try:
+            row = self._rows.get(url)
+            if row:
+                row.update_speed(speed, eta)
         except Exception:
             pass  # silently ignore if row is being destroyed
 

@@ -289,9 +289,6 @@ class MainWindow(ctk.CTk):
         )
         self._sync_window.grid(row=0, column=0, sticky="nsew")
 
-        # Auto-start sync al abrir la app si está configurado
-        self.after(500, self._sync_window.auto_start_if_enabled)
-
         self._install_log_handler()
 
     def _apply_config_to_ui(self):
@@ -530,8 +527,6 @@ class MainWindow(ctk.CTk):
             self._closing = True  # Evitar callbacks mientras se limpia
             self._manager.cancel_all()
             self._manager.shutdown()
-            if self._sync_window and self._sync_window.scheduler:
-                self._sync_window.scheduler.stop()
             # Cleanup de resources paralelos
             try:
                 from quality.ffmpeg_queue import FFmpegQueue
@@ -599,6 +594,13 @@ class MainWindow(ctk.CTk):
                 except Exception:
                     pass  # Ignore errors if widget is destroyed
 
+        def on_speed(speed: str, eta: str):
+            if not self._closing:
+                try:
+                    self.after(0, lambda: self._track_list.update_speed(url, speed, eta))
+                except Exception:
+                    pass  # Ignore errors if widget is destroyed
+
         def on_status(status: str, err: str):
             def log_status():
                 if not self._closing:
@@ -631,6 +633,7 @@ class MainWindow(ctk.CTk):
             delay=float(self._ui_controller.get_config_value("delay", 0.5)),
             on_progress=on_progress,
             on_status=on_status,
+            on_speed=on_speed,
             oauth_token=(self._ui_controller.get_config_value("soundcloud", {}).get("oauth_token", "")
                          or self._ui_controller.get_config_value("oauth_token", "")),
         )
@@ -696,10 +699,34 @@ class MainWindow(ctk.CTk):
 
     def _install_log_handler(self):
         handler = _TextboxLogHandler(self._log_box, self)
+        handler.addFilter(_QuietThirdPartyFilter())
         handler.setFormatter(
             logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S")
         )
         logging.getLogger().addHandler(handler)
+
+
+# Namespaces de librerías de terceros que solo interesan si son WARNING o peor
+_QUIET_NAMESPACES = ("yt_dlp", "urllib3", "PIL", "charset_normalizer", "filelock")
+
+
+class _QuietThirdPartyFilter(logging.Filter):
+    """Oculta ruido INFO/DEBUG de librerías de terceros; deja pasar warnings/errores."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.WARNING:
+            return True
+        return not record.name.startswith(_QUIET_NAMESPACES)
+
+
+# Colores por nivel para el textbox de log
+_LEVEL_COLOR = {
+    "DEBUG": "#6b7280",
+    "INFO": "#d1d5db",
+    "WARNING": "#fbbf24",
+    "ERROR": "#f87171",
+    "CRITICAL": "#f87171",
+}
 
 
 class _TextboxLogHandler(logging.Handler):
@@ -707,14 +734,33 @@ class _TextboxLogHandler(logging.Handler):
         super().__init__()
         self._box = box
         self._win = win
+        self._last_msg = None
+        self._last_len = 0
+        self._repeat_count = 0
+        for level, color in _LEVEL_COLOR.items():
+            self._box.tag_config(level, foreground=color)
 
     def emit(self, record: logging.LogRecord):
-        msg = self.format(record) + "\n"
-        self._win.after(0, lambda m=msg: self._write(m))
+        msg = self.format(record)
+        level = record.levelname
+        self._win.after(0, lambda m=msg, lv=level: self._write(m, lv))
 
-    def _write(self, msg: str):
+    def _write(self, msg: str, level: str):
+        # Colapsar líneas idénticas consecutivas (p. ej. reintentos en loop)
+        # en un solo renglón con contador, en vez de spamear el log.
+        # Nota: el Text widget siempre mantiene un "\n" final fantasma que no
+        # se puede borrar; por eso se ancla en "end-1c", no en "end".
         self._box.configure(state="normal")
-        self._box.insert("end", msg)
+        if msg == self._last_msg:
+            self._repeat_count += 1
+            self._box.delete(f"end-{self._last_len + 2}c", "end-1c")
+            text = f"{msg} (x{self._repeat_count})"
+        else:
+            self._last_msg = msg
+            self._repeat_count = 1
+            text = msg
+        self._box.insert("end", text + "\n", level)
+        self._last_len = len(text)
         self._box.see("end")
         self._box.configure(state="disabled")
 
