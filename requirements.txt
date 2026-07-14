@@ -16,8 +16,9 @@ requests>=2.31.0
 # Sincronización de likes de SoundCloud
 thefuzz>=0.22.0
 python-Levenshtein>=0.25.0
-plyer>=2.1.0
-schedule>=1.2.0
+
+# Notificaciones toast (Windows 10/11)
+win11toast>=0.35
 
 # --- Instalacion manual (no pip) ---
 # ffmpeg: https://github.com/BtbN/FFmpeg-Builds/releases

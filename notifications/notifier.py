@@ -1,53 +1,70 @@
 """
-Notificaciones del sistema operativo (Windows/Mac/Linux).
-Usa plyer para compatibilidad cross-platform.
+Notificaciones del sistema operativo (toast nativo de Windows 10/11).
+
+Antes usaba plyer (balloon tips legacy vía Shell_NotifyIcon), que en Windows
+10/11 no se muestran de forma confiable y corren en un thread separado que
+traga cualquier excepción en silencio. win11toast usa la API real de toast
+notifications (WinRT), se ve con ícono/nombre de la app y queda en el
+Centro de actividades.
 """
 import logging
+import sys
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 try:
-    from plyer import notification
-    PLYER_AVAILABLE = True
+    from win11toast import notify as _win_notify
+    TOAST_AVAILABLE = True
 except ImportError:
-    PLYER_AVAILABLE = False
-    logger.warning("plyer no instalado; notificaciones deshabilitadas")
+    TOAST_AVAILABLE = False
+    logger.warning("win11toast no instalado; notificaciones deshabilitadas")
+
+# Resuelve el ícono tanto en desarrollo (.py) como empaquetado (.exe):
+# los datas empaquetados se extraen a _MEIPASS, no a la carpeta del .exe.
+if getattr(sys, "frozen", False):
+    _RESOURCES = getattr(sys, "_MEIPASS", str(Path(sys.executable).parent))
+else:
+    _RESOURCES = str(Path(__file__).resolve().parent.parent)
+
+_ICON_PATH = str(Path(_RESOURCES) / "assets" / "icon.png")
+if not Path(_ICON_PATH).is_file():
+    _ICON_PATH = None
 
 
 class Notifier:
-    """
-    Muestra notificaciones del sistema operativo.
-    Si plyer no está disponible, fallback a logging.
-    """
+    """Muestra notificaciones toast del sistema. Si win11toast no está
+    disponible o falla, cae a logging (nunca lanza)."""
 
     APP_NAME = "Music Downloader"
-    ICON_PATH = None  # Opcional: ruta a un .ico/.png para el ícono
+    APP_ID = "Music Downloader"
 
     @staticmethod
     def notify(title: str, message: str, timeout: int = 5):
         """
-        Muestra notificación del sistema.
+        Muestra una notificación toast.
 
         Args:
             title: Título de la notificación
             message: Cuerpo del mensaje
-            timeout: Segundos para que desaparezca (algunos OS lo ignoran)
+            timeout: Segundos aprox. antes de que se auto-cierre (Windows
+                     solo distingue "short"/"long"; >7s usa "long")
         """
-        if not PLYER_AVAILABLE:
+        if not TOAST_AVAILABLE:
             logger.info(f"[NOTIF] {title}: {message}")
             return
 
         try:
-            notification.notify(
-                title=title,
-                message=message,
-                app_name=Notifier.APP_NAME,
-                app_icon=Notifier.ICON_PATH,
-                timeout=timeout,
+            _win_notify(
+                title,
+                message,
+                icon=_ICON_PATH,
+                app_id=Notifier.APP_ID,
+                duration="long" if timeout > 7 else "short",
             )
             logger.debug(f"Notificación mostrada: {title}")
         except Exception as e:
-            # Si la notificación falla (raro), log pero no crashear
+            # Si la notificación falla, log pero no crashear el flujo de sync
             logger.warning(f"Error mostrando notificación: {e}")
 
     @staticmethod
@@ -61,56 +78,40 @@ class Notifier:
             errors: Errores durante descarga
         """
         if new == 0 and errors == 0:
-            title = "✓ Sincronización completada"
-            message = f"No hay canciones nuevas. ({skipped} ya descargadas)"
+            title = "Sincronización completada"
+            message = f"No hay canciones nuevas ({skipped} ya descargadas)"
         elif errors > 0:
-            title = "⚠️ Sincronización con errores"
+            title = "Sincronización con errores"
             message = (
-                f"✓ {new} descargadas  |  "
-                f"⚠️ {errors} errores  |  "
-                f"⏭️ {skipped} omitidas"
+                f"{new} descargadas  |  "
+                f"{errors} errores  |  "
+                f"{skipped} omitidas"
             )
         else:
-            title = f"✓ {new} canción(es) nueva(s) descargada(s)"
-            message = f"⏭️ {skipped} ya existían y fueron omitidas"
+            title = f"{new} canción(es) nueva(s) descargada(s)"
+            message = f"{skipped} ya existían y fueron omitidas"
 
         Notifier.notify(title, message)
 
     @staticmethod
     def notify_new_like_detected(title: str, artist: str):
-        """
-        Notifica cuando se detecta un like nuevo.
-
-        Args:
-            title: Título de la canción
-            artist: Artista
-        """
+        """Notifica cuando se detecta un like nuevo."""
         Notifier.notify(
-            "🎵 Nuevo like detectado",
+            "Nuevo like detectado",
             f"{artist} - {title}\nDescargando...",
             timeout=3
         )
 
     @staticmethod
     def notify_error(error_title: str, error_msg: str):
-        """
-        Notifica errores importantes.
-
-        Args:
-            error_title: Tipo de error (ej: "Token inválido")
-            error_msg: Detalle del error
-        """
-        Notifier.notify(
-            f"❌ {error_title}",
-            error_msg,
-            timeout=10
-        )
+        """Notifica errores importantes."""
+        Notifier.notify(error_title, error_msg, timeout=10)
 
     @staticmethod
     def notify_sync_started(total_likes: int):
         """Notifica cuando comienza una sincronización."""
         Notifier.notify(
-            "🔄 Sincronización iniciada",
+            "Sincronización iniciada",
             f"Procesando {total_likes} likes...",
             timeout=2
         )

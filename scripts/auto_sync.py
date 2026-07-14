@@ -17,11 +17,18 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-# Corre vía Task Scheduler con pythonw.exe (sin consola): sys.stdout/stderr
-# son None ahí, y cualquier print()/log a consola tira AttributeError.
+# Corre vía Task Scheduler con pythonw.exe (sin consola real): sys.stdout/
+# stderr pueden ser None (-> print()/log tira AttributeError) o existir con
+# encoding cp1252 (-> UnicodeEncodeError en cualquier emoji de los logs).
 for _name in ("stdout", "stderr"):
-    if getattr(sys, _name) is None:
+    _stream = getattr(sys, _name)
+    if _stream is None:
         setattr(sys, _name, io.StringIO())
+    elif hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
