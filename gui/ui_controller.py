@@ -3,7 +3,6 @@ UIController: Orquesta la lógica de negocio separada de la presentación.
 Separa MainWindow (presentación pura) de lógica (eventos, callbacks).
 """
 import logging
-import os
 import json
 from typing import Callable, Optional
 from models import TrackInfo, STATUS_DONE, STATUS_ERROR
@@ -24,13 +23,7 @@ class UIController:
     - Callbacks a GUI
     """
 
-    def __init__(self, base_dir: str = None):
-        # Construir ruta config.json a partir de base_dir
-        if base_dir:
-            config_path = os.path.join(base_dir, "config.json")
-        else:
-            config_path = "config.json"
-
+    def __init__(self, config_path: str = None):
         self.config = ConfigManager(config_path)
         self.history = DownloadHistory()
         self.download_manager = DownloadManager()

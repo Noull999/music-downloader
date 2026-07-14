@@ -19,6 +19,10 @@ import sys
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BASE))
+
+from config.manager import DEFAULT_CONFIG_PATH
+
 TASK_NAME = "MusicDownloaderAutoSync"
 
 
@@ -58,7 +62,7 @@ def _allow_battery(task_name: str) -> bool:
 def register(interval_minutes: int) -> tuple[bool, str]:
     """Crea (o reemplaza) la tarea programada para el usuario actual."""
     script = BASE / "scripts" / "auto_sync.py"
-    tr = f'"{_silent_python()}" "{script}" --config "{BASE / "config.json"}"'
+    tr = f'"{_silent_python()}" "{script}" --config "{DEFAULT_CONFIG_PATH}"'
 
     # schtasks: HOURLY solo acepta /mo entre 1 y 23 (24 horas = un día,
     # eso ya es DAILY). MINUTE se usa para intervalos menores a una hora.
@@ -120,7 +124,7 @@ def main():
     group.add_argument("--register", action="store_true", help="Crea/actualiza la tarea")
     group.add_argument("--remove", action="store_true", help="Elimina la tarea")
     group.add_argument("--status", action="store_true", help="Muestra el estado actual")
-    parser.add_argument("--config", default=str(BASE / "config.json"))
+    parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH))
     parser.add_argument(
         "--interval-minutes", type=int, default=None,
         help="Si se omite, se toma de config.json (soundcloud.sync_interval_minutes)"

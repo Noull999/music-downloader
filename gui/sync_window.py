@@ -636,7 +636,7 @@ ADVERTENCIA:
         return {}
 
     def _save_config(self):
-        """Guarda credenciales a config.json."""
+        """Guarda credenciales y carpeta de descarga a config.json."""
         config = self._load_config()
 
         if "soundcloud" not in config:
@@ -645,6 +645,7 @@ ADVERTENCIA:
         config["soundcloud"]["oauth_token"] = self._oauth_entry.get().strip()
         config["soundcloud"]["client_id"] = self._client_entry.get().strip()
         config["soundcloud"]["sync_interval_minutes"] = int(self._interval_entry.get())
+        config["dest_folder"] = self.download_folder
 
         try:
             with open(self.config_path, "w") as f:

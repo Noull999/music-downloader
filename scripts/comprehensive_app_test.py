@@ -23,7 +23,7 @@ class AppTestSuite:
     def __init__(self):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.base_dir = self.tmpdir.name
-        self.ui_controller = UIController(base_dir=self.base_dir)
+        self.ui_controller = UIController(config_path=os.path.join(self.base_dir, "config.json"))
         self.test_results = []
 
     def log(self, section: str, msg: str, status: str = ""):
@@ -53,7 +53,7 @@ class AppTestSuite:
         assert retrieved == test_folder, "❌ Carpeta no se guardó"
 
         # Verificar que persiste (simular restart)
-        controller2 = UIController(base_dir=self.base_dir)
+        controller2 = UIController(config_path=os.path.join(self.base_dir, "config.json"))
         retrieved2 = controller2.get_config_value("dest_folder")
         assert retrieved2 == test_folder, "❌ Carpeta no persistió"
 
@@ -294,7 +294,7 @@ class AppTestSuite:
         )
 
         # 3. Simular "restart" - crear nueva instancia
-        controller_restarted = UIController(base_dir=self.base_dir)
+        controller_restarted = UIController(config_path=os.path.join(self.base_dir, "config.json"))
         db_path = os.path.join(self.base_dir, "test_history.db")
         history_restarted = DownloadHistory(db_path=db_path)
 

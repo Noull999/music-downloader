@@ -5,6 +5,7 @@ Integra UIController para centralizar config/historial, StatusBar para mejor fee
 """
 import logging
 import os
+import shutil
 import threading
 from tkinter import filedialog, messagebox
 
@@ -23,6 +24,7 @@ from quality.presets import get_preset, effective_extension
 from url_detector import detect_handler, detect_platform_name
 from utils.validators import parse_urls_from_text
 from handlers.soundcloud_handler import SoundCloudHandler
+from config.manager import DEFAULT_CONFIG_PATH
 import sys
 from pathlib import Path
 
@@ -39,6 +41,17 @@ else:
     _RESOURCES = _BASE
 
 _ICON_PATH = os.path.join(_RESOURCES, "assets", "icon.ico")
+
+# config.json vive en ~/.music_downloader/ (estable, igual que la BD) en vez
+# de junto al .exe: ahí se perdía en cada rebuild (dist/ se borra con
+# --clean). Migración única desde la ubicación vieja si corresponde.
+_CONFIG_PATH = str(DEFAULT_CONFIG_PATH)
+if not os.path.isfile(_CONFIG_PATH):
+    _legacy_config = os.path.join(_BASE, "config.json")
+    if os.path.isfile(_legacy_config):
+        os.makedirs(os.path.dirname(_CONFIG_PATH), exist_ok=True)
+        shutil.copy2(_legacy_config, _CONFIG_PATH)
+        logger.info(f"Config migrada de {_legacy_config} a {_CONFIG_PATH}")
 
 
 class MainWindow(ctk.CTk):
@@ -58,7 +71,7 @@ class MainWindow(ctk.CTk):
         self._closing = False
 
         # Centralizar config y historial via UIController
-        self._ui_controller = UIController(base_dir=_BASE)
+        self._ui_controller = UIController(config_path=_CONFIG_PATH)
         self._manager = DownloadManager()
         self._manager.start(self._ui_controller.get_config_value("max_workers"))
 
@@ -292,7 +305,7 @@ class MainWindow(ctk.CTk):
         downloader = SoundCloudHandler()
         self._sync_window = SyncWindow(
             tab_sync,
-            config_path=os.path.join(_BASE, "config.json"),
+            config_path=_CONFIG_PATH,
             download_folder=self._ui_controller.get_config_value("dest_folder", ""),
             downloader=downloader,
             download_manager=self._manager,

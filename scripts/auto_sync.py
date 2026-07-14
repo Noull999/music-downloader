@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sync.sync_manager import SyncManager
 from handlers.soundcloud_handler import SoundCloudHandler
+from config.manager import DEFAULT_CONFIG_PATH
 
 
 LOG_FMT = "%(asctime)s %(levelname)s %(name)s - %(message)s"
@@ -65,7 +66,10 @@ def setup_logging(level: str = "INFO"):
 
 def main():
     parser = argparse.ArgumentParser(description="Auto-sync SoundCloud (CLI)")
-    parser.add_argument("--config", default="config.json", help="Ruta a config.json")
+    parser.add_argument(
+        "--config", default=str(DEFAULT_CONFIG_PATH),
+        help="Ruta a config.json (default: la misma que usa la GUI)"
+    )
     parser.add_argument("--once", action="store_true", help="(No usado, se admite por compatibilidad)")
     parser.add_argument("--validate", action="store_true", help="Solo valida credenciales y sale (no descarga)")
     args = parser.parse_args()

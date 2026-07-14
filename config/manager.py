@@ -12,6 +12,11 @@ from utils.exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
+# Ubicación estable de config.json, igual que la BD (~/.music_downloader/).
+# Antes vivía junto al ejecutable/código (base_dir); en el .exe empaquetado
+# eso significaba perderlo en cada rebuild (dist/ se borra con --clean).
+DEFAULT_CONFIG_PATH = Path.home() / ".music_downloader" / "config.json"
+
 
 class ConfigManager:
     """Gestiona config.json con validación y valores por defecto."""
@@ -34,8 +39,8 @@ class ConfigManager:
         "color_scheme": "blue",
     }
 
-    def __init__(self, config_path: str = "config.json"):
-        self.config_path = Path(config_path)
+    def __init__(self, config_path: str = None):
+        self.config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
         self._config = {}
         self.load()
 
