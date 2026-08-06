@@ -100,6 +100,8 @@ class SettingsDialog(ctk.CTkToplevel):
         self._silence_var = ctk.BooleanVar(value=False)
         self._artwork_var = ctk.BooleanVar(value=True)
         self._metadata_var = ctk.BooleanVar(value=True)
+        self._lyrics_var = ctk.BooleanVar(value=False)
+        self._beets_var = ctk.BooleanVar(value=False)
 
         row += 1
         pp_frame = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -111,9 +113,13 @@ class SettingsDialog(ctk.CTkToplevel):
             (self._silence_var, "Eliminar silencios largos al inicio/final",
              "Quita silencios >0.5s. Requiere ffmpeg."),
             (self._metadata_var, "Embeber metadatos (ID3 tags)",
-             "Artista, titulo, album, ano en el archivo."),
+             "Artista, titulo, album, ano en el archivo. Ahora tambien en FLAC."),
             (self._artwork_var, "Embeber caratula en alta resolucion",
-             "Descarga thumbnail y la embebe en el MP3."),
+             "Descarga thumbnail y la embebe en el archivo (MP3 y FLAC)."),
+            (self._lyrics_var, "Buscar y embeber letras",
+             "Via syncedlyrics (LRCLIB/Musixmatch/etc). Requiere 'pip install syncedlyrics'."),
+            (self._beets_var, "Organizar con beets tras descargar",
+             "Ejecuta 'beet import' si el CLI 'beet' esta instalado y configurado. Opcional."),
         ]
         for var, label, desc in options:
             ctk.CTkCheckBox(pp_frame, text=label, variable=var).pack(anchor="w", pady=2)
@@ -244,6 +250,8 @@ class SettingsDialog(ctk.CTkToplevel):
         self._silence_var.set(self._config.get("remove_silence", False))
         self._artwork_var.set(self._config.get("embed_artwork", True))
         self._metadata_var.set(self._config.get("embed_metadata", True))
+        self._lyrics_var.set(self._config.get("embed_lyrics", False))
+        self._beets_var.set(self._config.get("organize_with_beets", False))
 
         pattern = self._config.get("filename_pattern", "{artist} - {title}")
         self._pattern_entry.delete(0, "end")
@@ -277,6 +285,8 @@ class SettingsDialog(ctk.CTkToplevel):
             "remove_silence": self._silence_var.get(),
             "embed_artwork": self._artwork_var.get(),
             "embed_metadata": self._metadata_var.get(),
+            "embed_lyrics": self._lyrics_var.get(),
+            "organize_with_beets": self._beets_var.get(),
             "filename_pattern": pattern,
             "subfolder_by_artist": self._subfolder_var.get(),
             "delay": round(self._delay_slider.get(), 1),

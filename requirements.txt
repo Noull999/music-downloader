@@ -20,7 +20,24 @@ python-Levenshtein>=0.25.0
 # Notificaciones toast (Windows 10/11)
 win11toast>=0.35
 
+# --- Opcionales (features se desactivan solas si no estan instaladas) ---
+
+# Letras sincronizadas (opcion "Buscar y embeber letras" en Configuracion)
+# syncedlyrics>=0.3.0
+
+# Fingerprinting acustico para el escaneo de duplicados de audio
+# (boton "Buscar duplicados de audio" en el historial). Ademas del
+# paquete requiere el binario fpcalc (chromaprint) en el PATH.
+# pyacoustid>=1.3.0
+
 # --- Instalacion manual (no pip) ---
 # ffmpeg: https://github.com/BtbN/FFmpeg-Builds/releases
 #   Descargar, extraer, agregar /bin al PATH del sistema.
 #   Requerido para: conversion a MP3, normalizacion de volumen.
+#
+# fpcalc (Chromaprint): https://github.com/acoustid/chromaprint/releases
+#   Requerido solo para el escaneo de duplicados de audio (opcional).
+#
+# beets (opcional, CLI): pip install beets
+#   Requerido solo para la opcion "Organizar con beets tras descargar".
+#   No es una dependencia de este proyecto (se invoca como comando externo).

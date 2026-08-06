@@ -32,6 +32,8 @@ class ConfigManager:
         "remove_silence": False,
         "embed_artwork": True,
         "embed_metadata": True,
+        "embed_lyrics": False,
+        "organize_with_beets": False,
         "oauth_token": "",
         "delay": 0.5,
         "log_level": "INFO",

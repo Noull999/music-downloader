@@ -1,6 +1,7 @@
 """
 Ventana simple para ver y descargar canciones de la BD de historial.
 """
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox
 import customtkinter as ctk
@@ -81,9 +82,61 @@ class DBViewerWindow(ctk.CTkToplevel):
         ctk.CTkButton(footer, text="Deseleccionar Todo",
                      command=self._deselect_all, width=150).pack(side="left", padx=5)
 
+        ctk.CTkButton(footer, text="🔍 Buscar duplicados de audio",
+                     command=self._scan_audio_duplicates, width=210).pack(side="left", padx=5)
+
         ctk.CTkButton(footer, text="Descargar Seleccionadas",
                      command=self._download_selected, width=200,
                      fg_color="green").pack(side="right", padx=5)
+
+    def _scan_audio_duplicates(self):
+        """
+        Escanea la carpeta de descargas buscando duplicados de AUDIO real
+        (fingerprint acústico), no solo nombres parecidos. Requiere
+        'pyacoustid' instalado + el binario 'fpcalc' (chromaprint) en PATH;
+        si falta alguno, avisa y no rompe nada más de la app.
+        """
+        from utils.audio_fingerprint import is_available
+
+        if not is_available():
+            messagebox.showwarning(
+                "No disponible",
+                "El escaneo de duplicados de audio requiere:\n"
+                "  1. pip install pyacoustid\n"
+                "  2. El binario 'fpcalc' (Chromaprint) en el PATH\n\n"
+                "Instálalos y volvé a intentar."
+            )
+            return
+
+        dest_folder = self.ui_controller.get_config_value("dest_folder", "")
+        if not dest_folder or not os.path.isdir(dest_folder):
+            messagebox.showwarning("Carpeta inválida", "No se encontró la carpeta de descargas configurada.")
+            return
+
+        import threading
+        from sync.audio_duplicate_scanner import scan_folder_for_audio_duplicates
+
+        def run_scan():
+            groups = scan_folder_for_audio_duplicates(dest_folder)
+            self.after(0, lambda: self._show_scan_results(groups))
+
+        messagebox.showinfo("Escaneando...", "Esto puede tardar según el tamaño de tu biblioteca. La app seguirá respondiendo.")
+        threading.Thread(target=run_scan, daemon=True).start()
+
+    def _show_scan_results(self, groups: list):
+        if not groups:
+            messagebox.showinfo("Duplicados de audio", "No se encontraron duplicados de audio.")
+            return
+
+        lines = []
+        for i, group in enumerate(groups, 1):
+            lines.append(f"Grupo {i}:")
+            for path in group:
+                lines.append(f"   • {os.path.basename(path)}")
+        messagebox.showinfo(
+            "Duplicados de audio encontrados",
+            f"{len(groups)} grupo(s) de canciones acústicamente idénticas:\n\n" + "\n".join(lines[:60])
+        )
 
     def _load_likes(self):
         """Carga todas las descargas registradas en la BD."""

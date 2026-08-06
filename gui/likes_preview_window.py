@@ -423,6 +423,8 @@ class LikesPreviewWindow(ctk.CTkFrame):
             "embed_metadata": self.config.get("embed_metadata", True),
             "normalize_volume": self.config.get("normalize_volume", False),
             "remove_silence": self.config.get("remove_silence", False),
+            "embed_lyrics": self.config.get("embed_lyrics", False),
+            "organize_with_beets": self.config.get("organize_with_beets", False),
         }
 
         self.after(0, self._show_progress_bar)
@@ -502,6 +504,8 @@ class LikesPreviewWindow(ctk.CTkFrame):
             "embed_metadata": self.config.get("embed_metadata", True),
             "normalize_volume": self.config.get("normalize_volume", False),
             "remove_silence": self.config.get("remove_silence", False),
+            "embed_lyrics": self.config.get("embed_lyrics", False),
+            "organize_with_beets": self.config.get("organize_with_beets", False),
         }
 
         self.after(0, self._show_progress_bar)

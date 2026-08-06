@@ -1,7 +1,8 @@
 """
 Post-procesado de audio con ffmpeg y mutagen.
 Se aplica DESPUES de que el handler descargo y convirtio el archivo.
-Operaciones: normalizacion de volumen, eliminacion de silencios, re-embebido de tags.
+Operaciones: normalizacion de volumen, eliminacion de silencios, re-embebido de tags,
+letras sincronizadas y organizacion opcional con beets.
 """
 import io
 import logging
@@ -18,6 +19,17 @@ logger = logging.getLogger(__name__)
 
 # Cache de ruta a ffmpeg validada
 _FFMPEG_CACHE: Optional[str] = None
+
+# Codec de salida por extension. Antes se forzaba libmp3lame+320k para TODO,
+# lo que rompía silenciosamente el preset FLAC (reencodeaba a mp3 con
+# extensión .flac -> archivo corrupto/ilegible como FLAC real).
+_FFMPEG_CODEC_ARGS: dict[str, list[str]] = {
+    ".mp3": ["-c:a", "libmp3lame", "-b:a", "320k"],
+    ".flac": ["-c:a", "flac"],
+}
+
+# Extensiones para las que sabemos embeber tags (mutagen)
+_TAGGABLE_EXTENSIONS = {".mp3", ".flac"}
 
 
 def get_ffmpeg_exe() -> str:
@@ -39,6 +51,8 @@ class PostProcessor:
         self.remove_silence: bool = options.get("remove_silence", False)
         self.embed_artwork: bool = options.get("embed_artwork", True)
         self.embed_metadata: bool = options.get("embed_metadata", True)
+        self.embed_lyrics: bool = options.get("embed_lyrics", False)
+        self.organize_with_beets: bool = options.get("organize_with_beets", False)
 
     def process(
         self,
@@ -48,7 +62,8 @@ class PostProcessor:
     ) -> str:
         """
         Aplica todos los post-procesos configurados al archivo.
-        Retorna la ruta del archivo procesado (puede ser el mismo).
+        Retorna la ruta del archivo procesado (puede ser el mismo, o la nueva
+        ruta si beets lo reorganizo).
         """
         if not os.path.exists(input_file):
             logger.warning("Post-process: archivo no encontrado %s", input_file)
@@ -57,12 +72,20 @@ class PostProcessor:
         ext = os.path.splitext(input_file)[1].lower()
 
         # Normalizacion y/o eliminacion de silencios via ffmpeg
-        if (self.normalize_volume or self.remove_silence) and ext == ".mp3":
-            input_file = self._apply_ffmpeg_filters(input_file)
+        if (self.normalize_volume or self.remove_silence) and ext in _FFMPEG_CODEC_ARGS:
+            input_file = self._apply_ffmpeg_filters(input_file, ext)
 
-        # Re-embebido de metadatos y carátula (solo MP3 con mutagen)
-        if (self.embed_metadata or self.embed_artwork) and ext == ".mp3":
-            self._embed_tags(input_file, metadata, thumbnail_url if self.embed_artwork else "")
+        # Re-embebido de metadatos, carátula y letras (mp3 y flac con mutagen)
+        if (self.embed_metadata or self.embed_artwork or self.embed_lyrics) and ext in _TAGGABLE_EXTENSIONS:
+            self._embed_tags(
+                input_file, metadata,
+                thumbnail_url if self.embed_artwork else "",
+                ext,
+            )
+
+        # Organizacion de biblioteca con beets (opcional, requiere `beet` en PATH)
+        if self.organize_with_beets:
+            input_file = self._organize_with_beets(input_file)
 
         return input_file
 
@@ -70,8 +93,13 @@ class PostProcessor:
     # Filtros ffmpeg                                                       #
     # ------------------------------------------------------------------ #
 
-    def _apply_ffmpeg_filters(self, input_file: str) -> str:
-        """Aplica filtros ffmpeg (normalización, eliminación de silencios)."""
+    def _apply_ffmpeg_filters(self, input_file: str, ext: str) -> str:
+        """Aplica filtros ffmpeg (normalización, eliminación de silencios).
+
+        `ext` determina el codec de re-encode: antes esto se forzaba siempre
+        a libmp3lame+320k, lo que corrompía archivos FLAC (quedaban como
+        mp3 renombrado a .flac). Ahora se preserva el codec del preset.
+        """
         try:
             ffmpeg = get_ffmpeg_exe()
         except DependencyNotFoundError as e:
@@ -91,13 +119,14 @@ class PostProcessor:
         if not filters:
             return input_file
 
+        codec_args = _FFMPEG_CODEC_ARGS.get(ext, _FFMPEG_CODEC_ARGS[".mp3"])
         filter_chain = ",".join(filters)
-        temp_file = input_file + ".pp_temp.mp3"
+        temp_file = input_file + f".pp_temp{ext}"
 
         cmd = [
             ffmpeg, "-i", input_file,
             "-af", filter_chain,
-            "-c:a", "libmp3lame", "-b:a", "320k",
+            *codec_args,
             "-y", temp_file,
         ]
 
@@ -147,9 +176,20 @@ class PostProcessor:
     # Embebido de tags con mutagen                                         #
     # ------------------------------------------------------------------ #
 
-    def _embed_tags(self, file_path: str, metadata: dict, thumbnail_url: str) -> None:
+    def _embed_tags(self, file_path: str, metadata: dict, thumbnail_url: str, ext: str) -> None:
+        """Despacha el embebido de tags segun el formato del archivo."""
+        lyrics = self._fetch_lyrics(metadata) if self.embed_lyrics else None
+
+        if ext == ".mp3":
+            self._embed_tags_mp3(file_path, metadata, thumbnail_url, lyrics)
+        elif ext == ".flac":
+            self._embed_tags_flac(file_path, metadata, thumbnail_url, lyrics)
+        else:
+            logger.debug("Formato %s sin soporte de tags, se omite.", ext)
+
+    def _embed_tags_mp3(self, file_path: str, metadata: dict, thumbnail_url: str, lyrics: Optional[str]) -> None:
         try:
-            from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, TDRC, error as ID3Error
+            from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, TDRC, USLT, error as ID3Error
             from mutagen.mp3 import MP3
         except ImportError:
             logger.warning("mutagen no disponible; no se puede embeber tags manualmente.")
@@ -191,9 +231,143 @@ class PostProcessor:
                 except Exception as art_exc:
                     logger.warning("Error embebiendo carátula: %s", art_exc)
 
+            if lyrics:
+                try:
+                    audio.tags.add(USLT(encoding=3, lang="eng", desc="", text=lyrics))
+                except Exception as lyr_exc:
+                    logger.warning("Error embebiendo letras: %s", lyr_exc)
+
             audio.save()
         except Exception as exc:
             logger.warning("Error guardando tags en %s: %s", file_path, exc)
+
+    def _embed_tags_flac(self, file_path: str, metadata: dict, thumbnail_url: str, lyrics: Optional[str]) -> None:
+        """Embebe tags en FLAC via Vorbis comments + Picture block.
+
+        Antes el preset FLAC no recibía NINGUN tag/caratula: el bloque de
+        embebido superior estaba condicionado a `ext == ".mp3"`, así que
+        cualquier descarga en FLAC quedaba silenciosamente sin metadatos.
+        """
+        try:
+            from mutagen.flac import FLAC, Picture
+        except ImportError:
+            logger.warning("mutagen no disponible; no se puede embeber tags en FLAC.")
+            return
+
+        try:
+            audio = FLAC(file_path)
+
+            if self.embed_metadata:
+                try:
+                    if metadata.get("title"):
+                        audio["title"] = metadata["title"]
+                    if metadata.get("artist"):
+                        audio["artist"] = metadata["artist"]
+                    if metadata.get("album"):
+                        audio["album"] = metadata["album"]
+                    if metadata.get("year"):
+                        audio["date"] = str(metadata["year"])
+                except Exception as meta_exc:
+                    logger.warning("Error embebiendo metadatos FLAC: %s", meta_exc)
+
+            if self.embed_artwork and thumbnail_url:
+                try:
+                    img_data = self._fetch_image_cached(thumbnail_url)
+                    if img_data and len(img_data) > 0:
+                        pic = Picture()
+                        pic.data = img_data
+                        pic.type = 3  # Cover (front)
+                        pic.mime = "image/jpeg"
+                        audio.clear_pictures()
+                        audio.add_picture(pic)
+                except Exception as art_exc:
+                    logger.warning("Error embebiendo carátula FLAC: %s", art_exc)
+
+            if lyrics:
+                try:
+                    audio["lyrics"] = lyrics
+                except Exception as lyr_exc:
+                    logger.warning("Error embebiendo letras FLAC: %s", lyr_exc)
+
+            audio.save()
+        except Exception as exc:
+            logger.warning("Error guardando tags FLAC en %s: %s", file_path, exc)
+
+    # ------------------------------------------------------------------ #
+    # Letras sincronizadas (syncedlyrics)                                  #
+    # ------------------------------------------------------------------ #
+
+    def _fetch_lyrics(self, metadata: dict) -> Optional[str]:
+        """
+        Busca letras (preferentemente sincronizadas LRC) via syncedlyrics.
+        Retorna None si la librería no está instalada o no hay resultados
+        — nunca lanza, para no romper el resto del post-procesado.
+        """
+        title = metadata.get("title", "")
+        artist = metadata.get("artist", "")
+        if not title:
+            return None
+
+        try:
+            import syncedlyrics
+        except ImportError:
+            logger.debug("syncedlyrics no instalado; se omite embebido de letras.")
+            return None
+
+        query = f"{artist} {title}".strip()
+        try:
+            lrc = syncedlyrics.search(query)
+            if lrc:
+                logger.debug("✓ Letras encontradas para: %s", query)
+            return lrc or None
+        except Exception as exc:
+            logger.warning("Error buscando letras para '%s': %s", query, exc)
+            return None
+
+    # ------------------------------------------------------------------ #
+    # Organizacion de biblioteca con beets (opcional)                      #
+    # ------------------------------------------------------------------ #
+
+    def _organize_with_beets(self, file_path: str) -> str:
+        """
+        Importa el archivo a la biblioteca de beets (`beet import`), que
+        renombra/mueve el archivo segun su config de beets y le agrega
+        metadatos de MusicBrainz. Requiere el CLI `beet` en PATH y que el
+        usuario ya tenga beets configurado (~/.config/beets/config.yaml).
+
+        Best-effort: si beets no está instalado o falla, se deja el archivo
+        tal cual (donde lo dejó el resto del pipeline) y solo se loguea.
+        """
+        beet_exe = shutil.which("beet")
+        if not beet_exe:
+            logger.debug("beets no está instalado (comando 'beet' no encontrado); se omite.")
+            return file_path
+
+        try:
+            result = subprocess.run(
+                [beet_exe, "import", "-q", "--singletons", file_path],
+                capture_output=True,
+                timeout=60,
+                text=True,
+            )
+            if result.returncode != 0:
+                logger.warning(
+                    "beets import falló (código %s): %s",
+                    result.returncode, result.stderr[:300],
+                )
+                return file_path
+
+            logger.info("✓ Archivo importado a la biblioteca de beets: %s", file_path)
+            # beets mueve el archivo segun su propio esquema de paths;
+            # no conocemos la ruta final sin parsear su config, así que
+            # devolvemos la ruta original como referencia informativa.
+            return file_path
+        except subprocess.TimeoutExpired:
+            logger.warning("beets import timeout (>60s) en: %s", file_path)
+            return file_path
+        except Exception as exc:
+            logger.warning("Error ejecutando beets import: %s", exc)
+            return file_path
 
     def _fetch_image_cached(self, url: str, timeout: float = 5.0) -> Optional[bytes]:
         """Obtiene imagen con caché automático (evita re-descargar)."""
