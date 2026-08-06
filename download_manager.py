@@ -18,10 +18,28 @@ from utils.parallel_downloader import ParallelImageDownloader
 logger = logging.getLogger(__name__)
 
 
+# Nombres de dispositivo reservados en Windows (case-insensitive, con o sin
+# extensión: "CON", "con.mp3", etc son todos inválidos como nombre de
+# archivo/carpeta y NTFS/el Explorador los rechaza).
+_WINDOWS_RESERVED_NAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+
+
 def sanitize_filename(name: str) -> str:
     """Elimina caracteres inválidos en nombres de archivo Windows."""
     name = re.sub(r'[\\/:*?"<>|]', "_", name)
-    return name.strip(". ") or "Unknown"
+    name = name.strip(". ") or "Unknown"
+
+    # Un artista/título que sea literalmente "CON", "NUL", etc (con o sin
+    # extensión) rompe la creación del archivo/carpeta en Windows.
+    stem = name.split(".", 1)[0].upper()
+    if stem in _WINDOWS_RESERVED_NAMES:
+        name = f"_{name}"
+
+    return name
 
 
 class DownloadManager:
