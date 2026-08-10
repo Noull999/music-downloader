@@ -25,7 +25,8 @@ class LikesPreviewWindow(ctk.CTkFrame):
     """
 
     def __init__(self, master, sync_manager, downloader,
-                 download_manager=None, config: dict = None):
+                 download_manager=None, config: dict = None,
+                 initial_filter: str = "todos"):
         super().__init__(master, corner_radius=0, fg_color="transparent")
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
@@ -34,6 +35,8 @@ class LikesPreviewWindow(ctk.CTkFrame):
         self.downloader = downloader
         self.download_manager = download_manager
         self.config = config or {}
+        # "todos" | "descargados" | "pendientes" — con qué filtro abre la tabla
+        self._initial_filter = initial_filter
 
         self._selected_tracks: set[str] = set()
         # Cada elemento: (widget_row, BooleanVar, like_dict)
@@ -74,7 +77,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
         filter_frame = ctk.CTkFrame(header, fg_color="transparent")
         filter_frame.grid(row=2, column=0, columnspan=3, sticky="ew")
 
-        self._filter_var = ctk.StringVar(value="todos")
+        self._filter_var = ctk.StringVar(value=self._initial_filter)
         for label, value in [("Todos", "todos"), ("Descargados ✓", "descargados"),
                               ("Pendientes ⏳", "pendientes")]:
             ctk.CTkRadioButton(
@@ -242,19 +245,6 @@ class LikesPreviewWindow(ctk.CTkFrame):
             text=f"Total: {total} | Descargadas: {downloaded} | Pendientes: {total - downloaded}"
         )
 
-        # Pagination controls
-        self._page_label.configure(
-            text=f"Página {self._page + 1} de {total_pages}  ({total_filtered} resultados)"
-        )
-        self._prev_btn.configure(state="normal" if self._page > 0 else "disabled")
-        self._next_btn.configure(state="normal" if self._page < total_pages - 1 else "disabled")
-
-        downloaded = sum(1 for l in self._likes if l['downloaded'])
-        total = len(self._likes)
-        self._stats_label.configure(
-            text=f"Total: {total} | Descargadas: {downloaded} | Pendientes: {total - downloaded}"
-        )
-
     def _render_like_row(self, index: int, like: dict):
         row = ctk.CTkFrame(self._table_frame, fg_color="#0a0a0a", corner_radius=4)
         row.grid(row=index, column=0, sticky="ew", pady=4)
@@ -284,10 +274,13 @@ class LikesPreviewWindow(ctk.CTkFrame):
                      anchor="w", font=ctk.CTkFont(size=10)
                      ).grid(row=0, column=2, sticky="ew", padx=8, pady=8)
 
-        # Artista
+        # Artista — minwidth NO es opción de grid(): iba en columnconfigure.
+        # (El TclError silencioso cortaba el render en la primera fila y la
+        # tabla mostraba 1 sola canción de todas las que había.)
+        row.grid_columnconfigure(3, minsize=150)
         ctk.CTkLabel(row, text=like['artist'], text_color="#9ca3af",
                      font=ctk.CTkFont(size=9)
-                     ).grid(row=0, column=3, sticky="ew", padx=8, pady=8, minwidth=150)
+                     ).grid(row=0, column=3, sticky="ew", padx=8, pady=8)
 
         # Acciones
         actions = ctk.CTkFrame(row, fg_color="transparent")
@@ -416,6 +409,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
         quality_preset = get_preset(self.config.get("quality_preset", "mp3_320"))
         filename_pattern = self.config.get("filename_pattern", "{artist} - {title}")
         subfolder = self.config.get("subfolder_by_artist", False)
+        subfolder_by_genre = self.config.get("subfolder_by_genre", False)
         delay = float(self.config.get("delay", 0.5))
         oauth_token = self.config.get("soundcloud", {}).get("oauth_token", "")
         post_config = {
@@ -424,6 +418,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
             "normalize_volume": self.config.get("normalize_volume", False),
             "remove_silence": self.config.get("remove_silence", False),
             "embed_lyrics": self.config.get("embed_lyrics", False),
+            "embed_genre": self.config.get("embed_genre", True),
             "organize_with_beets": self.config.get("organize_with_beets", False),
         }
 
@@ -436,6 +431,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
                 artist=like['artist'],
                 platform="SoundCloud",
                 thumbnail_url=like.get('artwork_url', ''),
+                genre=like.get('genre') or "",
             )
 
             def make_callbacks(lk, tk):
@@ -487,6 +483,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
                 dest_folder=dest_folder,
                 filename_pattern=filename_pattern,
                 subfolder_by_artist=subfolder,
+                subfolder_by_genre=subfolder_by_genre,
                 quality_preset=quality_preset,
                 post_config=post_config,
                 delay=delay,
@@ -498,13 +495,17 @@ class LikesPreviewWindow(ctk.CTkFrame):
     # ── Descarga secuencial (fallback sin DownloadManager) ───────────────
 
     def _perform_batch_sequential(self, likes: list):
+        from utils.genres import normalize_genre, is_recognized_genre, find_existing_genre_folder, UNCLASSIFIED_FOLDER
+
         quality_preset = get_preset(self.config.get("quality_preset", "mp3_320"))
+        subfolder_by_genre = self.config.get("subfolder_by_genre", False)
         post_config = {
             "embed_artwork": self.config.get("embed_artwork", True),
             "embed_metadata": self.config.get("embed_metadata", True),
             "normalize_volume": self.config.get("normalize_volume", False),
             "remove_silence": self.config.get("remove_silence", False),
             "embed_lyrics": self.config.get("embed_lyrics", False),
+            "embed_genre": self.config.get("embed_genre", True),
             "organize_with_beets": self.config.get("organize_with_beets", False),
         }
 
@@ -526,10 +527,16 @@ class LikesPreviewWindow(ctk.CTkFrame):
                 safe_artist = like['artist'].replace('/', '_').replace('\\', '_')
                 safe_title = like['title'].replace('/', '_').replace('\\', '_')
 
+                output_folder = dest_folder
+                if subfolder_by_genre:
+                    genre = normalize_genre(like.get('genre'))
+                    if genre and is_recognized_genre(genre):
+                        folder_name = find_existing_genre_folder(dest_folder, genre) or genre
+                    else:
+                        folder_name = find_existing_genre_folder(dest_folder, UNCLASSIFIED_FOLDER) or UNCLASSIFIED_FOLDER
+                    output_folder = os.path.join(output_folder, folder_name)
                 if self.sync_manager.subfolder_by_artist:
-                    output_folder = os.path.join(dest_folder, safe_artist)
-                else:
-                    output_folder = dest_folder
+                    output_folder = os.path.join(output_folder, safe_artist)
                 os.makedirs(output_folder, exist_ok=True)
                 output_path = os.path.join(output_folder, f"{safe_title}.mp3")
 
@@ -544,6 +551,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
                     pp.process(file_path, {
                         "title": like['title'], "artist": like['artist'],
                         "album": "", "year": "",
+                        "genre": normalize_genre(like.get('genre')),
                     }, like.get('artwork_url', ''))
 
                     self.sync_manager.history.mark_downloaded(

@@ -52,6 +52,7 @@ class PostProcessor:
         self.embed_artwork: bool = options.get("embed_artwork", True)
         self.embed_metadata: bool = options.get("embed_metadata", True)
         self.embed_lyrics: bool = options.get("embed_lyrics", False)
+        self.embed_genre: bool = options.get("embed_genre", True)
         self.organize_with_beets: bool = options.get("organize_with_beets", False)
 
     def process(
@@ -76,7 +77,7 @@ class PostProcessor:
             input_file = self._apply_ffmpeg_filters(input_file, ext)
 
         # Re-embebido de metadatos, carátula y letras (mp3 y flac con mutagen)
-        if (self.embed_metadata or self.embed_artwork or self.embed_lyrics) and ext in _TAGGABLE_EXTENSIONS:
+        if (self.embed_metadata or self.embed_artwork or self.embed_lyrics or self.embed_genre) and ext in _TAGGABLE_EXTENSIONS:
             self._embed_tags(
                 input_file, metadata,
                 thumbnail_url if self.embed_artwork else "",
@@ -189,7 +190,7 @@ class PostProcessor:
 
     def _embed_tags_mp3(self, file_path: str, metadata: dict, thumbnail_url: str, lyrics: Optional[str]) -> None:
         try:
-            from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, TDRC, USLT, error as ID3Error
+            from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, TDRC, TCON, USLT, error as ID3Error
             from mutagen.mp3 import MP3
         except ImportError:
             logger.warning("mutagen no disponible; no se puede embeber tags manualmente.")
@@ -214,6 +215,12 @@ class PostProcessor:
                         audio.tags.add(TDRC(encoding=3, text=metadata["year"]))
                 except Exception as meta_exc:
                     logger.warning("Error embebiendo metadatos: %s", meta_exc)
+
+            if self.embed_genre and metadata.get("genre"):
+                try:
+                    audio.tags.add(TCON(encoding=3, text=metadata["genre"]))
+                except Exception as genre_exc:
+                    logger.warning("Error embebiendo género: %s", genre_exc)
 
             if self.embed_artwork and thumbnail_url:
                 try:
@@ -269,6 +276,12 @@ class PostProcessor:
                         audio["date"] = str(metadata["year"])
                 except Exception as meta_exc:
                     logger.warning("Error embebiendo metadatos FLAC: %s", meta_exc)
+
+            if self.embed_genre and metadata.get("genre"):
+                try:
+                    audio["genre"] = metadata["genre"]
+                except Exception as genre_exc:
+                    logger.warning("Error embebiendo género FLAC: %s", genre_exc)
 
             if self.embed_artwork and thumbnail_url:
                 try:

@@ -3,7 +3,7 @@ Ventana simple para ver y descargar canciones de la BD de historial.
 """
 import os
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import customtkinter as ctk
 
 from db.history import DownloadHistory
@@ -15,6 +15,13 @@ class DBViewerWindow(ctk.CTkToplevel):
         super().__init__(master)
         self.title("Historial de descargas")
         self.geometry("900x600")
+        # CTkToplevel en Windows se re-muestra con delay y queda DETRÁS de la
+        # ventana principal; forzarla al frente.
+        self.transient(master)
+        self.lift()
+        self.focus_force()
+        self.attributes("-topmost", True)
+        self.after(400, lambda: self.attributes("-topmost", False))
         self.ui_controller = ui_controller
         self.history = DownloadHistory()
         self._selected_urls = set()
@@ -85,6 +92,9 @@ class DBViewerWindow(ctk.CTkToplevel):
         ctk.CTkButton(footer, text="🔍 Buscar duplicados de audio",
                      command=self._scan_audio_duplicates, width=210).pack(side="left", padx=5)
 
+        ctk.CTkButton(footer, text="📁 Verificar archivos en disco",
+                     command=self._reconcile_disk, width=210).pack(side="left", padx=5)
+
         ctk.CTkButton(footer, text="Descargar Seleccionadas",
                      command=self._download_selected, width=200,
                      fg_color="green").pack(side="right", padx=5)
@@ -137,6 +147,61 @@ class DBViewerWindow(ctk.CTkToplevel):
             "Duplicados de audio encontrados",
             f"{len(groups)} grupo(s) de canciones acústicamente idénticas:\n\n" + "\n".join(lines[:60])
         )
+
+    def _reconcile_disk(self):
+        """
+        Reconecta el historial con archivos que el usuario movió a mano a su
+        biblioteca real (ej. organizados por género fuera de la carpeta de
+        destino configurada). Compara por similitud de nombre, nunca mueve
+        ni borra archivos — solo corrige la ruta guardada en la BD.
+        """
+        default_dir = self.ui_controller.get_config_value("dest_folder", "") or None
+        folder = filedialog.askdirectory(
+            title="Elegí la carpeta raíz de tu biblioteca real (se escanea recursivo)",
+            initialdir=default_dir,
+        )
+        if not folder:
+            return
+
+        if not messagebox.askyesno(
+            "Verificar archivos en disco",
+            f"Se va a escanear:\n{folder}\n\n"
+            "y reconectar tu historial con los archivos reales, comparando "
+            "por nombre. NO se mueve ni se borra ningún archivo — solo se "
+            "corrige la ruta guardada.\n\n"
+            "La mayoría de tu biblioteca puede venir de otras fuentes (no "
+            "solo de esta app) y no va a encontrar match — es normal.\n\n"
+            "¿Continuar?"
+        ):
+            return
+
+        import threading
+        from sync.disk_reconciler import reconcile_library
+
+        messagebox.showinfo(
+            "Escaneando...",
+            "Esto puede tardar un rato según el tamaño de tu biblioteca. "
+            "La app va a seguir respondiendo mientras tanto."
+        )
+
+        def run():
+            result = reconcile_library(folder, self.history)
+            self.after(0, lambda: self._show_reconcile_results(result))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _show_reconcile_results(self, result: dict):
+        messagebox.showinfo(
+            "Verificación completada",
+            f"Archivos de audio encontrados en la carpeta: {result['scanned_files']}\n\n"
+            f"✓ Ya apuntaban a un archivo válido: {result['already_ok']}\n"
+            f"🔗 Reconectados ahora: {result['reconnected']}\n"
+            f"✗ Sin archivo encontrado: {result['still_missing']}\n\n"
+            "Los que quedaron sin archivo pueden haberse borrado, o venir de "
+            "una fuente que esta app nunca descargó."
+        )
+        # Refrescar la tabla: el estado "descargado" de cada fila pudo cambiar
+        self._load_likes()
 
     def _load_likes(self):
         """Carga todas las descargas registradas en la BD."""

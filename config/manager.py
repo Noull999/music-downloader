@@ -28,6 +28,8 @@ class ConfigManager:
         "quality_preset": "mp3_320",
         "filename_pattern": "{artist} - {title}",
         "subfolder_by_artist": False,
+        "subfolder_by_genre": False,
+        "embed_genre": True,
         "normalize_volume": False,
         "remove_silence": False,
         "embed_artwork": True,

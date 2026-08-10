@@ -38,6 +38,7 @@ class TrackInfo:
     detected_quality: str = ""        # ej: "251kbps Opus", "128kbps Mp3"
     available_qualities: list = field(default_factory=list)
     track_id: str = ""
+    genre: str = ""                   # género según la plataforma (texto libre)
 
     # ── Estado de descarga (mutable) ─────────────────────────────────── #
     status: str = STATUS_PENDING
@@ -72,6 +73,7 @@ class TrackInfo:
             detected_quality=meta.detected_quality,
             available_qualities=list(meta.available_qualities or []),
             track_id=meta.track_id,
+            genre=meta.genre or "",
         )
 
     def update_from_metadata(self, meta: TrackMetadata) -> None:
@@ -86,3 +88,4 @@ class TrackInfo:
         self.detected_quality = meta.detected_quality
         self.available_qualities = list(meta.available_qualities or [])
         self.track_id = meta.track_id
+        self.genre = meta.genre or ""

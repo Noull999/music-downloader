@@ -867,12 +867,16 @@ class SyncManager:
         result = []
         for like in likes:
             download_info = downloads.get(like['url'])
+            # Los likes traídos con "Importar likes" quedan en el historial
+            # con file_path vacío (no hay archivo en disco): en el visor
+            # cuentan como PENDIENTES para poder descargarlos, aunque la
+            # sincronización automática los siga omitiendo.
             result.append({
                 'id': like['id'],
                 'url': like['url'],
                 'title': like['title'],
                 'artist': like['artist'],
-                'downloaded': download_info is not None,
+                'downloaded': bool(download_info and download_info.get('file_path')),
                 'file_path': download_info['file_path'] if download_info else None,
                 'created_at': like['created_at'],
                 'genre': like['genre'],

@@ -13,6 +13,7 @@ from typing import Callable, Optional
 from handlers.base_handler import BaseHandler
 from models import TrackInfo, STATUS_DOWNLOADING, STATUS_DONE, STATUS_ERROR, STATUS_SKIP, STATUS_CANCELLED
 from quality.post_processor import PostProcessor
+from utils.genres import normalize_genre, is_recognized_genre, find_existing_genre_folder, UNCLASSIFIED_FOLDER
 from utils.parallel_downloader import ParallelImageDownloader
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,8 @@ class DownloadManager:
         oauth_token: str = "",
         # Opcional: velocidad/ETA en vivo, formato (speed_str, eta_str)
         on_speed: Optional[Callable[[str, str], None]] = None,
+        # Opcional: subcarpeta por género normalizado (dest/Género[/Artista])
+        subfolder_by_genre: bool = False,
     ) -> Future:
         if not self._executor:
             self.start(self._max_workers)
@@ -148,6 +151,7 @@ class DownloadManager:
             cancel_event,
             oauth_token,
             on_speed,
+            subfolder_by_genre,
         )
 
     # ── Hilo de descarga ─────────────────────────────────────────────── #
@@ -167,6 +171,7 @@ class DownloadManager:
         cancel_event: threading.Event,
         oauth_token: str,
         on_speed: Optional[Callable[[str, str], None]] = None,
+        subfolder_by_genre: bool = False,
     ):
         import time
 
@@ -202,11 +207,28 @@ class DownloadManager:
             safe_artist = sanitize_filename(track.artist)
             safe_title = sanitize_filename(track.title)
 
-            folder = (
-                os.path.join(dest_folder, safe_artist)
-                if subfolder_by_artist
-                else dest_folder
-            )
+            folder = dest_folder
+            if subfolder_by_genre:
+                genre = normalize_genre(track.genre)
+                if genre and is_recognized_genre(genre):
+                    # Reusar la carpeta ya existente (con su capitalización real)
+                    # si el usuario ya tiene una para este género; si no, crearla.
+                    genre_folder_name = (
+                        find_existing_genre_folder(dest_folder, genre)
+                        or sanitize_filename(genre)
+                    )
+                else:
+                    # Sin género reconocido (vacío, o texto random del uploader
+                    # tipo nombre de sello/usuario): cae al mismo cajón "sin
+                    # clasificar" que el usuario ya usa a mano, en vez de crear
+                    # una carpeta rara con ese texto.
+                    genre_folder_name = (
+                        find_existing_genre_folder(dest_folder, UNCLASSIFIED_FOLDER)
+                        or UNCLASSIFIED_FOLDER
+                    )
+                folder = os.path.join(folder, genre_folder_name)
+            if subfolder_by_artist:
+                folder = os.path.join(folder, safe_artist)
             os.makedirs(folder, exist_ok=True)
 
             try:
@@ -281,6 +303,7 @@ class DownloadManager:
                         "artist": track.artist,
                         "album": track.album,
                         "year": track.year,
+                        "genre": normalize_genre(track.genre),
                     }
                     queue.enqueue(
                         downloaded,

@@ -12,6 +12,13 @@ class LikesViewerWindow(ctk.CTkToplevel):
         super().__init__(master)
         self.title("Ver Mis Likes - SoundCloud")
         self.geometry("900x600")
+        # CTkToplevel en Windows se re-muestra con delay y queda DETRÁS de la
+        # ventana principal; forzarla al frente.
+        self.transient(master)
+        self.lift()
+        self.focus_force()
+        self.attributes("-topmost", True)
+        self.after(400, lambda: self.attributes("-topmost", False))
         self.ui_controller = ui_controller
         self._selected_urls = set()
         self._all_likes = []

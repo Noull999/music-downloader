@@ -3,6 +3,7 @@ Dialogo de configuracion: calidad de descarga + post-procesado + opciones de arc
 """
 import customtkinter as ctk
 from quality.presets import QUALITY_PRESETS, PRESET_ORDER, DEFAULT_PRESET
+from utils.genres import UNCLASSIFIED_FOLDER
 
 
 class SettingsDialog(ctk.CTkToplevel):
@@ -101,6 +102,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._artwork_var = ctk.BooleanVar(value=True)
         self._metadata_var = ctk.BooleanVar(value=True)
         self._lyrics_var = ctk.BooleanVar(value=False)
+        self._genre_var = ctk.BooleanVar(value=True)
         self._beets_var = ctk.BooleanVar(value=False)
 
         row += 1
@@ -118,6 +120,8 @@ class SettingsDialog(ctk.CTkToplevel):
              "Descarga thumbnail y la embebe en el archivo (MP3 y FLAC)."),
             (self._lyrics_var, "Buscar y embeber letras",
              "Via syncedlyrics (LRCLIB/Musixmatch/etc). Requiere 'pip install syncedlyrics'."),
+            (self._genre_var, "Embeber género en el archivo",
+             "Guarda el género (SoundCloud, normalizado) como tag del archivo."),
             (self._beets_var, "Organizar con beets tras descargar",
              "Ejecuta 'beet import' si el CLI 'beet' esta instalado y configurado. Opcional."),
         ]
@@ -177,6 +181,23 @@ class SettingsDialog(ctk.CTkToplevel):
             scroll, text="Crear subcarpeta por artista",
             variable=self._subfolder_var,
         ).grid(row=row, column=0, padx=28, pady=(0, 4), sticky="w")
+
+        row += 1
+        self._subfolder_genre_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            scroll, text="Crear subcarpeta por género",
+            variable=self._subfolder_genre_var,
+        ).grid(row=row, column=0, padx=28, pady=(0, 2), sticky="w")
+        row += 1
+        ctk.CTkLabel(
+            scroll,
+            text="   Usa el género de SoundCloud normalizado. Si ya tenés una "
+                 "carpeta con ese género (ej. 'PSYTRANCE'), la reutiliza tal "
+                 "cual en vez de crear otra. Sin género reconocido → carpeta "
+                 f"'{UNCLASSIFIED_FOLDER}'.",
+            font=ctk.CTkFont(size=11), text_color="#6b7280",
+            wraplength=462, justify="left",
+        ).grid(row=row, column=0, padx=28, pady=(0, 4), sticky="ew")
 
         # ── Delay ───────────────────────────────────────────────────── #
         row += 1
@@ -251,6 +272,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._artwork_var.set(self._config.get("embed_artwork", True))
         self._metadata_var.set(self._config.get("embed_metadata", True))
         self._lyrics_var.set(self._config.get("embed_lyrics", False))
+        self._genre_var.set(self._config.get("embed_genre", True))
         self._beets_var.set(self._config.get("organize_with_beets", False))
 
         pattern = self._config.get("filename_pattern", "{artist} - {title}")
@@ -258,6 +280,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._pattern_entry.insert(0, pattern)
 
         self._subfolder_var.set(self._config.get("subfolder_by_artist", False))
+        self._subfolder_genre_var.set(self._config.get("subfolder_by_genre", False))
 
         delay = float(self._config.get("delay", 0.5))
         self._delay_slider.set(delay)
@@ -286,9 +309,11 @@ class SettingsDialog(ctk.CTkToplevel):
             "embed_artwork": self._artwork_var.get(),
             "embed_metadata": self._metadata_var.get(),
             "embed_lyrics": self._lyrics_var.get(),
+            "embed_genre": self._genre_var.get(),
             "organize_with_beets": self._beets_var.get(),
             "filename_pattern": pattern,
             "subfolder_by_artist": self._subfolder_var.get(),
+            "subfolder_by_genre": self._subfolder_genre_var.get(),
             "delay": round(self._delay_slider.get(), 1),
         }
         # Guardar token en ruta unificada y limpiar key obsoleta

@@ -223,6 +223,7 @@ class YouTubeHandler(BaseHandler):
             platform=platform,
             detected_quality=detected_quality,
             track_id=track_id,
+            genre=str(info.get("genre") or ""),
         )
 
     # ------------------------------------------------------------------ #

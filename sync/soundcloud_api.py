@@ -9,6 +9,8 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
+from utils.genres import resolve_genre, parse_tag_list
+
 logger = logging.getLogger(__name__)
 
 
@@ -219,7 +221,10 @@ class SoundCloudAPIClient:
                         artist=track_data.get("user", {}).get("username", "Unknown"),
                         duration_ms=track_data.get("duration", 0),
                         artwork_url=track_data.get("artwork_url"),
-                        genre=track_data.get("genre"),
+                        genre=resolve_genre(
+                            track_data.get("genre", ""),
+                            parse_tag_list(track_data.get("tag_list", "")),
+                        ),
                         created_at=track_data.get("created_at", ""),
                     )
                     tracks.append(track)
@@ -296,7 +301,10 @@ class SoundCloudAPIClient:
                     artist=track_data.get("user", {}).get("username", "Unknown"),
                     duration_ms=track_data.get("duration", 0),
                     artwork_url=track_data.get("artwork_url"),
-                    genre=track_data.get("genre"),
+                    genre=resolve_genre(
+                        track_data.get("genre", ""),
+                        parse_tag_list(track_data.get("tag_list", "")),
+                    ),
                     created_at=track_data.get("created_at", ""),
                 ))
             except (KeyError, TypeError):

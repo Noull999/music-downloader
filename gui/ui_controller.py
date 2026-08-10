@@ -197,6 +197,14 @@ class UIController:
                     'error': 'No hay likes en tu cuenta'
                 }
 
+            # Refrescar también la tabla de likes: es lo que muestra el visor
+            # "Mis Likes". Antes solo la actualizaba Sincronizar, así que si
+            # solo usabas Importar quedaba vacía/desactualizada.
+            try:
+                self.history.save_likes(likes)
+            except Exception as e:
+                logger.warning(f"No se pudo refrescar la tabla de likes: {e}")
+
             # Importar a historial
             imported = 0
             skipped = 0

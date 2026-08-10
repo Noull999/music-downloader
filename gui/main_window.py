@@ -125,7 +125,7 @@ class MainWindow(ctk.CTk):
         ).grid(row=0, column=0, sticky="w")
 
         ctk.CTkButton(
-            card_hdr, text="Configurar →", width=88, height=22,
+            card_hdr, text="Credenciales →", width=98, height=22,
             font=ctk.CTkFont(size=10),
             fg_color="transparent", border_width=1,
             command=lambda: self._tabs.set("Sincronizar"),
@@ -154,6 +154,13 @@ class MainWindow(ctk.CTk):
             fg_color="#dc2626", hover_color="#b91c1c",
             command=lambda: self._sync_window._on_show_likes_preview(),
         ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+
+        ctk.CTkButton(
+            sc_btns, text="⬇ Descargar likes pendientes",
+            height=28, font=ctk.CTkFont(size=10),
+            fg_color="#10b981", hover_color="#059669",
+            command=lambda: self._sync_window._on_show_likes_preview(initial_filter="pendientes"),
+        ).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
         # Separador
         ctk.CTkFrame(left, height=1, fg_color="#2d2d2d").grid(
@@ -193,22 +200,16 @@ class MainWindow(ctk.CTk):
         )
 
         ctk.CTkButton(
-            left, text="Configuracion",
+            left, text="⚙️ Ajustes",
             fg_color="transparent", border_width=1,
             command=self._on_settings,
         ).grid(row=17, column=0, padx=18, pady=(0, 8), sticky="ew")
 
         ctk.CTkButton(
-            left, text="📥 Importar mis Likes",
+            left, text="📥 Importar likes (sin descargar)",
             fg_color="transparent", border_width=1,
             command=self._on_import_likes,
         ).grid(row=18, column=0, padx=18, pady=(0, 8), sticky="ew")
-
-        ctk.CTkButton(
-            left, text="👁️ Ver Mis Likes",
-            fg_color="transparent", border_width=1,
-            command=self._on_view_likes,
-        ).grid(row=19, column=0, padx=18, pady=(0, 8), sticky="ew")
 
         db_count = self._ui_controller.get_download_count()
         ctk.CTkButton(
@@ -508,8 +509,18 @@ class MainWindow(ctk.CTk):
         self._manager.start(self._ui_controller.get_config_value("max_workers", 3))
 
     def _on_import_likes(self):
-        """Importa tus likes de SoundCloud como 'ya descargados'."""
-        from tkinter import messagebox
+        """Registra tus likes de SoundCloud en el historial, sin descargar."""
+        ok = messagebox.askyesno(
+            "Importar likes",
+            "Esto trae la lista de tus likes de SoundCloud y los registra en "
+            "el historial local, SIN descargar ningún archivo.\n\n"
+            "• La sincronización automática no los volverá a bajar.\n"
+            "• Para bajarlos usá '⬇ Descargar likes pendientes'.\n\n"
+            "¿Continuar?",
+            parent=self,
+        )
+        if not ok:
+            return
 
         self._status_bar.set_text("📥 Importando likes de SoundCloud...", "#3b82f6")
         self.update()
@@ -535,11 +546,6 @@ class MainWindow(ctk.CTk):
         if not tracks:
             return
         self._start_downloads(tracks)
-
-    def _on_view_likes(self):
-        """Abre ventana para ver y descargar tus likes de SoundCloud."""
-        from gui.likes_viewer_window import LikesViewerWindow
-        LikesViewerWindow(self, self._ui_controller)
 
     def _on_view_db(self):
         """Abre ventana para ver y descargar likes de la BD."""
@@ -609,6 +615,7 @@ class MainWindow(ctk.CTk):
             "embed_artwork": self._ui_controller.get_config_value("embed_artwork", True),
             "embed_metadata": self._ui_controller.get_config_value("embed_metadata", True),
             "embed_lyrics": self._ui_controller.get_config_value("embed_lyrics", False),
+            "embed_genre": self._ui_controller.get_config_value("embed_genre", True),
             "organize_with_beets": self._ui_controller.get_config_value("organize_with_beets", False),
         }
 
@@ -655,6 +662,7 @@ class MainWindow(ctk.CTk):
             dest_folder=dest_folder,
             filename_pattern=self._ui_controller.get_config_value("filename_pattern", "{artist} - {title}"),
             subfolder_by_artist=self._ui_controller.get_config_value("subfolder_by_artist", False),
+            subfolder_by_genre=self._ui_controller.get_config_value("subfolder_by_genre", False),
             quality_preset=preset,
             post_config=post_config,
             delay=float(self._ui_controller.get_config_value("delay", 0.5)),

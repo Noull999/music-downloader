@@ -59,6 +59,45 @@ class SyncWindow(ctk.CTkFrame):
 
         self._build_ui(scroll)
 
+        # Auto-conectar al abrir si ya hay credenciales guardadas: antes
+        # había que ir a Sincronizar y apretar "Verificar credenciales" en
+        # cada sesión para que "Mis Likes" funcionara.
+        self.after(800, self._auto_connect_on_start)
+
+    def _auto_connect_on_start(self):
+        """Valida credenciales guardadas en segundo plano y arma el
+        SyncManager, sin popups. Si falla, se queda como antes."""
+        if self.manager:
+            return
+        sc = self._config.get("soundcloud", {})
+        oauth = sc.get("oauth_token", "").strip()
+        client_id = sc.get("client_id", "").strip()
+        if not oauth or not client_id:
+            return
+
+        def worker():
+            try:
+                api = SoundCloudAPIClient(oauth, client_id)
+                user = api.validate_credentials()
+            except Exception as e:
+                logger.info(f"Auto-conexión SoundCloud falló: {e}")
+                return
+            if not user:
+                return
+
+            def apply():
+                self._status_label.configure(
+                    text=f"OK: {user['username']} | {user['likes_count']} likes",
+                    text_color="#4ade80",
+                )
+                self._init_manager()
+                if self._on_status_update:
+                    self._on_status_update(user)
+
+            self.after(0, apply)
+
+        threading.Thread(target=worker, daemon=True).start()
+
     # ────────────────────────────────────────────────────────────────── #
     # Construccion de UI                                                  #
     # ────────────────────────────────────────────────────────────────── #
@@ -511,16 +550,29 @@ class SyncWindow(ctk.CTkFrame):
                 msg += f"✗ Errores: {results['errors']}"
             messagebox.showinfo("Exito", msg)
 
-    def _on_show_likes_preview(self):
+    def _on_show_likes_preview(self, initial_filter: str = "todos"):
         """Abre la ventana de likes para ver y descargar."""
         if not self.manager:
-            messagebox.showerror("Error", "Primero verifica tus credenciales")
+            messagebox.showerror(
+                "Sin conexión",
+                "Todavía no hay conexión con SoundCloud.\n\n"
+                "Si acabás de abrir la app, esperá unos segundos (se conecta "
+                "sola). Si no, andá a la pestaña Sincronizar y verificá tus "
+                "credenciales."
+            )
             return
 
         preview_window = ctk.CTkToplevel(self)
         preview_window.title("Mis Likes de SoundCloud")
         preview_window.geometry("1000x620")
         preview_window.resizable(True, True)
+        # CTkToplevel en Windows se re-muestra con delay y queda DETRÁS de la
+        # ventana principal; forzarla al frente.
+        preview_window.transient(self.winfo_toplevel())
+        preview_window.lift()
+        preview_window.focus_force()
+        preview_window.attributes("-topmost", True)
+        preview_window.after(400, lambda: preview_window.attributes("-topmost", False))
 
         preview_panel = LikesPreviewWindow(
             preview_window,
@@ -528,6 +580,7 @@ class SyncWindow(ctk.CTkFrame):
             self.downloader,
             download_manager=self._download_manager,
             config=self._config,
+            initial_filter=initial_filter,
         )
         preview_panel.pack(fill="both", expand=True)
 
@@ -642,8 +695,18 @@ ADVERTENCIA:
         if "soundcloud" not in config:
             config["soundcloud"] = {}
 
-        config["soundcloud"]["oauth_token"] = self._oauth_entry.get().strip()
-        config["soundcloud"]["client_id"] = self._client_entry.get().strip()
+        # No pisar una credencial YA GUARDADA con un campo vacío. _save_config
+        # se dispara desde varios lugares que no tienen nada que ver con las
+        # credenciales (cambiar carpeta, cambiar intervalo, o tocar SOLO uno
+        # de los dos campos) — si el otro widget está vacío en ese momento
+        # (por orden de carga, o porque el usuario lo dejó en blanco un
+        # instante), esto borraba silenciosamente la credencial real.
+        oauth_val = self._oauth_entry.get().strip()
+        client_val = self._client_entry.get().strip()
+        if oauth_val:
+            config["soundcloud"]["oauth_token"] = oauth_val
+        if client_val:
+            config["soundcloud"]["client_id"] = client_val
         config["soundcloud"]["sync_interval_minutes"] = int(self._interval_entry.get())
         config["dest_folder"] = self.download_folder
 

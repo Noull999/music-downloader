@@ -60,6 +60,7 @@ class TrackMetadata:
     platform: str = ""                      # "YouTube", "YouTube Music", "SoundCloud"
     detected_quality: str = ""             # calidad real disponible, ej: "251kbps Opus"
     track_id: str = ""                      # ID único de la plataforma
+    genre: str = ""                         # género según la plataforma (texto libre del uploader)
 
 
 class BaseHandler(ABC):

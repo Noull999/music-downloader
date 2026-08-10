@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import yt_dlp
 
 from handlers.base_handler import BaseHandler, TrackMetadata, ffmpeg_location
+from utils.genres import resolve_genre
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,12 @@ class SoundCloudHandler(BaseHandler):
         quality = self._best_audio_quality(formats) or "128kbps Mp3"
         available = self._all_audio_qualities(formats) or ["128kbps Mp3"]
 
+        # yt-dlp normaliza el género crudo de SoundCloud como `genres` (lista,
+        # 1 elemento) y los tags libres del uploader como `tags` (lista) —
+        # NO existen las claves `genre`/`tag_list` en el info dict final.
+        genres = info.get("genres") or []
+        genre = resolve_genre(genres[0] if genres else "", info.get("tags") or [])
+
         return TrackMetadata(
             url=url,
             title=title,
@@ -95,6 +102,7 @@ class SoundCloudHandler(BaseHandler):
             platform=_PLATFORM,
             detected_quality=quality,
             track_id=track_id,
+            genre=genre,
         )
 
     # ------------------------------------------------------------------ #
