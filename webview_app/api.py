@@ -339,12 +339,6 @@ class WebViewAPI:
         self.download_manager.cancel_all()
         return {"ok": True}
 
-    def set_max_workers(self, n: int) -> dict:
-        n = max(1, min(16, int(n)))
-        self.controller.set_config_value("max_workers", n)
-        self.download_manager.set_max_workers(n)
-        return {"ok": True, "max_workers": n}
-
     # ------------------------------------------------------------------ #
     # Historial / estadísticas                                            #
     # ------------------------------------------------------------------ #
@@ -490,10 +484,10 @@ class WebViewAPI:
             library_folders=self._library_folders(),
             track_event_callback=self._on_sync_track_event,
         )
-        try:
-            self._sync_manager.validate_credentials()
-        except Exception:
-            pass  # ya validamos arriba con el mismo token; no bloquear por esto
+        # Nota: NO se vuelve a llamar self._sync_manager.validate_credentials()
+        # acá — internamente hace otra request de red idéntica a la de arriba
+        # (mismo oauth_token/client_id), duplicando el tiempo de espera al
+        # conectar sin ganar nada.
 
         # Sincroniza filesystem -> DB en background (recupera archivos previos)
         threading.Thread(target=self._sync_filesystem_bg, daemon=True).start()

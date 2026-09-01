@@ -124,13 +124,6 @@
 
   .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
-  .slider-row { display: flex; align-items: center; gap: 8px; }
-  .slider-row input[type=range] { flex: 1; accent-color: var(--ember); }
-  .slider-val {
-    font-family: var(--f-mono); font-weight: 700; color: var(--amber);
-    min-width: 16px; text-align: center; font-variant-numeric: tabular-nums;
-  }
-
   .sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 9px; }
 
   .meter {
@@ -352,13 +345,6 @@
       <button class="btn btn-ghost btn-block" id="btnBrowse">Examinar</button>
     </div>
 
-    <div class="field">
-      <span class="field-label">Descargas en paralelo</span>
-      <div class="slider-row">
-        <input type="range" id="workersRange" min="1" max="10" step="1" value="3">
-        <span class="slider-val" id="workersVal">3</span>
-      </div>
-    </div>
 
     <div class="field">
       <span class="field-label">Control global</span>
@@ -841,9 +827,6 @@
   async function loadConfig() {
     const cfg = await api().get_config();
     document.getElementById("destPath").textContent = cfg.dest_folder || "—";
-    const workers = cfg.max_workers || 3;
-    document.getElementById("workersRange").value = workers;
-    document.getElementById("workersVal").textContent = workers;
   }
 
   // ------------------------------------------------------------------ //
@@ -860,15 +843,6 @@
     document.getElementById("btnBrowse").addEventListener("click", async () => {
       const folder = await api().browse_folder();
       if (folder) document.getElementById("destPath").textContent = folder;
-    });
-
-    document.getElementById("workersRange").addEventListener("change", async (e) => {
-      const n = parseInt(e.target.value, 10);
-      document.getElementById("workersVal").textContent = n;
-      await api().set_max_workers(n);
-    });
-    document.getElementById("workersRange").addEventListener("input", (e) => {
-      document.getElementById("workersVal").textContent = e.target.value;
     });
 
     document.getElementById("btnProcess").addEventListener("click", async () => {

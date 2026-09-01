@@ -57,6 +57,15 @@ class DownloadManager:
 
     def set_max_workers(self, n: int):
         self._max_workers = n
+        if self._executor:
+            # ThreadPoolExecutor no expone una API pública para redimensionar
+            # el pool en caliente (por diseño: solo crece nunca encoge un
+            # pool ya creado). Tocar el atributo privado es el workaround
+            # habitual: _adjust_thread_count() lo lee en cada submit(), así
+            # que el próximo submit ya crea hilos hasta el nuevo tope.
+            # Downloads en curso no se ven afectados; bajar el número no
+            # mata hilos activos, solo evita que se creen más.
+            self._executor._max_workers = n
 
     # ── Pausa / reanudación ──────────────────────────────────────────── #
 
