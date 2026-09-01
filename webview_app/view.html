@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Music Downloader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=Silkscreen:wght@400;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --void:    #060507;
+    --ash:     #121016;
+    --iron:    #1e1b24;
+    --iron-hi: #2a2531;
+    --bone:    #cfc6bd;
+    --bone-dim:#8d8580;
+    --smoke:   #6e6672;
+    --blood:   #a51218;
+    --blood-lo:#5e0b0f;
+    --ember:   #e8452c;
+    --amber:   #c9922e;
+    --venom:   #4f7a52;
+
+    --f-display: "Pixelify Sans", "Courier New", monospace;
+    --f-label:   "Silkscreen", "Courier New", monospace;
+    --f-mono:    "JetBrains Mono", ui-monospace, "Courier New", monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--void);
+    color: var(--bone);
+    font-family: var(--f-mono);
+    font-size: 13px;
+    line-height: 1.5;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  button, input, select { font-family: inherit; }
+
+  /* ---------- Layout raíz ---------- */
+
+  .shell {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    grid-template-rows: 1fr auto;
+    height: 100vh;
+  }
+
+  /* ---------- Sidebar ---------- */
+
+  .sidebar {
+    grid-row: 1 / 2;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 18px 14px;
+    background: linear-gradient(180deg, #16131b 0%, var(--ash) 55%);
+    border-right: 2px solid var(--iron-hi);
+    overflow-y: auto;
+  }
+
+  .brand { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+  .brand-name {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: 19px;
+    color: var(--bone);
+    text-shadow: 2px 2px 0 var(--blood-lo);
+  }
+  .brand-sub {
+    font-family: var(--f-label);
+    font-size: 9px;
+    letter-spacing: .18em;
+    color: var(--smoke);
+    text-transform: uppercase;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field-label {
+    font-family: var(--f-label);
+    font-size: 9px;
+    letter-spacing: .14em;
+    color: var(--smoke);
+    text-transform: uppercase;
+  }
+
+  .path-box {
+    background: var(--void);
+    border: 2px solid var(--iron-hi);
+    padding: 8px 9px;
+    font-size: 11px;
+    color: var(--bone-dim);
+    word-break: break-all;
+  }
+
+  .btn {
+    font-family: var(--f-label);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 9px 12px;
+    border: 2px solid;
+    cursor: pointer;
+    box-shadow: 3px 3px 0 #000;
+    transition: transform 50ms steps(1), background 60ms steps(2);
+  }
+  .btn:active { transform: translate(2px, 2px); box-shadow: 0 0 0 #000; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn:disabled:active { transform: none; box-shadow: 3px 3px 0 #000; }
+  .btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+  .btn-blood { background: var(--blood); border-color: var(--ember); color: #fbeeea; }
+  .btn-blood:hover:not(:disabled) { background: var(--ember); }
+
+  .btn-ghost { background: var(--iron-hi); border-color: #3a3543; color: var(--bone-dim); }
+  .btn-ghost:hover:not(:disabled) { color: var(--bone); border-color: var(--smoke); }
+
+  .btn-block { width: 100%; }
+
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .slider-row { display: flex; align-items: center; gap: 8px; }
+  .slider-row input[type=range] { flex: 1; accent-color: var(--ember); }
+  .slider-val {
+    font-family: var(--f-mono); font-weight: 700; color: var(--amber);
+    min-width: 16px; text-align: center; font-variant-numeric: tabular-nums;
+  }
+
+  .sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 9px; }
+
+  .meter {
+    background: var(--iron); border: 2px solid var(--iron-hi);
+    padding: 9px 10px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .meter-top { display: flex; justify-content: space-between; align-items: baseline; }
+  .meter-label { font-family: var(--f-label); font-size: 9px; letter-spacing: .12em; color: var(--smoke); text-transform: uppercase; }
+  .meter-value { font-family: var(--f-display); font-size: 16px; font-weight: 700; color: var(--amber); font-variant-numeric: tabular-nums; }
+
+  /* ---------- Área principal ---------- */
+
+  .main {
+    grid-row: 1 / 2;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+    overflow-y: auto;
+    min-width: 0;
+  }
+
+  .banner {
+    background: radial-gradient(120% 160% at 50% 0%, #2a0a0d 0%, var(--iron) 62%), var(--iron);
+    border: 3px solid var(--blood);
+    padding: 14px 18px;
+    text-align: center;
+  }
+  .banner h1 {
+    margin: 0; font-family: var(--f-display); font-weight: 700; font-size: 26px;
+    color: var(--bone); text-shadow: 3px 3px 0 #000, 0 0 20px rgba(232,69,44,.25);
+    letter-spacing: .04em;
+  }
+  .banner-meta {
+    margin-top: 4px; display: flex; flex-wrap: wrap; justify-content: center; gap: 5px 14px;
+    font-family: var(--f-label); font-size: 9px; letter-spacing: .12em; color: var(--bone-dim); text-transform: uppercase;
+  }
+  .banner-meta b { color: var(--amber); font-weight: 400; }
+
+  .panel { background: var(--iron); border: 2px solid var(--iron-hi); display: flex; flex-direction: column; }
+  .panel-head {
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+    background: var(--ash); border-bottom: 2px solid var(--iron-hi);
+  }
+  .panel-title { font-family: var(--f-label); font-size: 10px; letter-spacing: .14em; color: var(--bone); text-transform: uppercase; }
+  .panel-count { margin-left: auto; font-family: var(--f-label); font-size: 9px; letter-spacing: .1em; color: var(--smoke); font-variant-numeric: tabular-nums; }
+  .panel-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+  .input {
+    background: var(--void); border: 2px solid var(--iron-hi); border-left: 4px solid var(--blood);
+    color: var(--bone); font-family: var(--f-mono); font-size: 12px; padding: 9px 10px; resize: vertical;
+    width: 100%;
+  }
+  .input:focus { outline: none; border-color: var(--ember); border-left-color: var(--ember); }
+
+  .empty-state {
+    padding: 20px 10px; text-align: center; color: var(--smoke);
+    font-family: var(--f-label); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  }
+
+  /* ---------- Cola de tracks ---------- */
+
+  .queue { display: flex; flex-direction: column; gap: 8px; max-height: 340px; overflow-y: auto; }
+
+  .task {
+    background: var(--void); border: 2px solid var(--iron-hi); border-left: 4px solid var(--smoke);
+    padding: 9px 11px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .task[data-status="downloading"] { border-left-color: var(--ember); }
+  .task[data-status="done"] { border-left-color: var(--venom); }
+  .task[data-status="skip"] { border-left-color: var(--amber); }
+  .task[data-status="error"] { border-left-color: var(--blood); background: rgba(165,18,24,.08); }
+
+  .task-top { display: flex; align-items: baseline; gap: 10px; }
+  .task-name { flex: 1; min-width: 0; font-weight: 500; font-size: 12px; color: var(--bone); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-pct { font-family: var(--f-display); font-weight: 700; font-size: 14px; color: var(--ember); font-variant-numeric: tabular-nums; }
+
+  .cells { height: 8px; background: repeating-linear-gradient(90deg, var(--iron-hi) 0 5px, transparent 5px 7px); position: relative; }
+  .cells > i { position: absolute; inset: 0 auto 0 0; display: block; background: repeating-linear-gradient(90deg, var(--ember) 0 5px, transparent 5px 7px); transition: width 150ms linear; }
+
+  .task-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .task-sub { font-family: var(--f-label); font-size: 9px; letter-spacing: .08em; color: var(--smoke); text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-actions { display: flex; gap: 6px; flex: none; }
+  .mini-btn {
+    font-family: var(--f-label); font-size: 8px; letter-spacing: .08em; text-transform: uppercase;
+    padding: 4px 8px; border: 2px solid var(--iron-hi); background: var(--iron); color: var(--bone-dim); cursor: pointer;
+  }
+  .mini-btn:hover { color: var(--bone); border-color: var(--smoke); }
+  .mini-btn.dl { border-color: var(--blood); color: var(--ember); }
+
+  /* ---------- Historial ---------- */
+
+  .log { display: flex; flex-direction: column; max-height: 300px; overflow-y: auto; }
+  .hrow {
+    display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 10px;
+    padding: 8px 12px; border-bottom: 1px solid #221e29; border-left: 3px solid transparent;
+  }
+  .hrow:last-child { border-bottom: none; }
+  .hrow-glyph { font-size: 12px; text-align: center; color: var(--venom); }
+  .hrow-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .hrow-title { font-size: 12px; color: var(--bone); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hrow-sub { font-family: var(--f-label); font-size: 9px; letter-spacing: .08em; color: var(--smoke); text-transform: uppercase; }
+
+  /* ---------- Barra de estado ---------- */
+
+  .statusbar {
+    grid-column: 1 / 3; grid-row: 2 / 3;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px;
+    background: var(--ash); border-top: 2px solid var(--iron-hi);
+    padding: 8px 14px;
+    font-family: var(--f-label); font-size: 9px; letter-spacing: .12em; color: var(--smoke); text-transform: uppercase;
+  }
+  .statusbar b { color: var(--bone-dim); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .statusbar .right { margin-left: auto; }
+  .statusbar .right.ok { color: var(--venom); }
+  .statusbar .right.warn { color: var(--amber); }
+  .statusbar .right.err { color: var(--blood); }
+
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: var(--ash); }
+  ::-webkit-scrollbar-thumb { background: var(--iron-hi); border: 2px solid var(--ash); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--smoke); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-name">DESCARGA</div>
+      <div class="brand-sub">v0.1 · pywebview skeleton</div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Carpeta de destino</span>
+      <div class="path-box" id="destPath">—</div>
+      <button class="btn btn-ghost btn-block" id="btnBrowse">Examinar</button>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Descargas en paralelo</span>
+      <div class="slider-row">
+        <input type="range" id="workersRange" min="1" max="10" step="1" value="3">
+        <span class="slider-val" id="workersVal">3</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Control global</span>
+      <div class="row-2">
+        <button class="btn btn-ghost" id="btnPause">Pausar</button>
+        <button class="btn btn-ghost" id="btnCancelAll">Cancelar</button>
+      </div>
+    </div>
+
+    <button class="btn btn-blood btn-block" id="btnImportLikes">Importar mis Likes</button>
+
+    <div class="sidebar-foot">
+      <div class="meter">
+        <div class="meter-top">
+          <span class="meter-label">Descargas</span>
+          <span class="meter-value" id="statTotal">0</span>
+        </div>
+      </div>
+      <div class="meter">
+        <div class="meter-top">
+          <span class="meter-label">En disco</span>
+          <span class="meter-value" id="statSize">0 MB</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <section class="banner">
+      <h1>MUSIC DOWNLOADER</h1>
+      <div class="banner-meta">
+        <span id="bannerStatus">● Conectando…</span>
+        <span>Cola <b id="bannerQueue">0</b></span>
+        <span>Historial <b id="bannerHistory">0</b></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header class="panel-head">
+        <span class="panel-title">Nueva descarga</span>
+        <span class="panel-count">YouTube · SoundCloud</span>
+      </header>
+      <div class="panel-body">
+        <textarea class="input" id="urlBox" rows="3" placeholder="Pega una o varias URLs, una por línea…"></textarea>
+        <div class="row-2">
+          <button class="btn btn-blood" id="btnProcess">Procesar enlaces</button>
+          <button class="btn btn-ghost" id="btnStartAll">Descargar pendientes</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header class="panel-head">
+        <span class="panel-title">Cola</span>
+        <span class="panel-count" id="queueCount">0 tracks</span>
+      </header>
+      <div class="panel-body">
+        <div class="queue" id="queueList">
+          <div class="empty-state">Sin tracks todavía</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header class="panel-head">
+        <span class="panel-title">Historial (SQLite)</span>
+        <span class="panel-count" id="historyCount">0 registros</span>
+      </header>
+      <div class="log" id="historyList">
+        <div class="empty-state">Sin descargas registradas</div>
+      </div>
+    </section>
+  </main>
+
+  <div class="statusbar">
+    <span>Estado <b id="sbState">iniciando…</b></span>
+    <span id="sbExtra"></span>
+    <span class="right ok" id="sbRight">◤ conectando ◢</span>
+  </div>
+
+</div>
+
+<script>
+  "use strict";
+
+  const STATUS_LABEL = {
+    pending: "Pendiente", fetching: "Buscando…", downloading: "Descargando",
+    done: "Listo", error: "Error", skip: "En BD", cancelled: "Cancelado",
+  };
+
+  const tracks = new Map();   // url -> track dict
+  const rows = new Map();     // url -> <article> element
+  let paused = false;
+
+  function api() { return window.pywebview.api; }
+
+  function fmtBytes(n) {
+    if (!n) return "0 MB";
+    const mb = n / (1024 * 1024);
+    return mb >= 1024 ? (mb / 1024).toFixed(1) + " GB" : mb.toFixed(1) + " MB";
+  }
+
+  // ------------------------------------------------------------------ //
+  // Puente: eventos empujados desde Python                              //
+  // ------------------------------------------------------------------ //
+
+  window.__bridgeEvent = function (name, payload) {
+    switch (name) {
+      case "track_added":
+        upsertTrack(payload);
+        renderQueueRow(payload.url, true);
+        break;
+      case "track_replaced":
+        // Si la URL canónica difiere de la pegada, la fila vieja se
+        // descarta. Si es la misma (caso común), se actualiza en el
+        // sitio para que no "salte" al final de la cola.
+        if (payload.old_url !== payload.track.url) {
+          removeRow(payload.old_url);
+        }
+        tracks.delete(payload.old_url);
+        upsertTrack(payload.track);
+        renderQueueRow(payload.track.url, true);
+        break;
+      case "track_updated":
+        patchTrack(payload.url, payload);
+        renderQueueRow(payload.url, false);
+        break;
+      case "track_progress":
+        patchTrack(payload.url, { progress: payload.progress });
+        updateProgress(payload.url, payload.progress);
+        break;
+      case "track_status":
+        patchTrack(payload.url, { status: payload.status, error_msg: payload.error_msg });
+        renderQueueRow(payload.url, false);
+        if (payload.status === "done" || payload.status === "error") {
+          refreshHistory();
+          refreshStats();
+        }
+        break;
+    }
+    refreshQueueCounters();
+  };
+
+  function upsertTrack(t) { tracks.set(t.url, t); }
+  function patchTrack(url, patch) {
+    const t = tracks.get(url);
+    if (t) Object.assign(t, patch);
+  }
+  function removeRow(url) {
+    const el = rows.get(url);
+    if (el) el.remove();
+    rows.delete(url);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Render de la cola                                                   //
+  // ------------------------------------------------------------------ //
+
+  function renderQueueRow(url, isNew) {
+    const t = tracks.get(url);
+    if (!t) return;
+    document.querySelector("#queueList .empty-state")?.remove();
+
+    let el = rows.get(url);
+    if (!el) {
+      el = document.createElement("article");
+      el.className = "task";
+      el.innerHTML = `
+        <div class="task-top">
+          <span class="task-name"></span>
+          <span class="task-pct"></span>
+        </div>
+        <div class="cells"><i style="width:0%"></i></div>
+        <div class="task-foot">
+          <span class="task-sub"></span>
+          <div class="task-actions">
+            <button class="mini-btn dl" data-action="download">Descargar</button>
+            <button class="mini-btn" data-action="cancel">Cancelar</button>
+          </div>
+        </div>`;
+      el.querySelector('[data-action="download"]').addEventListener("click", () => {
+        api().start_download(url).then(r => { if (!r.ok) setStatus(r.error, "err"); });
+      });
+      el.querySelector('[data-action="cancel"]').addEventListener("click", () => {
+        api().cancel_download(url);
+      });
+      document.getElementById("queueList").appendChild(el);
+      rows.set(url, el);
+    }
+
+    el.dataset.status = t.status;
+    el.querySelector(".task-name").textContent = t.title === "Cargando..." ? url : `${t.artist ? t.artist + " — " : ""}${t.title}`;
+    el.querySelector(".task-pct").textContent = t.status === "downloading" ? `${Math.round((t.progress || 0) * 100)}%` : "";
+    el.querySelector(".task-sub").textContent =
+      t.status === "error" ? (t.error_msg || "Error") : `${t.platform || ""} · ${STATUS_LABEL[t.status] || t.status}`;
+
+    const dlBtn = el.querySelector('[data-action="download"]');
+    dlBtn.disabled = ["downloading", "fetching", "done", "skip"].includes(t.status);
+
+    updateProgress(url, t.progress || 0);
+  }
+
+  function updateProgress(url, v) {
+    const el = rows.get(url);
+    if (!el) return;
+    el.querySelector(".cells > i").style.width = `${Math.round((v || 0) * 100)}%`;
+    if (el.dataset.status === "downloading") {
+      el.querySelector(".task-pct").textContent = `${Math.round((v || 0) * 100)}%`;
+    }
+  }
+
+  function refreshQueueCounters() {
+    document.getElementById("queueCount").textContent = `${tracks.size} tracks`;
+    document.getElementById("bannerQueue").textContent = tracks.size;
+  }
+
+  // ------------------------------------------------------------------ //
+  // Historial / stats / config                                          //
+  // ------------------------------------------------------------------ //
+
+  async function refreshHistory() {
+    const items = await api().get_recent_downloads(30);
+    const list = document.getElementById("historyList");
+    document.getElementById("historyCount").textContent = `${items.length} registros`;
+    document.getElementById("bannerHistory").textContent = items.length;
+    if (!items.length) {
+      list.innerHTML = '<div class="empty-state">Sin descargas registradas</div>';
+      return;
+    }
+    list.innerHTML = "";
+    for (const it of items) {
+      const row = document.createElement("div");
+      row.className = "hrow";
+      const glyph = document.createElement("span");
+      glyph.className = "hrow-glyph";
+      glyph.textContent = it.local_path ? "✓" : "◇";
+      const main = document.createElement("div");
+      main.className = "hrow-main";
+      const title = document.createElement("span");
+      title.className = "hrow-title";
+      title.textContent = it.artist ? `${it.artist} — ${it.title}` : (it.title || it.url);
+      const sub = document.createElement("span");
+      sub.className = "hrow-sub";
+      sub.textContent = `${it.platform || "?"} · ${it.local_path ? "descargado" : "importado (sin archivo)"}`;
+      main.append(title, sub);
+      const date = document.createElement("span");
+      date.className = "hrow-sub";
+      date.textContent = (it.download_date || "").slice(0, 16);
+      row.append(glyph, main, date);
+      list.appendChild(row);
+    }
+  }
+
+  async function refreshStats() {
+    const stats = await api().get_stats();
+    document.getElementById("statTotal").textContent = stats.total_downloads ?? 0;
+    document.getElementById("statSize").textContent = fmtBytes(stats.total_size_bytes || 0);
+  }
+
+  async function loadConfig() {
+    const cfg = await api().get_config();
+    document.getElementById("destPath").textContent = cfg.dest_folder || "—";
+    const workers = cfg.max_workers || 3;
+    document.getElementById("workersRange").value = workers;
+    document.getElementById("workersVal").textContent = workers;
+  }
+
+  // ------------------------------------------------------------------ //
+  // Acciones de UI                                                      //
+  // ------------------------------------------------------------------ //
+
+  function setStatus(text, tone) {
+    const el = document.getElementById("sbRight");
+    el.textContent = `◤ ${text} ◢`;
+    el.className = `right ${tone || "ok"}`;
+  }
+
+  function wireEvents() {
+    document.getElementById("btnBrowse").addEventListener("click", async () => {
+      const folder = await api().browse_folder();
+      if (folder) document.getElementById("destPath").textContent = folder;
+    });
+
+    document.getElementById("workersRange").addEventListener("change", async (e) => {
+      const n = parseInt(e.target.value, 10);
+      document.getElementById("workersVal").textContent = n;
+      await api().set_max_workers(n);
+    });
+    document.getElementById("workersRange").addEventListener("input", (e) => {
+      document.getElementById("workersVal").textContent = e.target.value;
+    });
+
+    document.getElementById("btnProcess").addEventListener("click", async () => {
+      const text = document.getElementById("urlBox").value;
+      const r = await api().add_urls(text);
+      if (!r.ok) { setStatus(r.error, "err"); return; }
+      document.getElementById("urlBox").value = "";
+      setStatus(`${r.queued} enlace(s) en cola`, "ok");
+    });
+
+    document.getElementById("btnStartAll").addEventListener("click", async () => {
+      const r = await api().start_all_pending();
+      setStatus(r.ok ? `${r.submitted} descarga(s) iniciada(s)` : r.error, r.ok ? "ok" : "err");
+    });
+
+    document.getElementById("btnPause").addEventListener("click", async () => {
+      const btn = document.getElementById("btnPause");
+      if (paused) {
+        await api().resume_downloads();
+        paused = false;
+        btn.textContent = "Pausar";
+        setStatus("reanudado", "ok");
+      } else {
+        await api().pause_downloads();
+        paused = true;
+        btn.textContent = "Reanudar";
+        setStatus("pausado", "warn");
+      }
+    });
+
+    document.getElementById("btnCancelAll").addEventListener("click", async () => {
+      await api().cancel_all();
+      setStatus("cancelando todo…", "warn");
+    });
+
+    document.getElementById("btnImportLikes").addEventListener("click", async () => {
+      setStatus("importando likes…", "warn");
+      const r = await api().import_soundcloud_likes();
+      if (r.success) {
+        setStatus(`${r.imported} likes importados`, "ok");
+      } else {
+        setStatus(r.error || "error importando likes", "err");
+      }
+      refreshHistory();
+      refreshStats();
+    });
+  }
+
+  async function init() {
+    document.getElementById("bannerStatus").textContent = "● Sistema listo";
+    document.getElementById("sbState").textContent = "listo";
+    setStatus("listo", "ok");
+    wireEvents();
+    await Promise.all([loadConfig(), refreshHistory(), refreshStats()]);
+  }
+
+  if (window.pywebview) {
+    init();
+  } else {
+    window.addEventListener("pywebviewready", init);
+  }
+</script>
+
+</body>
+</html>

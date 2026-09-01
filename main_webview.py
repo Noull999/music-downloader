@@ -1,0 +1,86 @@
+"""
+Music Downloader — entry point experimental con pywebview.
+Ejecutar: python main_webview.py
+
+No reemplaza main.py/gui/ (sigue intacto). Vista HTML/CSS en vez de
+CustomTkinter, misma lógica de negocio (UIController, DownloadManager).
+
+Requiere: pip install pywebview
+"""
+import os
+import sys
+
+from utils.logger import setup_logging
+from utils.dependencies import validate_all_dependencies
+from utils.exceptions import DependencyNotFoundError
+
+_BASE = os.path.dirname(os.path.abspath(__file__))
+_VIEW_HTML = os.path.join(_BASE, "webview_app", "view.html")
+
+
+def validate_startup() -> bool:
+    try:
+        print("🔍 Validando dependencias...")
+        results = validate_all_dependencies()
+        print("\n✓ Dependencias validadas:")
+        for dep, info in results.items():
+            status = "✓" if info["status"] == "OK" else "⚠"
+            version = f" v{info.get('version', 'N/A')}" if "version" in info else ""
+            print(f"  {status} {dep}{version}")
+        return True
+    except DependencyNotFoundError as e:
+        print(f"\n❌ ERROR DE DEPENDENCIA:\n{e}\n")
+        return False
+    except Exception as e:
+        print(f"\n❌ ERROR AL VALIDAR:\n{e}\n")
+        return False
+
+
+def main():
+    if not validate_startup():
+        sys.exit(1)
+
+    try:
+        import webview
+    except ImportError:
+        print(
+            "\n❌ Falta pywebview. Instálalo con:\n\n"
+            "    pip install pywebview\n\n"
+            "En Windows/macOS no requiere nada más. En Linux necesita "
+            "el backend GTK (WebKit2) o QT ya presente en la mayoría de "
+            "distros de escritorio.\n"
+        )
+        sys.exit(1)
+
+    if not os.path.exists(_VIEW_HTML):
+        print(f"\n❌ No se encontró la vista: {_VIEW_HTML}")
+        sys.exit(1)
+
+    logger = setup_logging(log_level="INFO")
+    logger.info("=" * 60)
+    logger.info("🎵 Music Downloader (webview) iniciado")
+    logger.info("=" * 60)
+
+    from webview_app.api import WebViewAPI
+
+    api = WebViewAPI(base_dir=_BASE)
+
+    window = webview.create_window(
+        "Music Downloader",
+        _VIEW_HTML,
+        js_api=api,
+        width=1180,
+        height=760,
+        min_size=(860, 580),
+        background_color="#060507",
+    )
+    api.attach_window(window)
+
+    try:
+        webview.start(debug=os.environ.get("MD_WEBVIEW_DEBUG") == "1")
+    finally:
+        api.shutdown()
+
+
+if __name__ == "__main__":
+    main()
