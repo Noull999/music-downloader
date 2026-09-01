@@ -565,7 +565,10 @@
           No corre dentro de la app: registra/actualiza una tarea programada
           del sistema que ejecuta la sincronización en background.
         </div>
-        <button class="btn btn-ghost" id="btnRegisterTask">Registrar tarea programada</button>
+        <div class="row-2">
+          <button class="btn btn-ghost" id="btnRegisterTask">Registrar tarea</button>
+          <button class="btn btn-ghost" id="btnRemoveTask">Quitar tarea</button>
+        </div>
         <span class="sc-status-line" id="taskRegisterStatus"></span>
       </div>
     </div>
@@ -1062,6 +1065,15 @@
       const r = await api().register_autosync_task(minutes);
       el.textContent = r.ok ? `✓ tarea registrada cada ${r.minutes} min` : `✗ ${r.error || r.message}`;
       el.className = r.ok ? "sc-status-line on" : "sc-status-line off";
+      if (r.ok) refreshTaskStatus();
+    });
+
+    document.getElementById("btnRemoveTask").addEventListener("click", async () => {
+      const el = document.getElementById("taskRegisterStatus");
+      const r = await api().remove_autosync_task();
+      el.textContent = r.ok ? "✓ tarea eliminada" : `✗ ${r.error || r.message}`;
+      el.className = r.ok ? "sc-status-line" : "sc-status-line off";
+      refreshTaskStatus();
     });
   }
 
@@ -1240,7 +1252,23 @@
     document.getElementById("cfgDelay").value = cfg.delay ?? 0.5;
     document.getElementById("cfgSyncInterval").value =
       (cfg.soundcloud && cfg.soundcloud.sync_interval_minutes) || 1440;
-    document.getElementById("taskRegisterStatus").textContent = "";
+    await refreshTaskStatus();
+  }
+
+  async function refreshTaskStatus() {
+    const el = document.getElementById("taskRegisterStatus");
+    try {
+      const st = await api().get_autosync_status();
+      if (st.registered) {
+        el.textContent = "✓ tarea programada activa";
+        el.className = "sc-status-line on";
+      } else {
+        el.textContent = "○ sin tarea programada";
+        el.className = "sc-status-line off";
+      }
+    } catch (e) {
+      el.textContent = "";
+    }
   }
 
   async function init() {

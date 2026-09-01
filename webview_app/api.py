@@ -31,7 +31,7 @@ from models import (
     STATUS_DONE, STATUS_ERROR, STATUS_SKIP, STATUS_CANCELLED,
 )
 from quality.presets import get_preset
-from sync import match_utils
+from sync import match_utils, task_scheduler
 from sync.soundcloud_api import SoundCloudAPIClient
 from sync.sync_manager import SyncManager
 from url_detector import detect_handler, detect_platform_name
@@ -392,35 +392,34 @@ class WebViewAPI:
 
     def register_autosync_task(self, minutes: int) -> dict:
         """
-        Re-registra la tarea programada de Windows (o el timer de
-        systemd/launchd) con el nuevo intervalo, llamando al mismo script
-        que usa el flujo manual (scripts/setup_task_scheduler.py).
+        Registra la tarea programada de Windows con el intervalo dado.
+        Funciona igual desde el .exe que desde el código fuente: la propia
+        tarea apunta al ejecutable (`--auto-sync`) o al script, según el caso.
         """
         try:
             minutes = max(5, min(1440, int(minutes)))
             self.save_settings({"soundcloud": {"sync_interval_minutes": minutes}})
-            script = os.path.join(self._base_dir, "scripts", "setup_task_scheduler.py")
-            if not os.path.isfile(script):
-                # En el .exe empaquetado no viaja el árbol de scripts: la
-                # tarea se registra desde el repo, no desde el ejecutable.
-                return {
-                    "ok": False,
-                    "minutes": minutes,
-                    "error": (
-                        "Intervalo guardado, pero la tarea programada solo se puede "
-                        "registrar desde la carpeta del proyecto:\n"
-                        "python scripts/setup_task_scheduler.py --register"
-                    ),
-                }
-            result = subprocess.run(
-                [sys.executable, script, "--register", "--interval-minutes", str(minutes)],
-                capture_output=True, text=True, timeout=30,
-            )
-            ok = result.returncode == 0
-            msg = result.stdout.strip() if ok else (result.stderr.strip() or result.stdout.strip())
-            return {"ok": ok, "message": msg, "minutes": minutes}
+            ok, msg = task_scheduler.register(minutes, self.controller.config.config_path)
+            return {"ok": ok, "message": msg, "minutes": minutes,
+                    **({} if ok else {"error": msg})}
         except Exception as e:
             logger.exception("Error registrando tarea programada")
+            return {"ok": False, "error": str(e)}
+
+    def get_autosync_status(self) -> dict:
+        """Estado de la tarea programada, para mostrarlo en Configuración."""
+        try:
+            ok, msg = task_scheduler.status()
+            return {"registered": ok, "detail": msg,
+                    "command": task_scheduler.build_command(self.controller.config.config_path)}
+        except Exception as e:
+            return {"registered": False, "detail": str(e), "command": ""}
+
+    def remove_autosync_task(self) -> dict:
+        try:
+            ok, msg = task_scheduler.remove()
+            return {"ok": ok, "message": msg}
+        except Exception as e:
             return {"ok": False, "error": str(e)}
 
     # ------------------------------------------------------------------ #

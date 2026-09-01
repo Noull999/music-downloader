@@ -75,6 +75,15 @@ def validate_startup() -> bool:
 
 
 def main():
+    # Modo sin interfaz para la tarea programada. Permite que el .exe corra
+    # la sincronización por sí mismo, sin depender de la carpeta del
+    # proyecto ni de tener Python instalado.
+    if "--auto-sync" in sys.argv:
+        from sync import auto_sync_runner
+        sys.exit(auto_sync_runner.run(
+            _CONFIG_PATH, validate_only="--validate" in sys.argv
+        ))
+
     if not validate_startup():
         sys.exit(1)
 
