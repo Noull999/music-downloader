@@ -249,6 +249,83 @@
   .statusbar .right.warn { color: var(--amber); }
   .statusbar .right.err { color: var(--blood); }
 
+  /* ---------- SoundCloud (sidebar) ---------- */
+
+  .sc-status {
+    background: var(--void); border: 2px solid var(--iron-hi);
+    padding: 8px 9px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .sc-status-line { font-size: 11px; color: var(--bone-dim); }
+  .sc-status-line.on { color: var(--venom); }
+  .sc-status-line.off { color: var(--smoke); }
+  .sc-progress { height: 6px; background: var(--iron-hi); position: relative; overflow: hidden; }
+  .sc-progress > i { position: absolute; inset: 0 auto 0 0; display: block; background: var(--amber); transition: width 200ms linear; width: 0%; }
+  .sc-progress-msg { font-family: var(--f-label); font-size: 8px; letter-spacing: .06em; color: var(--smoke); text-transform: uppercase; }
+
+  /* ---------- Modales ---------- */
+
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(4,3,5,.72);
+    align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--iron); border: 3px solid var(--blood);
+    box-shadow: 6px 6px 0 #000;
+    width: 100%; max-width: 520px; max-height: 84vh;
+    display: flex; flex-direction: column;
+  }
+  .modal-head {
+    display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    background: var(--ash); border-bottom: 2px solid var(--iron-hi);
+  }
+  .modal-title { font-family: var(--f-display); font-size: 16px; font-weight: 700; color: var(--bone); }
+  .modal-close {
+    margin-left: auto; background: transparent; border: 2px solid var(--iron-hi); color: var(--bone-dim);
+    font-family: var(--f-label); font-size: 12px; width: 26px; height: 26px; cursor: pointer;
+  }
+  .modal-close:hover { color: var(--bone); border-color: var(--smoke); }
+  .modal-body { padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  .modal-foot { padding: 12px 16px; border-top: 2px solid var(--iron-hi); display: flex; gap: 8px; justify-content: flex-end; }
+
+  .form-group { display: flex; flex-direction: column; gap: 8px; }
+  .form-group-title { font-family: var(--f-label); font-size: 10px; letter-spacing: .12em; color: var(--amber); text-transform: uppercase; }
+  .form-row { display: flex; flex-direction: column; gap: 4px; }
+  .form-row label { font-family: var(--f-label); font-size: 9px; letter-spacing: .08em; color: var(--smoke); text-transform: uppercase; }
+  .form-row input[type=text], .form-row input[type=password], .form-row input[type=number], .form-row select {
+    background: var(--void); border: 2px solid var(--iron-hi); color: var(--bone);
+    font-family: var(--f-mono); font-size: 12px; padding: 8px 9px;
+  }
+  .form-row input:focus, .form-row select:focus { outline: none; border-color: var(--ember); }
+  .form-row-inline { display: flex; align-items: center; gap: 8px; }
+  .form-row-inline input[type=text], .form-row-inline input[type=password] { flex: 1; }
+
+  .check-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .check-row input[type=checkbox] { accent-color: var(--ember); width: 15px; height: 15px; cursor: pointer; }
+  .check-row span { font-size: 11px; color: var(--bone-dim); }
+
+  .hint { font-size: 10px; color: var(--smoke); line-height: 1.5; }
+
+  /* ---------- Likes modal ---------- */
+
+  .likes-toolbar { display: flex; gap: 8px; align-items: center; }
+  .likes-toolbar .input { flex: 1; padding: 7px 9px; font-size: 11px; }
+  .likes-list { display: flex; flex-direction: column; max-height: 46vh; overflow-y: auto; border: 2px solid var(--iron-hi); }
+  .like-row {
+    display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 10px;
+    padding: 7px 10px; border-bottom: 1px solid #221e29; background: var(--void);
+  }
+  .like-row:last-child { border-bottom: none; }
+  .like-row input[type=checkbox] { accent-color: var(--ember); width: 15px; height: 15px; }
+  .like-main { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .like-title { font-size: 11px; color: var(--bone); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .like-sub { font-family: var(--f-label); font-size: 8px; letter-spacing: .06em; color: var(--smoke); text-transform: uppercase; }
+  .like-row[data-downloaded="1"] .like-title { color: var(--venom); }
+  .like-flag { font-size: 12px; color: var(--venom); }
+
   ::-webkit-scrollbar { width: 10px; }
   ::-webkit-scrollbar-track { background: var(--ash); }
   ::-webkit-scrollbar-thumb { background: var(--iron-hi); border: 2px solid var(--ash); }
@@ -266,7 +343,7 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="brand-name">DESCARGA</div>
-      <div class="brand-sub">v0.1 · pywebview skeleton</div>
+      <div class="brand-sub">Music Downloader</div>
     </div>
 
     <div class="field">
@@ -291,7 +368,23 @@
       </div>
     </div>
 
-    <button class="btn btn-blood btn-block" id="btnImportLikes">Importar mis Likes</button>
+    <div class="field">
+      <span class="field-label">SoundCloud</span>
+      <div class="sc-status" id="scStatus">
+        <span class="sc-status-line off" id="scStatusLine">○ Sin conectar</span>
+      </div>
+      <div class="sc-progress" id="scProgressBar" style="display:none"><i id="scProgressFill"></i></div>
+      <span class="sc-progress-msg" id="scProgressMsg"></span>
+      <div class="row-2">
+        <button class="btn btn-blood" id="btnScSync">Sincronizar</button>
+        <button class="btn btn-ghost" id="btnScLikes">Mis Likes</button>
+      </div>
+      <button class="btn btn-ghost btn-block" id="btnScConnect">Conectar cuenta</button>
+    </div>
+
+    <div class="field">
+      <button class="btn btn-ghost btn-block" id="btnSettings">⚙ Configuración</button>
+    </div>
 
     <div class="sidebar-foot">
       <div class="meter">
@@ -364,6 +457,138 @@
 
 </div>
 
+<!-- ============ Modal: Conectar SoundCloud ============ -->
+<div class="modal-overlay" id="modalConnect">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">Conectar SoundCloud</span>
+      <button class="modal-close" data-close="modalConnect">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label>OAuth Token</label>
+        <div class="form-row-inline">
+          <input type="password" id="scOauthInput" placeholder="OAuth 2-XXXXX-XXXXX-XXXXX">
+          <button class="btn btn-ghost" id="btnScToggleOauth" style="padding:8px 10px;">Ver</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Client ID</label>
+        <input type="text" id="scClientInput" placeholder="XXXXXXXXXXXXXXXX">
+      </div>
+      <span class="sc-status-line" id="scVerifyStatus"></span>
+      <div class="hint">
+        F12 en soundcloud.com → pestaña Network → filtrá "api-v2" → recargá →
+        abrí cualquier request: el header <b>Authorization</b> es el OAuth Token,
+        y <b>client_id</b> en la URL del request es el Client ID. Son como una
+        contraseña, no los compartas.
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close="modalConnect">Cerrar</button>
+      <button class="btn btn-blood" id="btnScVerify">Verificar y conectar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Modal: Configuración ============ -->
+<div class="modal-overlay" id="modalSettings">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">Configuración</span>
+      <button class="modal-close" data-close="modalSettings">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <span class="form-group-title">Calidad</span>
+        <div class="form-row">
+          <label>Preset</label>
+          <select id="cfgQuality">
+            <option value="mp3_128">MP3 128kbps</option>
+            <option value="mp3_256">MP3 256kbps</option>
+            <option value="mp3_320">MP3 320kbps</option>
+            <option value="flac">FLAC (sin pérdida)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <span class="form-group-title">Post-proceso</span>
+        <label class="check-row"><input type="checkbox" id="cfgArtwork"><span>Incrustar carátula</span></label>
+        <label class="check-row"><input type="checkbox" id="cfgMetadata"><span>Incrustar metadatos (artista, título)</span></label>
+        <label class="check-row"><input type="checkbox" id="cfgGenre"><span>Incrustar género</span></label>
+        <label class="check-row"><input type="checkbox" id="cfgNormalize"><span>Normalizar volumen</span></label>
+        <label class="check-row"><input type="checkbox" id="cfgSilence"><span>Eliminar silencios</span></label>
+      </div>
+
+      <div class="form-group">
+        <span class="form-group-title">Archivo</span>
+        <div class="form-row">
+          <label>Patrón de nombre</label>
+          <input type="text" id="cfgPattern" placeholder="{artist} - {title}">
+        </div>
+        <label class="check-row"><input type="checkbox" id="cfgSubArtist"><span>Subcarpeta por artista</span></label>
+        <label class="check-row"><input type="checkbox" id="cfgSubGenre"><span>Subcarpeta por género</span></label>
+      </div>
+
+      <div class="form-group">
+        <span class="form-group-title">Descarga</span>
+        <div class="form-row">
+          <label>Delay entre descargas (segundos)</label>
+          <input type="number" id="cfgDelay" min="0" max="5" step="0.1">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <span class="form-group-title">Auto-sincronización</span>
+        <div class="form-row">
+          <label>Cada (minutos, tarea programada de Windows)</label>
+          <input type="number" id="cfgSyncInterval" min="5" max="1440" step="5">
+        </div>
+        <div class="hint">
+          No corre dentro de la app: registra/actualiza una tarea programada
+          del sistema que ejecuta la sincronización en background.
+        </div>
+        <button class="btn btn-ghost" id="btnRegisterTask">Registrar tarea programada</button>
+        <span class="sc-status-line" id="taskRegisterStatus"></span>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close="modalSettings">Cancelar</button>
+      <button class="btn btn-blood" id="btnSaveSettings">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Modal: Mis Likes ============ -->
+<div class="modal-overlay" id="modalLikes">
+  <div class="modal" style="max-width: 640px;">
+    <div class="modal-head">
+      <span class="modal-title">Mis Likes de SoundCloud</span>
+      <button class="modal-close" data-close="modalLikes">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="likes-toolbar">
+        <input class="input" type="text" id="likesSearch" placeholder="Buscar por artista o título…">
+        <button class="btn btn-ghost" id="btnLikesRefresh">↻ Actualizar</button>
+      </div>
+      <div class="row-2">
+        <button class="btn btn-ghost" id="btnLikesSelectAll">Seleccionar todo</button>
+        <button class="btn btn-ghost" id="btnLikesSelectNone">Deseleccionar</button>
+      </div>
+      <span class="sc-status-line" id="likesStatus"></span>
+      <div class="likes-list" id="likesList">
+        <div class="empty-state">Conectá tu cuenta y actualizá para ver tus likes</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span class="sc-status-line" id="likesSelCount" style="margin-right:auto;">0 seleccionadas</span>
+      <button class="btn btn-ghost" data-close="modalLikes">Cerrar</button>
+      <button class="btn btn-blood" id="btnLikesDownload">Descargar seleccionadas</button>
+    </div>
+  </div>
+</div>
+
 <script>
   "use strict";
 
@@ -375,6 +600,7 @@
   const tracks = new Map();   // url -> track dict
   const rows = new Map();     // url -> <article> element
   let paused = false;
+  let syncActive = false;
 
   function api() { return window.pywebview.api; }
 
@@ -420,6 +646,15 @@
           refreshHistory();
           refreshStats();
         }
+        break;
+      case "sync_progress":
+        setScProgress(payload.pct, payload.msg);
+        break;
+      case "sync_complete":
+        onSyncComplete(payload);
+        break;
+      case "likes_scanned":
+        onLikesScanned(payload);
         break;
     }
     refreshQueueCounters();
@@ -607,17 +842,309 @@
       setStatus("cancelando todo…", "warn");
     });
 
-    document.getElementById("btnImportLikes").addEventListener("click", async () => {
-      setStatus("importando likes…", "warn");
-      const r = await api().import_soundcloud_likes();
-      if (r.success) {
-        setStatus(`${r.imported} likes importados`, "ok");
-      } else {
-        setStatus(r.error || "error importando likes", "err");
-      }
-      refreshHistory();
-      refreshStats();
+    // ---- Modales: abrir/cerrar ----
+    document.querySelectorAll("[data-close]").forEach(btn => {
+      btn.addEventListener("click", () => closeModal(btn.dataset.close));
     });
+    document.querySelectorAll(".modal-overlay").forEach(ov => {
+      ov.addEventListener("click", (e) => { if (e.target === ov) closeModal(ov.id); });
+    });
+
+    // ---- SoundCloud: conectar / verificar ----
+    document.getElementById("btnScConnect").addEventListener("click", async () => {
+      const cfg = await api().get_config();
+      const sc = cfg.soundcloud || {};
+      document.getElementById("scOauthInput").value = sc.oauth_token || "";
+      document.getElementById("scClientInput").value = sc.client_id || "";
+      document.getElementById("scVerifyStatus").textContent = "";
+      openModal("modalConnect");
+    });
+
+    document.getElementById("btnScToggleOauth").addEventListener("click", () => {
+      const inp = document.getElementById("scOauthInput");
+      const btn = document.getElementById("btnScToggleOauth");
+      const show = inp.type === "password";
+      inp.type = show ? "text" : "password";
+      btn.textContent = show ? "Ocultar" : "Ver";
+    });
+
+    document.getElementById("btnScVerify").addEventListener("click", async () => {
+      const oauth = document.getElementById("scOauthInput").value.trim();
+      const clientId = document.getElementById("scClientInput").value.trim();
+      const statusEl = document.getElementById("scVerifyStatus");
+      if (!oauth || !clientId) {
+        statusEl.textContent = "Completá ambos campos";
+        statusEl.className = "sc-status-line off";
+        return;
+      }
+      statusEl.textContent = "Verificando…";
+      statusEl.className = "sc-status-line";
+      const r = await api().verify_soundcloud_credentials(oauth, clientId);
+      if (r.ok) {
+        statusEl.textContent = `✓ ${r.user_info.username} · ${r.user_info.likes_count} likes`;
+        statusEl.className = "sc-status-line on";
+        renderScStatus(true, r.user_info);
+        setStatus("SoundCloud conectado", "ok");
+        setTimeout(() => closeModal("modalConnect"), 900);
+      } else {
+        statusEl.textContent = `✗ ${r.error}`;
+        statusEl.className = "sc-status-line off";
+      }
+    });
+
+    // ---- SoundCloud: sincronizar ----
+    document.getElementById("btnScSync").addEventListener("click", async () => {
+      if (syncActive) {
+        await api().stop_sync();
+        return;
+      }
+      const status = await api().get_soundcloud_status();
+      if (!status.connected) { openModal("modalConnect"); return; }
+      syncActive = true;
+      document.getElementById("btnScSync").textContent = "Detener";
+      document.getElementById("scProgressBar").style.display = "";
+      setScProgress(0, "Iniciando sincronización…");
+      await api().start_sync("full");
+    });
+
+    // ---- SoundCloud: mis likes ----
+    document.getElementById("btnScLikes").addEventListener("click", async () => {
+      const status = await api().get_soundcloud_status();
+      if (!status.connected) { openModal("modalConnect"); return; }
+      openModal("modalLikes");
+      await loadLikes();
+    });
+
+    document.getElementById("btnLikesRefresh").addEventListener("click", async () => {
+      const el = document.getElementById("likesStatus");
+      el.textContent = "Consultando SoundCloud…";
+      el.className = "sc-status-line";
+      const r = await api().scan_likes();
+      if (!r.ok) { el.textContent = `✗ ${r.error}`; el.className = "sc-status-line off"; }
+    });
+
+    document.getElementById("likesSearch").addEventListener("input", () => renderLikesList());
+    document.getElementById("btnLikesSelectAll").addEventListener("click", () => {
+      likesFiltered().forEach(l => selectedLikes.add(l.url));
+      renderLikesList();
+    });
+    document.getElementById("btnLikesSelectNone").addEventListener("click", () => {
+      selectedLikes.clear();
+      renderLikesList();
+    });
+    document.getElementById("btnLikesDownload").addEventListener("click", async () => {
+      if (!selectedLikes.size) return;
+      const urls = Array.from(selectedLikes);
+      const r = await api().download_selected_likes(urls);
+      if (r.ok) {
+        setStatus(`${r.submitted} descarga(s) de likes iniciada(s)`, "ok");
+        selectedLikes.clear();
+        closeModal("modalLikes");
+      } else {
+        setStatus(r.error, "err");
+      }
+    });
+
+    // ---- Configuración ----
+    document.getElementById("btnSettings").addEventListener("click", async () => {
+      await loadSettingsIntoModal();
+      openModal("modalSettings");
+    });
+
+    document.getElementById("btnSaveSettings").addEventListener("click", async () => {
+      const updates = {
+        quality_preset: document.getElementById("cfgQuality").value,
+        embed_artwork: document.getElementById("cfgArtwork").checked,
+        embed_metadata: document.getElementById("cfgMetadata").checked,
+        embed_genre: document.getElementById("cfgGenre").checked,
+        normalize_volume: document.getElementById("cfgNormalize").checked,
+        remove_silence: document.getElementById("cfgSilence").checked,
+        filename_pattern: document.getElementById("cfgPattern").value.trim() || "{artist} - {title}",
+        subfolder_by_artist: document.getElementById("cfgSubArtist").checked,
+        subfolder_by_genre: document.getElementById("cfgSubGenre").checked,
+        delay: parseFloat(document.getElementById("cfgDelay").value) || 0,
+        soundcloud: {
+          sync_interval_minutes: parseInt(document.getElementById("cfgSyncInterval").value, 10) || 1440,
+        },
+      };
+      const r = await api().save_settings(updates);
+      setStatus(r.ok ? "Configuración guardada" : (r.error || "error guardando"), r.ok ? "ok" : "err");
+      if (r.ok) closeModal("modalSettings");
+    });
+
+    document.getElementById("btnRegisterTask").addEventListener("click", async () => {
+      const minutes = parseInt(document.getElementById("cfgSyncInterval").value, 10) || 1440;
+      const el = document.getElementById("taskRegisterStatus");
+      el.textContent = "Registrando…";
+      el.className = "sc-status-line";
+      const r = await api().register_autosync_task(minutes);
+      el.textContent = r.ok ? `✓ tarea registrada cada ${r.minutes} min` : `✗ ${r.error || r.message}`;
+      el.className = r.ok ? "sc-status-line on" : "sc-status-line off";
+    });
+  }
+
+  // ------------------------------------------------------------------ //
+  // Modales                                                              //
+  // ------------------------------------------------------------------ //
+
+  function openModal(id) { document.getElementById(id).classList.add("open"); }
+  function closeModal(id) { document.getElementById(id).classList.remove("open"); }
+
+  // ------------------------------------------------------------------ //
+  // SoundCloud: estado, sync, likes                                      //
+  // ------------------------------------------------------------------ //
+
+  function renderScStatus(connected, userInfo) {
+    const line = document.getElementById("scStatusLine");
+    if (connected && userInfo) {
+      line.textContent = `● ${userInfo.username} · ${userInfo.likes_count} likes`;
+      line.className = "sc-status-line on";
+    } else {
+      line.textContent = "○ Sin conectar";
+      line.className = "sc-status-line off";
+    }
+  }
+
+  function setScProgress(pct, msg) {
+    document.getElementById("scProgressBar").style.display = "";
+    document.getElementById("scProgressFill").style.width = `${Math.max(0, Math.min(100, pct || 0))}%`;
+    document.getElementById("scProgressMsg").textContent = msg || "";
+  }
+
+  function onSyncComplete(payload) {
+    syncActive = false;
+    document.getElementById("btnScSync").textContent = "Sincronizar";
+    if (payload.ok) {
+      setScProgress(100, `✓ +${payload.new} nuevas · ${payload.skipped} ya tenías · ${payload.errors} errores`);
+      setStatus(`sync: +${payload.new} nuevas`, payload.errors ? "warn" : "ok");
+    } else {
+      setScProgress(0, `✗ ${payload.error}`);
+      setStatus(payload.error, "err");
+    }
+    refreshHistory();
+    refreshStats();
+  }
+
+  async function refreshScStatus() {
+    let status = await api().get_soundcloud_status();
+    if (!status.connected && status.has_credentials) {
+      // Credenciales ya guardadas (p.ej. restauradas de un respaldo):
+      // conectar automáticamente sin pedirle al usuario que las pegue de nuevo.
+      const line = document.getElementById("scStatusLine");
+      line.textContent = "○ Conectando…";
+      line.className = "sc-status-line";
+      const r = await api().connect_with_saved_credentials();
+      if (r.ok) {
+        status = await api().get_soundcloud_status();
+      } else {
+        setStatus(`SoundCloud: ${r.error}`, "warn");
+      }
+    }
+    renderScStatus(status.connected, status.user_info);
+    if (status.sync_interval_minutes) {
+      const field = document.getElementById("cfgSyncInterval");
+      if (field && !field.value) field.value = status.sync_interval_minutes;
+    }
+  }
+
+  // ---- Likes: estado local del modal ----
+  let allLikes = [];
+  const selectedLikes = new Set();
+
+  function likesFiltered() {
+    const q = (document.getElementById("likesSearch").value || "").toLowerCase();
+    if (!q) return allLikes;
+    return allLikes.filter(l =>
+      (l.artist || "").toLowerCase().includes(q) || (l.title || "").toLowerCase().includes(q)
+    );
+  }
+
+  async function loadLikes() {
+    allLikes = await api().get_likes();
+    const statusEl = document.getElementById("likesStatus");
+    statusEl.textContent = allLikes.length
+      ? `${allLikes.length} likes guardados`
+      : "Sin likes guardados — tocá Actualizar";
+    statusEl.className = "sc-status-line";
+    renderLikesList();
+  }
+
+  function onLikesScanned(payload) {
+    const el = document.getElementById("likesStatus");
+    if (payload.ok) {
+      el.textContent = `✓ ${payload.new} nuevas · ${payload.skipped} ya tenías`;
+      el.className = "sc-status-line on";
+      loadLikes();
+    } else {
+      el.textContent = `✗ ${payload.error}`;
+      el.className = "sc-status-line off";
+    }
+  }
+
+  function renderLikesList() {
+    const list = document.getElementById("likesList");
+    const items = likesFiltered();
+    if (!items.length) {
+      list.innerHTML = '<div class="empty-state">Sin resultados</div>';
+    } else {
+      list.innerHTML = "";
+      for (const like of items) {
+        const row = document.createElement("div");
+        row.className = "like-row";
+        row.dataset.downloaded = like.downloaded ? "1" : "0";
+
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = selectedLikes.has(like.url);
+        cb.addEventListener("change", () => {
+          if (cb.checked) selectedLikes.add(like.url); else selectedLikes.delete(like.url);
+          updateLikesSelCount();
+        });
+
+        const main = document.createElement("div");
+        main.className = "like-main";
+        const title = document.createElement("span");
+        title.className = "like-title";
+        title.textContent = like.artist ? `${like.artist} — ${like.title}` : like.title;
+        const sub = document.createElement("span");
+        sub.className = "like-sub";
+        sub.textContent = like.genre || "soundcloud";
+        main.append(title, sub);
+
+        const flag = document.createElement("span");
+        flag.className = "like-flag";
+        flag.textContent = like.downloaded ? "✓" : "";
+
+        row.append(cb, main, flag);
+        list.appendChild(row);
+      }
+    }
+    updateLikesSelCount();
+  }
+
+  function updateLikesSelCount() {
+    document.getElementById("likesSelCount").textContent = `${selectedLikes.size} seleccionadas`;
+  }
+
+  // ------------------------------------------------------------------ //
+  // Configuración                                                        //
+  // ------------------------------------------------------------------ //
+
+  async function loadSettingsIntoModal() {
+    const cfg = await api().get_config();
+    document.getElementById("cfgQuality").value = cfg.quality_preset || "mp3_320";
+    document.getElementById("cfgArtwork").checked = !!cfg.embed_artwork;
+    document.getElementById("cfgMetadata").checked = !!cfg.embed_metadata;
+    document.getElementById("cfgGenre").checked = !!cfg.embed_genre;
+    document.getElementById("cfgNormalize").checked = !!cfg.normalize_volume;
+    document.getElementById("cfgSilence").checked = !!cfg.remove_silence;
+    document.getElementById("cfgPattern").value = cfg.filename_pattern || "{artist} - {title}";
+    document.getElementById("cfgSubArtist").checked = !!cfg.subfolder_by_artist;
+    document.getElementById("cfgSubGenre").checked = !!cfg.subfolder_by_genre;
+    document.getElementById("cfgDelay").value = cfg.delay ?? 0.5;
+    document.getElementById("cfgSyncInterval").value =
+      (cfg.soundcloud && cfg.soundcloud.sync_interval_minutes) || 1440;
+    document.getElementById("taskRegisterStatus").textContent = "";
   }
 
   async function init() {
@@ -625,7 +1152,7 @@
     document.getElementById("sbState").textContent = "listo";
     setStatus("listo", "ok");
     wireEvents();
-    await Promise.all([loadConfig(), refreshHistory(), refreshStats()]);
+    await Promise.all([loadConfig(), refreshHistory(), refreshStats(), refreshScStatus()]);
   }
 
   if (window.pywebview) {

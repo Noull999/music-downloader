@@ -16,17 +16,22 @@ en el HTML. Ese callback debe registrarse en el HTML antes de usarse.
 import json
 import logging
 import os
+import subprocess
+import sys
 import threading
 from dataclasses import asdict
 from typing import Optional
 
 from download_manager import DownloadManager
 from gui.ui_controller import UIController
+from handlers.soundcloud_handler import SoundCloudHandler
 from models import (
     TrackInfo, STATUS_PENDING, STATUS_FETCHING, STATUS_DOWNLOADING,
     STATUS_DONE, STATUS_ERROR, STATUS_SKIP, STATUS_CANCELLED,
 )
 from quality.presets import get_preset
+from sync.soundcloud_api import SoundCloudAPIClient
+from sync.sync_manager import SyncManager
 from url_detector import detect_handler, detect_platform_name
 from utils.validators import parse_urls_from_text
 
@@ -69,6 +74,11 @@ class WebViewAPI:
 
         self._tracks: dict[str, TrackInfo] = {}
         self._lock = threading.Lock()
+
+        # SoundCloud sync (se inicializa al verificar credenciales, igual
+        # que gui/sync_window.py). None hasta la primera verificación OK.
+        self._sync_manager: Optional[SyncManager] = None
+        self._sc_user_info: Optional[dict] = None
 
     def attach_window(self, window) -> None:
         self.window = window
@@ -326,6 +336,307 @@ class WebViewAPI:
 
     def import_soundcloud_likes(self) -> dict:
         return self.controller.import_soundcloud_likes()
+
+    def search_downloads(self, query: str) -> list[dict]:
+        return self.controller.history.search_downloads(query)
+
+    def delete_download(self, url: str) -> dict:
+        ok = self.controller.history.delete_download(url)
+        return {"ok": ok}
+
+    # ------------------------------------------------------------------ #
+    # Configuración (Settings)                                             #
+    # ------------------------------------------------------------------ #
+
+    def save_settings(self, updates: dict) -> dict:
+        """
+        Guarda un lote de ajustes (calidad, post-proceso, patrón de nombre,
+        etc). Igual que gui/settings.py: el sub-dict 'soundcloud' se
+        mergea (no reemplaza) para no perder oauth_token/client_id si el
+        caller solo mandó, por ejemplo, sync_interval_minutes.
+        """
+        try:
+            updates = dict(updates or {})
+            sc_updates = updates.pop("soundcloud", None)
+            if sc_updates:
+                sc = dict(self.controller.get_config_value("soundcloud", {}) or {})
+                sc.update(sc_updates)
+                self.controller.set_config_value("soundcloud", sc)
+            for key, value in updates.items():
+                self.controller.set_config_value(key, value)
+            return {"ok": True}
+        except Exception as e:
+            logger.exception("Error guardando ajustes")
+            return {"ok": False, "error": str(e)}
+
+    def register_autosync_task(self, minutes: int) -> dict:
+        """
+        Re-registra la tarea programada de Windows (o el timer de
+        systemd/launchd) con el nuevo intervalo, llamando al mismo script
+        que usa el flujo manual (scripts/setup_task_scheduler.py).
+        """
+        try:
+            minutes = max(5, min(1440, int(minutes)))
+            self.save_settings({"soundcloud": {"sync_interval_minutes": minutes}})
+            script = os.path.join(self._base_dir, "scripts", "setup_task_scheduler.py")
+            result = subprocess.run(
+                [sys.executable, script, "--register", "--interval-minutes", str(minutes)],
+                capture_output=True, text=True, timeout=30,
+            )
+            ok = result.returncode == 0
+            msg = result.stdout.strip() if ok else (result.stderr.strip() or result.stdout.strip())
+            return {"ok": ok, "message": msg, "minutes": minutes}
+        except Exception as e:
+            logger.exception("Error registrando tarea programada")
+            return {"ok": False, "error": str(e)}
+
+    # ------------------------------------------------------------------ #
+    # SoundCloud: conexión y sincronización                                #
+    # ------------------------------------------------------------------ #
+
+    def get_soundcloud_status(self) -> dict:
+        """Estado actual sin golpear la red: credenciales guardadas + última verificación."""
+        sc = self.controller.get_config_value("soundcloud", {}) or {}
+        stats = self._sync_manager.get_history_stats() if self._sync_manager else {}
+        last_sync = self._sync_manager.get_last_sync_info() if self._sync_manager else None
+        return {
+            "has_credentials": bool(sc.get("oauth_token") and sc.get("client_id")),
+            "connected": self._sync_manager is not None,
+            "user_info": self._sc_user_info,
+            "sync_interval_minutes": sc.get("sync_interval_minutes", 1440),
+            "history_stats": stats,
+            "last_sync": last_sync,
+        }
+
+    def connect_with_saved_credentials(self) -> dict:
+        """
+        Auto-conecta con las credenciales que ya están en config.json (p.ej.
+        restauradas de un respaldo), sin que el usuario tenga que volver a
+        pegarlas en el modal. No hace nada si ya está conectado o no hay
+        credenciales guardadas.
+        """
+        if self._sync_manager is not None:
+            return {"ok": True, "user_info": self._sc_user_info, "already_connected": True}
+        sc = self.controller.get_config_value("soundcloud", {}) or {}
+        oauth_token = sc.get("oauth_token", "")
+        client_id = sc.get("client_id", "")
+        if not oauth_token or not client_id:
+            return {"ok": False, "error": "No hay credenciales guardadas"}
+        return self.verify_soundcloud_credentials(oauth_token, client_id)
+
+    def verify_soundcloud_credentials(self, oauth_token: str, client_id: str) -> dict:
+        """
+        Valida credenciales contra la API real, las guarda si son válidas,
+        e inicializa self._sync_manager. Se corre sincrónico (la llamada ya
+        viene de un click de botón en el frontend, que puede mostrar su
+        propio estado de "verificando...").
+        """
+        oauth_token = (oauth_token or "").strip()
+        client_id = (client_id or "").strip()
+        if not oauth_token or not client_id:
+            return {"ok": False, "error": "Completa OAuth Token y Client ID"}
+
+        try:
+            api_client = SoundCloudAPIClient(oauth_token, client_id)
+            user_info = api_client.validate_credentials()
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+        self.save_settings({"soundcloud": {"oauth_token": oauth_token, "client_id": client_id}})
+        self._sc_user_info = user_info
+
+        threshold = self.controller.get_config_value("duplicate_checker", {}).get("similarity_threshold", 85)
+        self._sync_manager = SyncManager(
+            oauth_token, client_id,
+            self.controller.get_config_value("dest_folder", ""),
+            SoundCloudHandler(),
+            similarity_threshold=threshold,
+            filename_pattern=self.controller.get_config_value("filename_pattern", "{artist} - {title}"),
+            subfolder_by_artist=self.controller.get_config_value("subfolder_by_artist", False),
+        )
+        try:
+            self._sync_manager.validate_credentials()
+        except Exception:
+            pass  # ya validamos arriba con el mismo token; no bloquear por esto
+
+        # Sincroniza filesystem -> DB en background (recupera archivos previos)
+        threading.Thread(target=self._sync_filesystem_bg, daemon=True).start()
+
+        return {"ok": True, "user_info": user_info}
+
+    def _sync_filesystem_bg(self) -> None:
+        try:
+            self._sync_manager.sync_filesystem_to_db()
+        except Exception:
+            logger.exception("Error sincronizando filesystem -> DB")
+
+    def _require_sync_manager(self) -> dict:
+        if not self._sync_manager:
+            return {"ok": False, "error": "Verificá tus credenciales de SoundCloud primero"}
+        return {"ok": True}
+
+    def start_sync(self, mode: str = "full", count: int = 10) -> dict:
+        """
+        Sincronización manual completa ('full', descarga todo lo pendiente)
+        o rápida ('recent', solo revisa las últimas `count`). No bloquea:
+        corre en background y empuja progreso vía evento 'sync_progress' y
+        el resultado final vía 'sync_complete'.
+        """
+        guard = self._require_sync_manager()
+        if not guard["ok"]:
+            return guard
+
+        def progress_cb(pct: int, msg: str):
+            self._push("sync_progress", {"pct": pct, "msg": msg})
+
+        def run():
+            try:
+                if mode == "recent":
+                    results = self._sync_manager.sync_recent(count=count, progress_callback=progress_cb)
+                else:
+                    results = self._sync_manager.sync_once(progress_callback=progress_cb)
+                self._push("sync_complete", {
+                    "ok": True,
+                    "new": results.get("new", 0),
+                    "skipped": results.get("skipped", 0),
+                    "errors": results.get("errors", 0),
+                })
+            except Exception as e:
+                logger.exception("Error en sincronización")
+                self._push("sync_complete", {"ok": False, "error": str(e)})
+
+        threading.Thread(target=run, daemon=True).start()
+        return {"ok": True}
+
+    def stop_sync(self) -> dict:
+        if self._sync_manager:
+            self._sync_manager.stop()
+        return {"ok": True}
+
+    def scan_likes(self) -> dict:
+        """
+        Trae tus likes actuales de SoundCloud y los guarda en la DB (sin
+        descargar nada). Alimenta a get_likes(). Corre en background;
+        el frontend debe esperar el evento 'likes_scanned' y luego pedir
+        get_likes() de nuevo.
+        """
+        guard = self._require_sync_manager()
+        if not guard["ok"]:
+            return guard
+
+        def progress_cb(pct: int, msg: str):
+            self._push("sync_progress", {"pct": pct, "msg": msg})
+
+        def run():
+            try:
+                results = self._sync_manager.scan_only(progress_callback=progress_cb)
+                self._push("likes_scanned", {
+                    "ok": True, "new": len(results.get("tracks", [])),
+                    "skipped": len(results.get("duplicates", [])),
+                })
+            except Exception as e:
+                logger.exception("Error escaneando likes")
+                self._push("likes_scanned", {"ok": False, "error": str(e)})
+
+        threading.Thread(target=run, daemon=True).start()
+        return {"ok": True}
+
+    def get_likes(self) -> list[dict]:
+        """Likes guardados en DB con su estado de descarga (sin red, instantáneo)."""
+        if not self._sync_manager:
+            return []
+        try:
+            return self._sync_manager.get_likes_with_status()
+        except Exception:
+            logger.exception("Error obteniendo likes")
+            return []
+
+    def download_selected_likes(self, urls: list[str]) -> dict:
+        """
+        Descarga likes puntuales elegidos en "Ver Mis Likes". Reusa la
+        misma cola visual que las URLs pegadas a mano (aparecen en
+        'Cola'), pero al completarse registran en el historial del
+        SyncManager (tabla sync_downloads), no en el de HistoryManager,
+        igual que hace gui/likes_preview_window.py.
+        """
+        guard = self._require_sync_manager()
+        if not guard["ok"]:
+            return guard
+
+        dest = self.controller.get_config_value("dest_folder", "")
+        if not dest:
+            return {"ok": False, "error": "Selecciona una carpeta de destino primero."}
+
+        likes_by_url = {l["url"]: l for l in self.get_likes()}
+        submitted = 0
+        for url in urls or []:
+            like = likes_by_url.get(url)
+            if not like:
+                continue
+            track = TrackInfo(
+                url=like["url"], title=like["title"], artist=like["artist"] or "",
+                platform="soundcloud", thumbnail_url=like.get("artwork_url") or "",
+            )
+            track.status = STATUS_PENDING
+            with self._lock:
+                if url not in self._tracks:
+                    self._tracks[url] = track
+                    self._push("track_added", _track_to_dict(track))
+            self._submit_like_download(like, dest)
+            submitted += 1
+        return {"ok": True, "submitted": submitted}
+
+    def _submit_like_download(self, like: dict, dest_folder: str) -> None:
+        url = like["url"]
+        with self._lock:
+            track = self._tracks.get(url)
+        if not track:
+            return
+
+        preset = get_preset(self.controller.get_config_value("quality_preset", "mp3_320"))
+        post_config = {
+            "normalize_volume": self.controller.get_config_value("normalize_volume", False),
+            "remove_silence": self.controller.get_config_value("remove_silence", False),
+            "embed_artwork": self.controller.get_config_value("embed_artwork", True),
+            "embed_metadata": self.controller.get_config_value("embed_metadata", True),
+        }
+        oauth_token = self.controller.get_config_value("soundcloud", {}).get("oauth_token", "")
+
+        def on_progress(v: float):
+            with self._lock:
+                track.progress = v
+            self._push("track_progress", {"url": url, "progress": v})
+
+        def on_status(status: str, err: str):
+            self._push_status(url, status, err)
+            if status == STATUS_DONE:
+                try:
+                    self._sync_manager.history.mark_downloaded(
+                        url, like["title"], like["artist"] or "", track.local_path,
+                        platform="soundcloud",
+                    )
+                    self._sync_manager.history.mark_like_downloaded(
+                        url=url, title=like["title"], artist=like["artist"] or "",
+                        track_id=like.get("id"), duration_ms=like.get("duration_ms"),
+                        artwork_url=like.get("artwork_url"), genre=like.get("genre"),
+                        created_at=like.get("created_at"),
+                    )
+                except Exception:
+                    logger.exception("Error registrando like descargado en historial")
+
+        self.download_manager.submit_download(
+            track=track,
+            handler=SoundCloudHandler(),
+            dest_folder=dest_folder,
+            filename_pattern=self.controller.get_config_value("filename_pattern", "{artist} - {title}"),
+            subfolder_by_artist=self.controller.get_config_value("subfolder_by_artist", False),
+            quality_preset=preset,
+            post_config=post_config,
+            delay=float(self.controller.get_config_value("delay", 0.5)),
+            on_progress=on_progress,
+            on_status=on_status,
+            oauth_token=oauth_token,
+        )
 
     # ------------------------------------------------------------------ #
     # Ciclo de vida                                                       #
