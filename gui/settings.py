@@ -8,7 +8,7 @@ from quality.presets import QUALITY_PRESETS, PRESET_ORDER, DEFAULT_PRESET
 class SettingsDialog(ctk.CTkToplevel):
     """Ventana modal de configuracion avanzada."""
 
-    def __init__(self, parent, config: dict):
+    def __init__(self, parent, config: dict, on_save_callback=None):
         super().__init__(parent)
         self.title("Configuracion")
         self.geometry("540x700")
@@ -17,6 +17,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self.transient(parent)
 
         self._config = config
+        self._on_save_callback = on_save_callback
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
@@ -37,16 +38,21 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Titulo
         ctk.CTkLabel(
-            scroll, text="Configuracion",
-            font=ctk.CTkFont(size=17, weight="bold"),
+            scroll, text="⚙️ Configuración",
+            font=ctk.CTkFont(size=18, weight="bold"),
         ).grid(row=row, column=0, padx=24, pady=(20, 4), sticky="w")
 
         # ── Calidad de descarga ──────────────────────────────────────── #
         row += 1
+        header_frame = ctk.CTkFrame(scroll, fg_color="#1e1e2e", corner_radius=6)
+        header_frame.grid(row=row, column=0, padx=24, pady=(12, 0), sticky="ew", ipady=8)
+        header_frame.grid_columnconfigure(0, weight=1)
+
         ctk.CTkLabel(
-            scroll, text="Calidad de descarga",
+            header_frame, text="🎵 Calidad de descarga",
             font=ctk.CTkFont(size=12, weight="bold"),
-        ).grid(row=row, column=0, padx=24, pady=(8, 0), sticky="w")
+            text_color="#60a5fa",
+        ).grid(row=0, column=0, padx=16, pady=0, sticky="w")
 
         self._quality_var = ctk.StringVar(value=DEFAULT_PRESET)
         self._warning_lbl = ctk.CTkLabel(
@@ -80,10 +86,15 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # ── Post-procesado ───────────────────────────────────────────── #
         row += 1
+        pp_header = ctk.CTkFrame(scroll, fg_color="#1e1e2e", corner_radius=6)
+        pp_header.grid(row=row, column=0, padx=24, pady=(12, 0), sticky="ew", ipady=8)
+        pp_header.grid_columnconfigure(0, weight=1)
+
         ctk.CTkLabel(
-            scroll, text="Post-procesado",
+            pp_header, text="🎚️ Post-procesado",
             font=ctk.CTkFont(size=12, weight="bold"),
-        ).grid(row=row, column=0, padx=24, pady=(8, 0), sticky="w")
+            text_color="#34d399",
+        ).grid(row=0, column=0, padx=16, pady=0, sticky="w")
 
         self._normalize_var = ctk.BooleanVar(value=False)
         self._silence_var = ctk.BooleanVar(value=False)
@@ -132,10 +143,15 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # ── Archivo ─────────────────────────────────────────────────── #
         row += 1
+        file_header = ctk.CTkFrame(scroll, fg_color="#1e1e2e", corner_radius=6)
+        file_header.grid(row=row, column=0, padx=24, pady=(12, 0), sticky="ew", ipady=8)
+        file_header.grid_columnconfigure(0, weight=1)
+
         ctk.CTkLabel(
-            scroll, text="Nombre de archivo",
+            file_header, text="📁 Nombre de archivo",
             font=ctk.CTkFont(size=12, weight="bold"),
-        ).grid(row=row, column=0, padx=24, pady=(8, 0), sticky="w")
+            text_color="#fbbf24",
+        ).grid(row=0, column=0, padx=16, pady=0, sticky="w")
 
         row += 1
         self._pattern_entry = ctk.CTkEntry(
@@ -158,10 +174,15 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # ── Delay ───────────────────────────────────────────────────── #
         row += 1
+        delay_header = ctk.CTkFrame(scroll, fg_color="#1e1e2e", corner_radius=6)
+        delay_header.grid(row=row, column=0, padx=24, pady=(12, 0), sticky="ew", ipady=8)
+        delay_header.grid_columnconfigure(0, weight=1)
+
         ctk.CTkLabel(
-            scroll, text="Delay entre descargas (segundos)",
+            delay_header, text="⏱️ Delay entre descargas",
             font=ctk.CTkFont(size=12, weight="bold"),
-        ).grid(row=row, column=0, padx=24, pady=(8, 0), sticky="w")
+            text_color="#f472b6",
+        ).grid(row=0, column=0, padx=16, pady=0, sticky="w")
 
         row += 1
         delay_row = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -179,10 +200,15 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # ── SoundCloud OAuth ─────────────────────────────────────────── #
         row += 1
+        oauth_header = ctk.CTkFrame(scroll, fg_color="#1e1e2e", corner_radius=6)
+        oauth_header.grid(row=row, column=0, padx=24, pady=(12, 0), sticky="ew", ipady=8)
+        oauth_header.grid_columnconfigure(0, weight=1)
+
         ctk.CTkLabel(
-            scroll, text="SoundCloud OAuth Token (opcional)",
+            oauth_header, text="☁️ SoundCloud OAuth (opcional)",
             font=ctk.CTkFont(size=12, weight="bold"),
-        ).grid(row=row, column=0, padx=24, pady=(8, 0), sticky="w")
+            text_color="#a78bfa",
+        ).grid(row=0, column=0, padx=16, pady=0, sticky="w")
 
         row += 1
         self._token_entry = ctk.CTkEntry(
@@ -245,7 +271,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
     def _save(self):
         pattern = self._pattern_entry.get().strip() or "{artist} - {title}"
-        self._config.update({
+        updates = {
             "quality_preset": self._quality_var.get(),
             "normalize_volume": self._normalize_var.get(),
             "remove_silence": self._silence_var.get(),
@@ -254,8 +280,13 @@ class SettingsDialog(ctk.CTkToplevel):
             "filename_pattern": pattern,
             "subfolder_by_artist": self._subfolder_var.get(),
             "delay": round(self._delay_slider.get(), 1),
-        })
+        }
         # Guardar token en ruta unificada y limpiar key obsoleta
-        self._config.setdefault("soundcloud", {})["oauth_token"] = self._token_entry.get().strip()
-        self._config.pop("oauth_token", None)
+        updates.setdefault("soundcloud", {})["oauth_token"] = self._token_entry.get().strip()
+        updates.pop("oauth_token", None)
+
+        # Llamar callback para persistir cambios
+        if self._on_save_callback:
+            self._on_save_callback(updates)
+
         self.destroy()

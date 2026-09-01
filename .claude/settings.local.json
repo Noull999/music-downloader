@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Lenovo\\\\Music\" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt \\(Get-Date\\).AddHours\\(-3\\) } | Select-Object FullName, LastWriteTime)",
-      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Lenovo\\\\Desktop\" -Recurse -File | Where-Object { $_.Extension -match '\\\\.\\(m4a|mp3|wav|flac|ogg\\)$' -and $_.LastWriteTime -gt [DateTime]\"2026-05-13 17:00:00\" } | Select-Object FullName, LastWriteTime, Length | Sort-Object LastWriteTime -Descending | Select-Object -First 10)"
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Lenovo\\\\Desktop\" -Recurse -File | Where-Object { $_.Extension -match '\\\\.\\(m4a|mp3|wav|flac|ogg\\)$' -and $_.LastWriteTime -gt [DateTime]\"2026-05-13 17:00:00\" } | Select-Object FullName, LastWriteTime, Length | Sort-Object LastWriteTime -Descending | Select-Object -First 10)",
+      "Bash(python *)"
     ]
   }
 }

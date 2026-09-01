@@ -7,6 +7,25 @@ Ejecutar: python main.py
 3. Inicia GUI
 """
 import sys
+import io
+import logging
+import traceback
+
+# En el .exe empaquetado (console=False) stdout/stderr o no son una consola
+# real (caen a cp1252, que no puede codificar los emojis de los prints/logs
+# de abajo) o directamente son None (windowed sin consola alguna) -> crash
+# no capturado al abrir la app. Se arregla ANTES de cualquier print/import
+# que pueda emitir uno.
+for _name in ("stdout", "stderr"):
+    _stream = getattr(sys, _name)
+    if _stream is None:
+        setattr(sys, _name, io.StringIO())
+    elif hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 import customtkinter as ctk
 from tkinter import messagebox
 
@@ -14,6 +33,19 @@ from utils.logger import setup_logging
 from utils.dependencies import validate_all_dependencies
 from utils.exceptions import DependencyNotFoundError
 from gui.main_window import MainWindow
+
+logger = None
+
+
+def global_exception_handler(exc_type, exc_value, exc_traceback):
+    """Maneja todas las excepciones no capturadas globalmente."""
+    if logger:
+        logger.critical(f"EXCEPCION NO CAPTURADA: {exc_type.__name__}: {exc_value}")
+        logger.critical("".join(traceback.format_tb(exc_traceback)))
+    else:
+        print(f"EXCEPCION NO CAPTURADA: {exc_type.__name__}: {exc_value}")
+        traceback.print_tb(exc_traceback)
+    sys.exit(255)
 
 
 def validate_startup() -> bool:
@@ -62,26 +94,40 @@ def main():
         sys.exit(1)
 
     # 2️⃣ Configurar logging
+    global logger
     logger = setup_logging(log_level="INFO")
     logger.info("="*60)
     logger.info("🎵 Music Downloader iniciado")
     logger.info("="*60)
 
+    # Instalar manejador global de excepciones
+    sys.excepthook = global_exception_handler
+
     # 3️⃣ Inicializar GUI
+    app = None
     try:
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
+        logger.info("Inicializando ventana principal...")
         app = MainWindow()
+        logger.info("Ventana principal lista. Iniciando event loop...")
         app.mainloop()
+        logger.info("Event loop terminó normalmente")
+    except KeyboardInterrupt:
+        logger.info("Interrupción por teclado")
+        sys.exit(0)
     except Exception as e:
         logger.exception("Error fatal en GUI")
-        root = ctk.CTk()
-        root.withdraw()
-        messagebox.showerror(
-            "Error Fatal",
-            f"Error iniciando aplicación:\n\n{e}"
-        )
-        root.destroy()
+        try:
+            root = ctk.CTk()
+            root.withdraw()
+            messagebox.showerror(
+                "Error Fatal",
+                f"Error iniciando aplicación:\n\n{e}"
+            )
+            root.destroy()
+        except Exception:
+            pass
         sys.exit(1)
 
 

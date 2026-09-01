@@ -5,6 +5,7 @@ Integra UIController para centralizar config/historial, StatusBar para mejor fee
 """
 import logging
 import os
+import shutil
 import threading
 from tkinter import filedialog, messagebox
 
@@ -23,10 +24,34 @@ from quality.presets import get_preset, effective_extension
 from url_detector import detect_handler, detect_platform_name
 from utils.validators import parse_urls_from_text
 from handlers.soundcloud_handler import SoundCloudHandler
+from config.manager import DEFAULT_CONFIG_PATH
+import sys
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_BASE = os.path.dirname(os.path.dirname(__file__))
+# ── Base portable: desarrollo (.py) y PyInstaller (.exe) ───────────────
+if getattr(sys, "frozen", False):
+    _BASE = str(Path(sys.executable).parent)
+    # Los datas empaquetados (assets/, etc.) se extraen a _MEIPASS, no a
+    # la carpeta del .exe.
+    _RESOURCES = getattr(sys, "_MEIPASS", _BASE)
+else:
+    _BASE = str(Path(__file__).resolve().parent.parent)
+    _RESOURCES = _BASE
+
+_ICON_PATH = os.path.join(_RESOURCES, "assets", "icon.ico")
+
+# config.json vive en ~/.music_downloader/ (estable, igual que la BD) en vez
+# de junto al .exe: ahí se perdía en cada rebuild (dist/ se borra con
+# --clean). Migración única desde la ubicación vieja si corresponde.
+_CONFIG_PATH = str(DEFAULT_CONFIG_PATH)
+if not os.path.isfile(_CONFIG_PATH):
+    _legacy_config = os.path.join(_BASE, "config.json")
+    if os.path.isfile(_legacy_config):
+        os.makedirs(os.path.dirname(_CONFIG_PATH), exist_ok=True)
+        shutil.copy2(_legacy_config, _CONFIG_PATH)
+        logger.info(f"Config migrada de {_legacy_config} a {_CONFIG_PATH}")
 
 
 class MainWindow(ctk.CTk):
@@ -36,8 +61,17 @@ class MainWindow(ctk.CTk):
         self.geometry("1150x720")
         self.minsize(820, 560)
 
+        if os.path.isfile(_ICON_PATH):
+            try:
+                self.iconbitmap(_ICON_PATH)
+            except Exception as e:
+                logger.debug(f"No se pudo aplicar el ícono de la ventana: {e}")
+
+        # Flag para evitar callbacks mientras se cierra
+        self._closing = False
+
         # Centralizar config y historial via UIController
-        self._ui_controller = UIController(base_dir=_BASE)
+        self._ui_controller = UIController(config_path=_CONFIG_PATH)
         self._manager = DownloadManager()
         self._manager.start(self._ui_controller.get_config_value("max_workers"))
 
@@ -108,13 +142,14 @@ class MainWindow(ctk.CTk):
         sc_btns.grid_columnconfigure((0, 1), weight=1)
 
         ctk.CTkButton(
-            sc_btns, text="Sincronizar",
+            sc_btns, text="🔄 Sincronizar",
             height=28, font=ctk.CTkFont(size=10),
+            fg_color="#3b82f6", hover_color="#2563eb",
             command=lambda: self._sync_window._on_sync_manual(),
         ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
 
         ctk.CTkButton(
-            sc_btns, text="Ver mis Likes",
+            sc_btns, text="❤️ Mis Likes",
             height=28, font=ctk.CTkFont(size=10),
             fg_color="#dc2626", hover_color="#b91c1c",
             command=lambda: self._sync_window._on_show_likes_preview(),
@@ -169,15 +204,28 @@ class MainWindow(ctk.CTk):
             command=self._on_import_likes,
         ).grid(row=18, column=0, padx=18, pady=(0, 8), sticky="ew")
 
+        ctk.CTkButton(
+            left, text="👁️ Ver Mis Likes",
+            fg_color="transparent", border_width=1,
+            command=self._on_view_likes,
+        ).grid(row=19, column=0, padx=18, pady=(0, 8), sticky="ew")
+
+        db_count = self._ui_controller.get_download_count()
+        ctk.CTkButton(
+            left, text=f"📊 Historial de descargas ({db_count})",
+            fg_color="transparent", border_width=1,
+            command=self._on_view_db,
+        ).grid(row=20, column=0, padx=18, pady=(0, 8), sticky="ew")
+
         # Preset activo label
         self._preset_lbl = ctk.CTkLabel(
             left, text="", font=ctk.CTkFont(size=11), text_color="#6b7280",
         )
-        self._preset_lbl.grid(row=19, column=0, padx=18, pady=(0, 4), sticky="w")
+        self._preset_lbl.grid(row=21, column=0, padx=18, pady=(0, 4), sticky="w")
 
         # Status bar mejorado
         self._status_bar = StatusBar(left)
-        self._status_bar.grid(row=20, column=0, padx=18, pady=(4, 18), sticky="ew")
+        self._status_bar.grid(row=22, column=0, padx=18, pady=(4, 18), sticky="ew")
 
         # ── Panel derecho ────────────────────────────────────────────── #
         right = ctk.CTkFrame(self, corner_radius=0, fg_color="#0f0f0f")
@@ -257,7 +305,7 @@ class MainWindow(ctk.CTk):
         downloader = SoundCloudHandler()
         self._sync_window = SyncWindow(
             tab_sync,
-            config_path=os.path.join(_BASE, "config.json"),
+            config_path=_CONFIG_PATH,
             download_folder=self._ui_controller.get_config_value("dest_folder", ""),
             downloader=downloader,
             download_manager=self._manager,
@@ -385,10 +433,28 @@ class MainWindow(ctk.CTk):
         self.after(0, lambda: self._add_playlist_tracks(tracks))
 
     def _add_playlist_tracks(self, tracks):
-        for meta in tracks:
-            if not self._track_list.get_row(meta.url):
+        """Agrega filas por lotes para no bloquear el hilo principal."""
+        pending = [m for m in tracks if not self._track_list.get_row(m.url)]
+        if not pending:
+            return
+
+        def add_chunk(i=0):
+            if self._closing:
+                return
+            # Agregar 20 filas a la vez
+            chunk = pending[i:i + 20]
+            for meta in chunk:
                 self._track_list.add_track(TrackInfo.from_metadata(meta))
-        self._status_bar.set_text(f"{len(self._track_list.get_all())} track(s) en la lista.")
+
+            # Si hay más, agenda el siguiente lote
+            if i + 20 < len(pending):
+                self.after(10, lambda: add_chunk(i + 20))
+            else:
+                self._status_bar.set_text(
+                    f"{len(self._track_list.get_all())} track(s) en la lista."
+                )
+
+        add_chunk()
 
     def _on_browse(self):
         folder = filedialog.askdirectory(
@@ -430,7 +496,13 @@ class MainWindow(ctk.CTk):
 
     def _on_settings(self):
         config_dict = self._ui_controller.get_config()
-        dlg = SettingsDialog(self, config_dict)
+
+        def on_settings_save(updates: dict):
+            """Callback para guardar cambios de configuración."""
+            for key, value in updates.items():
+                self._ui_controller.set_config_value(key, value)
+
+        dlg = SettingsDialog(self, config_dict, on_save_callback=on_settings_save)
         self.wait_window(dlg)
         self._update_preset_label()
         self._manager.start(self._ui_controller.get_config_value("max_workers", 3))
@@ -458,12 +530,44 @@ class MainWindow(ctk.CTk):
             self._status_bar.mark_error("Error importando likes")
             self._activity_panel.log(f"❌ Error: {result['error']}")
 
+    def _on_batch_download(self, tracks: list):
+        """Inicia descarga de un lote de tracks."""
+        if not tracks:
+            return
+        self._start_downloads(tracks)
+
+    def _on_view_likes(self):
+        """Abre ventana para ver y descargar tus likes de SoundCloud."""
+        from gui.likes_viewer_window import LikesViewerWindow
+        LikesViewerWindow(self, self._ui_controller)
+
+    def _on_view_db(self):
+        """Abre ventana para ver y descargar likes de la BD."""
+        from gui.db_viewer_window import DBViewerWindow
+        DBViewerWindow(self, self._ui_controller)
+
     def _on_close(self):
-        self._manager.cancel_all()
-        self._manager.shutdown()
-        if self._sync_window.scheduler:
-            self._sync_window.scheduler.stop()
-        self.destroy()
+        try:
+            logger.info("Cerrando aplicación...")
+            self._closing = True  # Evitar callbacks mientras se limpia
+            self._manager.cancel_all()
+            self._manager.shutdown()
+            # Cleanup de resources paralelos
+            try:
+                from quality.ffmpeg_queue import FFmpegQueue
+                FFmpegQueue().shutdown()
+            except Exception as e:
+                logger.warning(f"Error cerrando FFmpeg queue: {e}")
+            try:
+                from utils.http_session import close_session
+                close_session()
+            except Exception as e:
+                logger.warning(f"Error cerrando sesión HTTP: {e}")
+            logger.info("Aplicación cerrada")
+        except Exception as e:
+            logger.error(f"Error al cerrar: {e}", exc_info=True)
+        finally:
+            self.destroy()
 
     # ------------------------------------------------------------------ #
     # Descarga                                                             #
@@ -485,10 +589,12 @@ class MainWindow(ctk.CTk):
 
         self._status_bar.set_text(f"Iniciando {len(eligible)} descarga(s)...")
         self._activity_panel.log(f"→ Iniciando {len(eligible)} descarga(s)...")
-        for track in eligible:
-            self._submit_one(track, dest)
+        for idx, track in enumerate(eligible, 1):
+            title = track.title if track.title != "Cargando..." else track.url.split("/")[-1]
+            self._activity_panel.log(f"⬇ [{idx}/{len(eligible)}] {title[:60]}...")
+            self._submit_one(track, dest, idx, len(eligible))
 
-    def _submit_one(self, track: TrackInfo, dest_folder: str):
+    def _submit_one(self, track: TrackInfo, dest_folder: str, idx: int = 0, total: int = 0):
         url = track.url
         try:
             handler = detect_handler(url)
@@ -504,22 +610,42 @@ class MainWindow(ctk.CTk):
             "embed_metadata": self._ui_controller.get_config_value("embed_metadata", True),
         }
 
+        counter_str = f"[{idx}/{total}] " if total > 0 else ""
+
         def on_progress(v: float):
-            self.after(0, lambda: self._track_list.update_progress(url, v))
+            if not self._closing:
+                try:
+                    self.after(0, lambda: self._track_list.update_progress(url, v))
+                except Exception:
+                    pass  # Ignore errors if widget is destroyed
+
+        def on_speed(speed: str, eta: str):
+            if not self._closing:
+                try:
+                    self.after(0, lambda: self._track_list.update_speed(url, speed, eta))
+                except Exception:
+                    pass  # Ignore errors if widget is destroyed
 
         def on_status(status: str, err: str):
             def log_status():
-                self._handle_status(url, status, err)
-                title = track.title if track.title != "Cargando..." else url.split("/")[-1]
-                status_emoji = {
-                    STATUS_DOWNLOADING: "⬇",
-                    STATUS_DONE: "✓",
-                    STATUS_ERROR: "✗",
-                    STATUS_SKIP: "⊘",
-                    STATUS_FETCHING: "🔍",
-                }.get(status, "•")
-                self._activity_panel.log(f"{status_emoji} {title[:50]}")
-            self.after(0, log_status)
+                if not self._closing:
+                    self._handle_status(url, status, err)
+                    try:
+                        title = track.title if track.title != "Cargando..." else url.split("/")[-1]
+                        status_emoji = {
+                            STATUS_DOWNLOADING: "⬇",
+                            STATUS_DONE: "✓",
+                            STATUS_ERROR: "✗",
+                            STATUS_SKIP: "⊘",
+                            STATUS_FETCHING: "🔍",
+                        }.get(status, "•")
+                        self._activity_panel.log(f"{status_emoji} {counter_str}{title[:50]}")
+                    except Exception:
+                        pass  # Ignore logging errors
+            try:
+                self.after(0, log_status)
+            except Exception:
+                pass  # Ignore after() errors if widget is destroyed
 
         self._manager.submit_download(
             track=track,
@@ -532,30 +658,57 @@ class MainWindow(ctk.CTk):
             delay=float(self._ui_controller.get_config_value("delay", 0.5)),
             on_progress=on_progress,
             on_status=on_status,
+            on_speed=on_speed,
             oauth_token=(self._ui_controller.get_config_value("soundcloud", {}).get("oauth_token", "")
                          or self._ui_controller.get_config_value("oauth_token", "")),
         )
 
     def _handle_status(self, url: str, status: str, error_msg: str):
-        self._track_list.update_status(url, status, error_msg)
+        # Evitar callbacks mientras se cierra la app
+        if self._closing:
+            logger.debug(f"Ignoring status callback (app closing): {status}")
+            return
 
-        if status == STATUS_DONE:
-            row = self._track_list.get_row(url)
-            if row:
-                self._ui_controller.record_download(row.track)
+        try:
+            self._track_list.update_status(url, status, error_msg)
 
-        if status in (STATUS_DONE, STATUS_ERROR):
-            self._refresh_status_bar()
+            if status == STATUS_DONE:
+                try:
+                    row = self._track_list.get_row(url)
+                    if row:
+                        thread = threading.Thread(
+                            target=self._ui_controller.record_download,
+                            args=(row.track,),
+                            daemon=True
+                        )
+                        thread.start()
+                except Exception as rec_exc:
+                    logger.error(f"Error recording download: {rec_exc}", exc_info=True)
+
+            if status in (STATUS_DONE, STATUS_ERROR):
+                thread = threading.Thread(
+                    target=self._refresh_status_bar,
+                    daemon=True
+                )
+                thread.start()
+        except Exception as e:
+            logger.exception(f"Error in _handle_status for {url}: {e}")
 
     def _refresh_status_bar(self):
-        tracks = self._track_list.get_all()
-        done = sum(1 for t in tracks if t.status == STATUS_DONE)
-        errors = sum(1 for t in tracks if t.status == STATUS_ERROR)
-        total = len(tracks)
-        parts = [f"Completados: {done}/{total}"]
-        if errors:
-            parts.append(f"Errores: {errors}")
-        self._status_bar.set_text("  |  ".join(parts))
+        try:
+            tracks = self._track_list.get_all()
+            done = sum(1 for t in tracks if t.status == STATUS_DONE)
+            errors = sum(1 for t in tracks if t.status == STATUS_ERROR)
+            total = len(tracks)
+            if total == 0:
+                self._status_bar.set_text("Listo")
+            else:
+                parts = [f"Completados: {done}/{total}"]
+                if errors:
+                    parts.append(f"Errores: {errors}")
+                self._status_bar.set_text("  |  ".join(parts))
+        except Exception as e:
+            logger.exception(f"Error refreshing status bar: {e}")
 
 
     # ------------------------------------------------------------------ #
@@ -571,10 +724,34 @@ class MainWindow(ctk.CTk):
 
     def _install_log_handler(self):
         handler = _TextboxLogHandler(self._log_box, self)
+        handler.addFilter(_QuietThirdPartyFilter())
         handler.setFormatter(
             logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S")
         )
         logging.getLogger().addHandler(handler)
+
+
+# Namespaces de librerías de terceros que solo interesan si son WARNING o peor
+_QUIET_NAMESPACES = ("yt_dlp", "urllib3", "PIL", "charset_normalizer", "filelock")
+
+
+class _QuietThirdPartyFilter(logging.Filter):
+    """Oculta ruido INFO/DEBUG de librerías de terceros; deja pasar warnings/errores."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.WARNING:
+            return True
+        return not record.name.startswith(_QUIET_NAMESPACES)
+
+
+# Colores por nivel para el textbox de log
+_LEVEL_COLOR = {
+    "DEBUG": "#6b7280",
+    "INFO": "#d1d5db",
+    "WARNING": "#fbbf24",
+    "ERROR": "#f87171",
+    "CRITICAL": "#f87171",
+}
 
 
 class _TextboxLogHandler(logging.Handler):
@@ -582,14 +759,33 @@ class _TextboxLogHandler(logging.Handler):
         super().__init__()
         self._box = box
         self._win = win
+        self._last_msg = None
+        self._last_len = 0
+        self._repeat_count = 0
+        for level, color in _LEVEL_COLOR.items():
+            self._box.tag_config(level, foreground=color)
 
     def emit(self, record: logging.LogRecord):
-        msg = self.format(record) + "\n"
-        self._win.after(0, lambda m=msg: self._write(m))
+        msg = self.format(record)
+        level = record.levelname
+        self._win.after(0, lambda m=msg, lv=level: self._write(m, lv))
 
-    def _write(self, msg: str):
+    def _write(self, msg: str, level: str):
+        # Colapsar líneas idénticas consecutivas (p. ej. reintentos en loop)
+        # en un solo renglón con contador, en vez de spamear el log.
+        # Nota: el Text widget siempre mantiene un "\n" final fantasma que no
+        # se puede borrar; por eso se ancla en "end-1c", no en "end".
         self._box.configure(state="normal")
-        self._box.insert("end", msg)
+        if msg == self._last_msg:
+            self._repeat_count += 1
+            self._box.delete(f"end-{self._last_len + 2}c", "end-1c")
+            text = f"{msg} (x{self._repeat_count})"
+        else:
+            self._last_msg = msg
+            self._repeat_count = 1
+            text = msg
+        self._box.insert("end", text + "\n", level)
+        self._last_len = len(text)
         self._box.see("end")
         self._box.configure(state="disabled")
 

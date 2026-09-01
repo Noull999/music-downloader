@@ -32,7 +32,7 @@ class DownloadManager:
     """
 
     def __init__(self):
-        self._max_workers: int = 3
+        self._max_workers: int = 6  # Aumentado de 3 a 6 para paralelismo agresivo
         self._executor: Optional[ThreadPoolExecutor] = None
         self._paused: bool = False
         self._pause_event = threading.Event()
@@ -105,6 +105,8 @@ class DownloadManager:
         on_status: Callable[[str, str], None],
         # Opcional: token OAuth para SoundCloud
         oauth_token: str = "",
+        # Opcional: velocidad/ETA en vivo, formato (speed_str, eta_str)
+        on_speed: Optional[Callable[[str, str], None]] = None,
     ) -> Future:
         if not self._executor:
             self.start(self._max_workers)
@@ -127,6 +129,7 @@ class DownloadManager:
             on_status,
             cancel_event,
             oauth_token,
+            on_speed,
         )
 
     # ── Hilo de descarga ─────────────────────────────────────────────── #
@@ -145,14 +148,36 @@ class DownloadManager:
         on_status: Callable[[str, str], None],
         cancel_event: threading.Event,
         oauth_token: str,
+        on_speed: Optional[Callable[[str, str], None]] = None,
     ):
         import time
+
+        folder = None
+        base_name = None
+        last_progress = -0.1
+        last_speed_ts = 0.0
+
+        def speed_cb(speed: str, eta: str):
+            nonlocal last_speed_ts
+            if not on_speed:
+                return
+            now = time.monotonic()
+            if now - last_speed_ts < 1.0:
+                return
+            last_speed_ts = now
+            try:
+                on_speed(speed, eta)
+            except Exception:
+                pass
 
         try:
             # Esperar si está en pausa
             self._pause_event.wait()
             if cancel_event.is_set():
-                on_status(STATUS_CANCELLED, "")
+                try:
+                    on_status(STATUS_CANCELLED, "")
+                except Exception:
+                    pass
                 return
 
             # Construir ruta de salida
@@ -178,10 +203,27 @@ class DownloadManager:
 
             if os.path.exists(final_path):
                 track.local_path = final_path
-                on_status(STATUS_SKIP, "")
+                try:
+                    on_status(STATUS_SKIP, "")
+                except Exception:
+                    pass
                 return
 
-            on_status(STATUS_DOWNLOADING, "")
+            try:
+                on_status(STATUS_DOWNLOADING, "")
+            except Exception:
+                pass
+
+            # 🔄 Iniciar descarga de imagen en PARALELO (no bloquea descarga de audio)
+            image_downloader: Optional[ParallelImageDownloader] = None
+            if track.thumbnail_url and post_config.get("embed_artwork", False):
+                try:
+                    image_downloader = ParallelImageDownloader(timeout=3.0, max_retries=1)
+                    image_downloader.download_async(track.thumbnail_url)
+                    logger.debug("📸 Descarga de imagen iniciada en paralelo")
+                except Exception as img_exc:
+                    logger.debug(f"No se pudo iniciar descarga de imagen: {img_exc}")
+                    image_downloader = None
 
             # 🔄 Iniciar descarga de imagen en PARALELO (no bloquea descarga de audio)
             image_downloader: Optional[ParallelImageDownloader] = None
@@ -194,8 +236,14 @@ class DownloadManager:
                 return cancel_event.is_set()
 
             def progress_cb(v: float):
-                if not self._paused:
-                    on_progress(v)
+                nonlocal last_progress
+                try:
+                    if v - last_progress >= 0.50 or v >= 0.99:
+                        if not self._paused:
+                            on_progress(v)
+                        last_progress = v
+                except Exception:
+                    pass
 
             output_path = os.path.join(folder, base_name)
 
@@ -204,46 +252,77 @@ class DownloadManager:
             if isinstance(handler, SoundCloudHandler) and oauth_token:
                 downloaded = handler.download(
                     track.url, output_path, quality_preset, progress_cb, cancel_check,
-                    oauth_token=oauth_token,
+                    oauth_token=oauth_token, on_speed=speed_cb,
                 )
             else:
                 downloaded = handler.download(
-                    track.url, output_path, quality_preset, progress_cb, cancel_check
+                    track.url, output_path, quality_preset, progress_cb, cancel_check,
+                    on_speed=speed_cb,
                 )
 
-            # Post-procesado (normalización, silencios)
+            # Post-procesado (normalización, silencios) — encolado asincrónico
             if downloaded and os.path.exists(downloaded):
-                pp = PostProcessor(post_config)
-                metadata = {
-                    "title": track.title,
-                    "artist": track.artist,
-                    "album": track.album,
-                    "year": track.year,
-                }
-                pp.process(downloaded, metadata, track.thumbnail_url)
-                track.local_path = downloaded
-                on_status(STATUS_DONE, "")
+                try:
+                    from quality.ffmpeg_queue import FFmpegQueue
+                    queue = FFmpegQueue()
+                    metadata = {
+                        "title": track.title,
+                        "artist": track.artist,
+                        "album": track.album,
+                        "year": track.year,
+                    }
+                    queue.enqueue(
+                        downloaded,
+                        metadata,
+                        post_config,
+                        thumbnail_url=track.thumbnail_url,
+                    )
+                    logger.debug("📊 Post-procesado encolado (no bloquea descarga)")
+                except Exception as pp_exc:
+                    logger.warning("Error encolando post-procesado: %s (continuando)", pp_exc)
+
+                try:
+                    track.local_path = downloaded
+                except Exception as path_exc:
+                    logger.error("Error asignando local_path: %s", path_exc)
+                    track.local_path = ""
+
+                try:
+                    on_status(STATUS_DONE, "")
+                except Exception:
+                    pass
                 logger.info("Descargado: %s", downloaded)
             else:
-                on_status(STATUS_ERROR, "Archivo no encontrado tras descarga")
+                try:
+                    on_status(STATUS_ERROR, "Archivo no encontrado tras descarga")
+                except Exception:
+                    pass
 
         except RuntimeError as exc:
             err = str(exc)
-            if err == "cancelled":
-                on_status(STATUS_CANCELLED, "")
-                self._cleanup_partial_files(folder, base_name)
-            else:
-                on_status(STATUS_ERROR, err)
+            try:
+                if err == "cancelled":
+                    on_status(STATUS_CANCELLED, "")
+                    if folder and base_name:
+                        self._cleanup_partial_files(folder, base_name)
+                else:
+                    on_status(STATUS_ERROR, err)
+            except Exception:
+                pass
             logger.warning("Error descargando %s: %s", track.url, err)
 
         except Exception as exc:
             logger.exception("Error inesperado descargando %s", track.url)
-            on_status(STATUS_ERROR, str(exc)[:200])
-            # Intentar cleanup de archivos parciales
             try:
-                self._cleanup_partial_files(folder, base_name)
+                on_status(STATUS_ERROR, str(exc)[:200])
             except Exception:
                 pass
+            # Intentar cleanup de archivos parciales
+            if folder and base_name:
+                try:
+                    self._cleanup_partial_files(folder, base_name)
+                except Exception:
+                    pass
 
         finally:
             with self._lock:

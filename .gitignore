@@ -1,32 +1,22 @@
+# Build y distribución
+dist/
+build/
+*.spec
+!MusicDownloader.spec
+*.exe
+*.app
+*.dmg
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+env/
+venv/
 *.egg-info/
-.installed.cfg
-*.egg
-
-# Config y credenciales
-config.json
-.music_downloader/
-history.db
-
-# Archivos descargados
-serato/
-Desktop/
+.eggs/
 
 # IDE
 .vscode/
@@ -37,11 +27,19 @@ Desktop/
 # OS
 .DS_Store
 Thumbs.db
-
-# Pruebas
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Logs
 *.log
+
+# Temporales
+*.tmp
+debug_*.log
+launch_output.txt
+*.part
+crash_log.txt
+
+# Base de datos
+*.db
+history.db
+
+# Configuración local
+.claude/settings.local.json
+config.json

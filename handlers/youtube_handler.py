@@ -137,12 +137,15 @@ class YouTubeHandler(BaseHandler):
         return self._parse(info, url)
 
     def _fetch_playlist(self, url: str) -> list[TrackMetadata]:
-        """Extrae la lista de tracks de una playlist usando extract_flat (rápido)."""
+        """Extrae lista de tracks de una playlist de YouTube."""
         opts = {
             "quiet": True,
             "no_warnings": True,
             "extract_flat": "in_playlist",
             "skip_download": True,
+            "socket_timeout": 30,  # Aumentado de 10 para playlists grandes
+            "retries": 3,          # Aumentado de 1 para mayor robustez
+            "ignoreerrors": True,  # Continuar si una entrada falla
         }
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -157,7 +160,11 @@ class YouTubeHandler(BaseHandler):
         tracks = []
         for entry in entries:
             if entry:
-                tracks.append(self._parse(entry, url))
+                try:
+                    tracks.append(self._parse(entry, url))
+                except Exception as e:
+                    logger.debug(f"Error parseando entrada de playlist: {e}")
+                    continue
         return tracks
 
     def _parse(self, info: dict, base_url: str = "") -> TrackMetadata:
@@ -186,6 +193,11 @@ class YouTubeHandler(BaseHandler):
         duration = int(info.get("duration") or 0)
         thumbnail = info.get("thumbnail") or ""
         album = info.get("album") or ""
+
+        # Si no hay thumbnail pero tenemos video_id, generar una URL de thumbnail estándar
+        if not thumbnail and info.get("id"):
+            video_id = info["id"]
+            thumbnail = f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
 
         # Año: preferir release_year, fallback a upload_date
         year = str(info.get("release_year") or "")
@@ -224,12 +236,15 @@ class YouTubeHandler(BaseHandler):
         quality_preset: dict,
         progress_callback: Callable[[float], None],
         cancel_check: Optional[Callable[[], bool]] = None,
+        on_speed: Optional[Callable[[str, str], None]] = None,
     ) -> str:
 
         def hook(d: dict):
             if cancel_check and cancel_check():
                 raise yt_dlp.utils.DownloadError("Cancelado por el usuario")
             if d["status"] == "downloading":
+                if on_speed:
+                    on_speed(d.get("_speed_str", "").strip(), d.get("_eta_str", "").strip())
                 frag_idx = d.get("fragment_index") or 0
                 frag_total = d.get("fragment_count") or 0
                 if frag_total and progress_callback:

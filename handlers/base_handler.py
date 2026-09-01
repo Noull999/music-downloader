@@ -85,6 +85,7 @@ class BaseHandler(ABC):
         quality_preset: dict,
         progress_callback: Callable[[float], None],
         cancel_check: Optional[Callable[[], bool]] = None,
+        on_speed: Optional[Callable[[str, str], None]] = None,
     ) -> str:
         """
         Descarga el track y retorna la ruta absoluta del archivo final.
@@ -93,6 +94,7 @@ class BaseHandler(ABC):
         - quality_preset: dict de quality/presets.py
         - progress_callback: recibe float 0.0-1.0
         - cancel_check: si retorna True, cancelar inmediatamente
+        - on_speed: opcional, recibe (speed_str, eta_str) formateados por yt_dlp
         Lanza RuntimeError ante errores conocidos (privado, región, etc.)
         """
 

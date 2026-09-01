@@ -33,21 +33,26 @@ class ActivityPanel(ctk.CTkFrame):
 
     def log(self, message: str):
         """Add a line to the activity log."""
-        self._log_text.configure(state="normal")
+        try:
+            self._log_text.configure(state="normal")
 
-        # Auto-scroll: append at the end
-        self._log_text.insert("end", f"{message}\n")
+            # Auto-scroll: append at the end
+            self._log_text.insert("end", f"{message}\n")
 
-        # Keep only last 50 lines to avoid memory bloat
-        lines = self._log_text.get("1.0", "end").split("\n")
-        if len(lines) > 52:  # 50 + 2 buffer
-            excess = len(lines) - 50
-            self._log_text.delete("1.0", f"{excess}.0")
+            # Keep only last 50 lines to avoid memory bloat
+            content = self._log_text.get("1.0", "end-1c")
+            if content:
+                lines = content.split("\n")
+                if len(lines) > 50:
+                    excess = len(lines) - 50
+                    self._log_text.delete("1.0", f"{excess}.0")
 
-        # Auto-scroll to bottom
-        self._log_text.see("end")
+            # Auto-scroll to bottom
+            self._log_text.see("end")
 
-        self._log_text.configure(state="disabled")
+            self._log_text.configure(state="disabled")
+        except Exception:
+            pass  # silently ignore log errors to prevent crash
 
     def clear(self):
         """Clear the activity log."""

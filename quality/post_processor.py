@@ -163,31 +163,37 @@ class PostProcessor:
                 pass  # ya tiene tags
 
             if self.embed_metadata:
-                if metadata.get("title"):
-                    audio.tags.add(TIT2(encoding=3, text=metadata["title"]))
-                if metadata.get("artist"):
-                    audio.tags.add(TPE1(encoding=3, text=metadata["artist"]))
-                if metadata.get("album"):
-                    audio.tags.add(TALB(encoding=3, text=metadata["album"]))
-                if metadata.get("year"):
-                    audio.tags.add(TDRC(encoding=3, text=metadata["year"]))
+                try:
+                    if metadata.get("title"):
+                        audio.tags.add(TIT2(encoding=3, text=metadata["title"]))
+                    if metadata.get("artist"):
+                        audio.tags.add(TPE1(encoding=3, text=metadata["artist"]))
+                    if metadata.get("album"):
+                        audio.tags.add(TALB(encoding=3, text=metadata["album"]))
+                    if metadata.get("year"):
+                        audio.tags.add(TDRC(encoding=3, text=metadata["year"]))
+                except Exception as meta_exc:
+                    logger.warning("Error embebiendo metadatos: %s", meta_exc)
 
             if self.embed_artwork and thumbnail_url:
-                img_data = self._fetch_image_cached(thumbnail_url)
-                if img_data:
-                    audio.tags.add(
-                        APIC(
-                            encoding=3,
-                            mime="image/jpeg",
-                            type=3,   # Cover (front)
-                            desc="Cover",
-                            data=img_data,
+                try:
+                    img_data = self._fetch_image_cached(thumbnail_url)
+                    if img_data and len(img_data) > 0:
+                        audio.tags.add(
+                            APIC(
+                                encoding=3,
+                                mime="image/jpeg",
+                                type=3,   # Cover (front)
+                                desc="Cover",
+                                data=img_data,
+                            )
                         )
-                    )
+                except Exception as art_exc:
+                    logger.warning("Error embebiendo carátula: %s", art_exc)
 
             audio.save()
         except Exception as exc:
-            logger.warning("Error embebiendo tags en %s: %s", file_path, exc)
+            logger.warning("Error guardando tags en %s: %s", file_path, exc)
 
     def _fetch_image_cached(self, url: str, timeout: float = 5.0) -> Optional[bytes]:
         """Obtiene imagen con caché automático (evita re-descargar)."""
@@ -216,15 +222,13 @@ class PostProcessor:
             return self._fetch_image(url, timeout)
 
     def _fetch_image(self, url: str, timeout: float = 5.0) -> Optional[bytes]:
-        """Descarga imagen con timeout corto."""
+        """Descarga imagen usando sesión global con pooling."""
         try:
-            import requests
-            resp = requests.get(url, timeout=timeout)
+            from utils.http_session import get_session
+            session = get_session()
+            resp = session.get(url, timeout=timeout)
             resp.raise_for_status()
             return resp.content
-        except requests.Timeout:
-            logger.warning(f"⏱️  Timeout descargando imagen (>{timeout}s): {url[:50]}...")
-            return None
         except Exception as exc:
             logger.warning(f"No se pudo descargar thumbnail para tags: {exc}")
             return None

@@ -24,12 +24,12 @@ class UIController:
     - Callbacks a GUI
     """
 
-    def __init__(self, base_dir: str = None):
-        # Construir ruta config.json a partir de base_dir
-        if base_dir:
+    def __init__(self, base_dir: str = None, config_path: str = None):
+        # config_path explícito tiene prioridad; si no, se arma a partir de
+        # base_dir (usado por main_webview.py); si tampoco hay base_dir,
+        # ConfigManager cae a DEFAULT_CONFIG_PATH (~/.music_downloader/).
+        if not config_path and base_dir:
             config_path = os.path.join(base_dir, "config.json")
-        else:
-            config_path = "config.json"
 
         self.config = ConfigManager(config_path)
         self.history = HistoryManager()
@@ -66,18 +66,24 @@ class UIController:
 
     def record_download(self, track: TrackInfo) -> None:
         """Registra descarga en historial."""
-        # Usar local_path del track si existe, si no usar el track.url como fallback
-        local_path = getattr(track, 'local_path', '')
-        self.history.add_download(
-            url=track.url,
-            title=track.title,
-            artist=track.artist,
-            album=track.album,
-            platform=track.platform,
-            local_path=local_path,
-            duration=getattr(track, 'duration', 0),
-        )
-        logger.info(f"✓ Descarga registrada: {track.title}")
+        try:
+            # Usar local_path del track si existe, si no usar el track.url como fallback
+            local_path = getattr(track, 'local_path', '')
+
+            logger.debug(f"Registrando descarga: {track.title} (url: {track.url[:50]}...)")
+
+            self.history.add_download(
+                url=track.url,
+                title=track.title,
+                artist=track.artist,
+                album=track.album,
+                platform=track.platform,
+                local_path=local_path,
+                duration=getattr(track, 'duration', 0),
+            )
+            logger.info(f"✓ Descarga registrada: {track.title}")
+        except Exception as e:
+            logger.error(f"Error registrando descarga: {e}", exc_info=True)
 
     def start_download_manager(self) -> None:
         """Inicia el thread pool de descargas."""
@@ -141,26 +147,50 @@ class UIController:
             }
         """
         try:
-            # Cargar config con estructura anidada
+            # Cargar config con estructura anidada - intenta 2 métodos
             config_path = self.config.config_path
-            with open(config_path, 'r') as f:
-                full_config = json.load(f)
+
+            # Método 1: Leer archivo directamente
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    full_config = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                # Fallback: usar lo que ya está en memoria
+                full_config = self.config.get_all()
 
             sc_config = full_config.get("soundcloud", {})
             oauth_token = sc_config.get("oauth_token", "").strip()
             client_id = sc_config.get("client_id", "").strip()
+
+            # Debug logging
+            logger.debug(f"Config path: {config_path}")
+            logger.debug(f"SoundCloud config keys: {list(sc_config.keys())}")
+            logger.debug(f"Token presente: {bool(oauth_token)}")
+            logger.debug(f"Client ID presente: {bool(client_id)}")
 
             if not oauth_token or not client_id:
                 return {
                     'success': False,
                     'imported': 0,
                     'skipped': 0,
-                    'error': 'OAuth token o client_id no configurados'
+                    'error': f'OAuth token o client_id no configurados. Config path: {config_path}'
                 }
 
             # Conectar a SoundCloud
             logger.info("🔄 Conectando a SoundCloud...")
             api = SoundCloudAPIClient(oauth_token, client_id)
+
+            # Validar credenciales
+            logger.info("🔐 Validando credenciales...")
+            user_info = api.validate_credentials()
+            if not user_info:
+                return {
+                    'success': False,
+                    'imported': 0,
+                    'skipped': 0,
+                    'error': 'Credenciales inválidas o token expirado'
+                }
+            logger.info(f"✓ Conectado como: {user_info.get('full_name', 'Unknown')}")
 
             # Obtener likes
             logger.info("📥 Obteniendo tus likes de SoundCloud...")
