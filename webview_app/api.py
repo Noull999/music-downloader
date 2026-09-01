@@ -484,10 +484,17 @@ class WebViewAPI:
             library_folders=self._library_folders(),
             track_event_callback=self._on_sync_track_event,
         )
-        # Nota: NO se vuelve a llamar self._sync_manager.validate_credentials()
-        # acá — internamente hace otra request de red idéntica a la de arriba
-        # (mismo oauth_token/client_id), duplicando el tiempo de espera al
-        # conectar sin ganar nada.
+        # SyncManager arma su PROPIO SoundCloudAPIClient (self._sync_manager.api),
+        # un objeto distinto al que se usó arriba para el chequeo inicial.
+        # validate_credentials() no solo verifica: guarda self.api.user_id,
+        # que get_likes()/get_recent_likes() exigen tener seteado o tiran
+        # "Necesitas validar credenciales primero". No es una request
+        # redundante aunque use el mismo token — sin esto, cualquier sync
+        # falla siempre, incluso recién conectado.
+        try:
+            self._sync_manager.validate_credentials()
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
         # Sincroniza filesystem -> DB en background (recupera archivos previos)
         threading.Thread(target=self._sync_filesystem_bg, daemon=True).start()
