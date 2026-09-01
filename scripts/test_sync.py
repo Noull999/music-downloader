@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from sync.soundcloud_api import SoundCloudAPIClient
 from sync.duplicate_checker import DuplicateChecker
+from sync import match_utils
 from db.history import DownloadHistory
 
 
@@ -92,7 +93,7 @@ def test_duplicate_checker(likes):
 
     print("\nPruebas de normalizacion:")
     for original, normalized in test_cases:
-        norm = checker._normalize(original)
+        norm = match_utils.clean_for_match(original)
         print(f"   {original}")
         print(f"   -> {norm}")
         assert norm == normalized, f"Normalizacion incorrecta!"

@@ -11,6 +11,7 @@ from typing import Callable, Optional
 
 from .soundcloud_api import SoundCloudAPIClient, SoundCloudTrack
 from .duplicate_checker import DuplicateChecker
+from . import match_utils
 from db.history import DownloadHistory
 from notifications.notifier import Notifier
 from quality.post_processor import PostProcessor
@@ -42,10 +43,11 @@ class SyncManager:
         client_id: str,
         download_folder: str,
         downloader,  # handler de soundcloud o youtube (con método download())
-        similarity_threshold: int = 85,  # threshold para detectar duplicados (0-100)
+        similarity_threshold: int = match_utils.MATCH_THRESHOLD,
         filename_pattern: str = "{artist} - {title}",
         subfolder_by_artist: bool = False,
         activity_log_callback: Optional[Callable[[str], None]] = None,
+        library_folders: Optional[list] = None,
     ):
         """
         Args:
@@ -54,14 +56,19 @@ class SyncManager:
             download_folder: Carpeta donde guardar archivos
             downloader: Handler existente (SoundCloudHandler o similar)
                        Debe tener método: download(url, output_path, quality_preset, progress_cb)
-            similarity_threshold: % de similitud para detectar duplicados (default 85)
+            similarity_threshold: % de similitud para detectar duplicados,
+                       sobre títulos ya normalizados (ver sync/match_utils.py)
             filename_pattern: Patrón de nombre con {artist} y {title}
             subfolder_by_artist: Si crear subcarpeta por artista
             activity_log_callback: Función(mensaje: str) para logging en tiempo real a ActivityPanel
+            library_folders: Carpetas extra donde ya tenés música, además de
+                       download_folder, para no re-descargar lo que ya existe
         """
         self.api = SoundCloudAPIClient(oauth_token, client_id)
         self.history = DownloadHistory()
-        self.checker = DuplicateChecker(self.history, similarity_threshold)
+        self.checker = DuplicateChecker(
+            self.history, similarity_threshold, library_folders=library_folders
+        )
         self.notifier = Notifier()
         self.download_folder = download_folder
         self.downloader = downloader
@@ -453,6 +460,9 @@ class SyncManager:
 
         finally:
             self._is_syncing = False
+            # Los archivos recién bajados deben contar como duplicados en la
+            # próxima verificación.
+            self.checker.invalidate_index()
 
     def sync_from_index(
         self,
@@ -629,6 +639,7 @@ class SyncManager:
 
         finally:
             self._is_syncing = False
+            self.checker.invalidate_index()
 
     def sync_recent(
         self,

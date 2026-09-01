@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from sync.soundcloud_api import SoundCloudAPIClient
 from sync.duplicate_checker import DuplicateChecker
+from sync import match_utils
 from db.history import DownloadHistory
 
 
@@ -95,7 +96,7 @@ def main():
     ]
 
     for text in test_cases:
-        normalized = checker._normalize(text)
+        normalized = match_utils.clean_for_match(text)
         print(f"  '{text}'")
         print(f"  -> '{normalized}'")
 

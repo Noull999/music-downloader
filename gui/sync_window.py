@@ -13,6 +13,7 @@ import customtkinter as ctk
 
 from sync.sync_manager import SyncManager
 from sync.soundcloud_api import SoundCloudAPIClient
+from sync import match_utils
 from notifications.notifier import Notifier
 from gui.likes_preview_window import LikesPreviewWindow
 
@@ -588,7 +589,15 @@ ADVERTENCIA:
         client_id = self._client_entry.get().strip()
 
         # Obtener threshold del config
-        threshold = self._config.get("duplicate_checker", {}).get("similarity_threshold", 85)
+        threshold = self._config.get("duplicate_checker", {}).get(
+            "similarity_threshold", match_utils.MATCH_THRESHOLD
+        )
+        # Carpetas donde ya hay música: por defecto la carpeta padre del
+        # destino, donde suelen convivir las carpetas por género.
+        library_folders = self._config.get("library_folders") or []
+        if not library_folders and self.download_folder:
+            parent = os.path.dirname(self.download_folder.rstrip("\\/"))
+            library_folders = [parent] if parent else []
 
         try:
             activity_log_callback = None
@@ -602,7 +611,8 @@ ADVERTENCIA:
                 similarity_threshold=threshold,
                 filename_pattern=self._config.get("filename_pattern", "{artist} - {title}"),
                 subfolder_by_artist=self._config.get("subfolder_by_artist", False),
-                activity_log_callback=activity_log_callback
+                activity_log_callback=activity_log_callback,
+                library_folders=library_folders,
             )
             # Validar credenciales en el nuevo client para obtener user_id
             self.manager.validate_credentials()

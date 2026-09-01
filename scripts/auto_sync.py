@@ -13,6 +13,7 @@ import argparse
 import io
 import json
 import logging
+import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -33,6 +34,7 @@ for _name in ("stdout", "stderr"):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sync.sync_manager import SyncManager
+from sync import match_utils
 from handlers.soundcloud_handler import SoundCloudHandler
 from config.manager import DEFAULT_CONFIG_PATH
 
@@ -81,7 +83,15 @@ def main():
     oauth_token = sc_cfg.get("oauth_token", "")
     client_id = sc_cfg.get("client_id", "")
     download_folder = config.get("dest_folder", str(Path.home() / "Music"))
-    threshold = config.get("duplicate_checker", {}).get("similarity_threshold", 85)
+    threshold = config.get("duplicate_checker", {}).get(
+        "similarity_threshold", match_utils.MATCH_THRESHOLD
+    )
+    # Mismas carpetas de biblioteca que usa la GUI, para que la tarea
+    # programada no re-descargue lo que ya existe fuera de dest_folder.
+    library_folders = config.get("library_folders") or []
+    if not library_folders and download_folder:
+        parent = os.path.dirname(str(download_folder).rstrip("\\/"))
+        library_folders = [parent] if parent else []
 
     if not oauth_token or not client_id:
         print("ERROR: Configurá soundcloud.oauth_token y soundcloud.client_id en config.json")
@@ -94,6 +104,7 @@ def main():
         similarity_threshold=threshold,
         filename_pattern=config.get("filename_pattern", "{artist} - {title}"),
         subfolder_by_artist=config.get("subfolder_by_artist", False),
+        library_folders=library_folders,
     )
 
     try:

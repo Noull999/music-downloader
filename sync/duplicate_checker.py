@@ -1,35 +1,59 @@
 """
-Verifica si una canción ya existe en la carpeta o historial.
-Maneja: nombres exactos, nombres similares (fuzzy), URLs en historial.
+Verifica si una canción ya existe en la biblioteca o en el historial.
+Maneja: URLs ya descargadas y nombres de archivo similares (fuzzy).
+
+La normalización y comparación difusa vive en sync/match_utils.py, compartida
+con la reconciliación de biblioteca para que ambos flujos decidan igual sobre
+el mismo par de canciones.
 """
-import os
-import unicodedata
-import re
 import logging
 from pathlib import Path
-from thefuzz import fuzz
+from typing import Iterable, Optional
+
+from sync import match_utils
 
 logger = logging.getLogger(__name__)
 
 
 class DuplicateChecker:
     """
-    Detecta duplicados usando tres estrategias:
-    1. Historial de URLs (más confiable, sin falsos positivos)
-    2. Búsqueda fuzzy en nombres de archivos (tolera tildes, espacios)
-    3. Nombres exactos
+    Detecta duplicados con dos estrategias, en orden:
+
+    1. URL en el historial de descargas — exacta, sin falsos positivos.
+    2. Archivo de nombre similar en la biblioteca — difusa, tolera tildes,
+       mayúsculas, reordenamientos y el ruido de promo ("[FREE DL]", etc).
+
+    La búsqueda difusa recorre TODAS las carpetas de la biblioteca, no solo
+    la carpeta de descarga: la música bajada antes de usar la app suele vivir
+    en carpetas por género hermanas al destino, y antes no se detectaba,
+    así que se re-descargaba.
     """
 
-    SIMILARITY_THRESHOLD = 55  # % de similitud para considerar duplicado (muy tolerante para archivos reorganizados por Picard)
-
-    def __init__(self, download_history, similarity_threshold: int = 85):
+    def __init__(
+        self,
+        download_history,
+        similarity_threshold: int = match_utils.MATCH_THRESHOLD,
+        library_folders: Optional[Iterable[str]] = None,
+    ):
         """
         Args:
-            download_history: Objeto DownloadHistory con método is_downloaded(url)
-            similarity_threshold: % de similitud fuzzy (0-100)
+            download_history: Objeto con método is_downloaded(url)
+            similarity_threshold: % de similitud (0-100) sobre títulos ya
+                normalizados por match_utils.clean_for_match
+            library_folders: Carpetas extra a considerar además de la de
+                descarga (p.ej. la raíz de la biblioteca con las carpetas
+                por género)
         """
         self.history = download_history
-        self.SIMILARITY_THRESHOLD = similarity_threshold
+        self.similarity_threshold = similarity_threshold
+        self.library_folders = list(library_folders or [])
+
+        # Índice construido bajo demanda y reutilizado: antes se re-recorría
+        # el disco entero una vez por cada canción a verificar.
+        self._index: Optional[list[tuple[Path, set[str]]]] = None
+        self._indexed_folders: Optional[tuple[str, ...]] = None
+
+    # ── API pública ──────────────────────────────────────────────────── #
 
     def is_duplicate(
         self,
@@ -39,33 +63,25 @@ class DuplicateChecker:
         folder: str
     ) -> tuple[bool, str]:
         """
-        Verifica si una canción es duplicado.
+        Verifica si una canción ya la tenés.
 
         Args:
             track_url: URL de SoundCloud (permalink_url)
-            track_title: Título de la canción
-            artist: Nombre del artista
-            folder: Carpeta de descargas
+            track_title: Título de la canción (según SoundCloud)
+            artist: Uploader de SoundCloud (ver match_utils sobre por qué
+                    no es necesariamente el artista real)
+            folder: Carpeta de descarga
 
         Returns:
-            (es_duplicado: bool, razon: str)
-            razon explica por qué es duplicado (para mostrar al usuario)
+            (es_duplicado, razón_para_mostrar_al_usuario)
         """
-
-        # Verificación 1: ¿Está en el historial por URL? (más confiable)
         if self.history.is_downloaded(track_url):
-            logger.debug(f"Duplicado por historial: {track_url}")
+            logger.debug("Duplicado por historial: %s", track_url)
             return True, "Ya descargada anteriormente (historial)"
 
-        # Verificación 2: ¿Existe archivo similar en la carpeta?
-        if os.path.exists(folder):
-            similar_file = self._find_similar_file(track_title, artist, folder)
-            if similar_file:
-                logger.debug(
-                    f"Duplicado por archivo similar: "
-                    f"{similar_file} ≈ {artist} - {track_title}"
-                )
-                return True, f"Archivo similar encontrado: {similar_file}"
+        match = self._find_similar_file(track_title, artist, folder)
+        if match:
+            return True, f"Archivo similar encontrado: {match}"
 
         return False, ""
 
@@ -75,16 +91,18 @@ class DuplicateChecker:
         download_folder: str
     ) -> tuple[list, list]:
         """
-        Filtra una lista de tracks y separa nuevos de duplicados.
+        Separa una lista de tracks en nuevos y duplicados.
 
         Args:
             all_likes: Lista de SoundCloudTrack
-            download_folder: Ruta a la carpeta de descargas
+            download_folder: Carpeta de descargas
 
         Returns:
-            (tracks_nuevos: list, tracks_duplicados: list[tuple])
-            tracks_duplicados es lista de (track, razon)
+            (tracks_nuevos, [(track, razón), ...])
         """
+        # Construye el índice una vez para todo el lote.
+        self._ensure_index(download_folder)
+
         new_tracks = []
         duplicates = []
 
@@ -97,87 +115,55 @@ class DuplicateChecker:
             else:
                 new_tracks.append(track)
 
-        logger.info(
-            f"Duplicados: {len(duplicates)} | "
-            f"Nuevos: {len(new_tracks)}"
-        )
+        logger.info("Duplicados: %d | Nuevos: %d", len(duplicates), len(new_tracks))
         return new_tracks, duplicates
+
+    def invalidate_index(self) -> None:
+        """
+        Descarta el índice cacheado. Llamar tras descargar archivos nuevos
+        para que la próxima verificación los tenga en cuenta.
+        """
+        self._index = None
+        self._indexed_folders = None
 
     # ── Internos ─────────────────────────────────────────────────────── #
 
-    def _normalize(self, text: str) -> str:
+    def _folders_to_scan(self, download_folder: str) -> tuple[str, ...]:
+        folders = [download_folder, *self.library_folders]
+        seen, ordered = set(), []
+        for f in folders:
+            if f and f not in seen:
+                seen.add(f)
+                ordered.append(f)
+        return tuple(ordered)
+
+    def _ensure_index(self, download_folder: str) -> list[tuple[Path, set[str]]]:
+        folders = self._folders_to_scan(download_folder)
+        if self._index is None or self._indexed_folders != folders:
+            logger.info("Indexando biblioteca para detección de duplicados: %s", ", ".join(folders))
+            self._index = match_utils.index_audio_files(folders)
+            self._indexed_folders = folders
+            logger.info("Índice listo: %d archivos de audio", len(self._index))
+        return self._index
+
+    def _find_similar_file(self, title: str, artist: str, folder: str) -> Optional[str]:
         """
-        Normaliza texto para comparación fuzzy.
-        - Sin tildes/diacríticos (á→a, ñ→n)
-        - Minúsculas
-        - Sin caracteres especiales (guardar espacios)
-        - Espacios normalizados
+        Busca el archivo MÁS parecido de la biblioteca (no el primero que
+        supere el umbral). Devuelve su nombre, o None si ninguno alcanza.
         """
-        # Quitar tildes y diacríticos (NFD decomposition)
-        text = unicodedata.normalize('NFD', text)
-        text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
+        index = self._ensure_index(folder)
+        candidates = match_utils.like_candidates(artist, title)
+        if not candidates:
+            return None
 
-        # Minúsculas
-        text = text.lower()
+        path, score = match_utils.find_best_match(
+            candidates, index, self.similarity_threshold
+        )
+        if path is None:
+            return None
 
-        # Quitar caracteres especiales excepto espacios
-        text = re.sub(r'[^\w\s]', '', text)
-
-        # Normalizar espacios múltiples a uno solo
-        text = ' '.join(text.split())
-
-        return text
-
-    def _find_similar_file(self, title: str, artist: str, folder: str) -> str | None:
-        """
-        Busca un archivo con nombre similar en la carpeta de destino.
-
-        Estrategia:
-        1. Normalizar search_string (artist + title)
-        2. Buscar en archivos de audio con extensiones comunes
-        3. Comparar con fuzzy matching (tolera tildes, espacios, mayúsculas)
-        4. Si similaridad > threshold, considerarlo duplicado
-
-        Args:
-            title: Título de la canción
-            artist: Artista
-            folder: Ruta carpeta
-
-        Returns:
-            Nombre del archivo similar encontrado, o None
-        """
-        search_string = self._normalize(f"{artist} {title}")
-        audio_extensions = {'.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus', '.aac'}
-
-        logger.debug(f"Buscando duplicado de: '{artist} - {title}' (normalizado: {search_string})")
-
-        try:
-            for file_path in Path(folder).rglob('*'):
-                # Saltar si no es archivo o no es audio
-                if not file_path.is_file():
-                    continue
-                if file_path.suffix.lower() not in audio_extensions:
-                    continue
-
-                # Normalizar nombre del archivo (sin extensión)
-                file_name = self._normalize(file_path.stem)
-
-                # Comparar con múltiples métodos de fuzzy matching
-                # y usar la mejor similitud encontrada
-                token_sort = fuzz.token_sort_ratio(search_string, file_name)
-                partial = fuzz.partial_token_sort_ratio(search_string, file_name)
-                ratio = fuzz.ratio(search_string, file_name)
-
-                similarity = max(token_sort, partial, ratio)
-
-                if similarity >= self.SIMILARITY_THRESHOLD:
-                    logger.info(
-                        f"✓ Duplicado encontrado: '{file_path.name}' "
-                        f"(similitud {similarity}% ≈ {artist} - {title})"
-                    )
-                    return file_path.name
-
-        except (OSError, PermissionError) as e:
-            logger.warning(f"Error explorando carpeta {folder}: {e}")
-
-        return None
+        logger.info(
+            "✓ Duplicado encontrado: '%s' (similitud %d%% ≈ %s - %s)",
+            path.name, score, artist, title,
+        )
+        return path.name

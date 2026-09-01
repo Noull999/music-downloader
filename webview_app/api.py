@@ -16,16 +16,12 @@ en el HTML. Ese callback debe registrarse en el HTML antes de usarse.
 import json
 import logging
 import os
-import re
 import subprocess
 import sys
 import threading
-import unicodedata
 from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
-
-from thefuzz import fuzz
 
 from download_manager import DownloadManager
 from gui.ui_controller import UIController
@@ -35,43 +31,13 @@ from models import (
     STATUS_DONE, STATUS_ERROR, STATUS_SKIP, STATUS_CANCELLED,
 )
 from quality.presets import get_preset
+from sync import match_utils
 from sync.soundcloud_api import SoundCloudAPIClient
 from sync.sync_manager import SyncManager
 from url_detector import detect_handler, detect_platform_name
 from utils.validators import parse_urls_from_text
 
-_AUDIO_EXTENSIONS = {'.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus', '.aac'}
-
-# Ruido de promo/versionado que aparece tanto en los títulos de SoundCloud
-# como en los nombres de archivo, y que infla la similitud entre canciones
-# que no tienen nada que ver ("X [FREE DL]" vs "Y [FREE DL]"). Quitarlo
-# sube el score de las coincidencias reales y baja el de las falsas.
-_MATCH_NOISE = re.compile(
-    r"\b(free\s*(dl|download)|full\s*length|out\s*now|premiere|preview|"
-    r"extended(\s*(mix|version))?|original\s*mix|radio\s*edit|"
-    r"master(ed|ing)?|mstr|final|v\d+(\.\d+)?|hq|clip|temporary)\b",
-    re.I,
-)
-_MATCH_BRACKETS = re.compile(r"[\[\(\{][^\]\)\}]*[\]\)\}]")
-
-# Umbral propio para la reconciliación: las cadenas ya vienen limpias de
-# ruido, así que puntúan distinto que en sync/duplicate_checker. 80 se
-# eligió midiendo contra la biblioteca real: por encima no aparecían
-# falsos positivos, por debajo sí (p.ej. "No Good" vs "Raise The Roof").
-_RECONCILE_THRESHOLD = 80
-_MIN_MATCH_LEN = 4
-
-
-def _clean_for_match(text: str) -> str:
-    """Normaliza y quita ruido de promo/versionado para comparar títulos."""
-    if not text:
-        return ""
-    t = _MATCH_BRACKETS.sub(" ", text)
-    t = _MATCH_NOISE.sub(" ", t)
-    t = unicodedata.normalize("NFD", t)
-    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
-    t = re.sub(r"[^\w\s]", " ", t.lower())
-    return " ".join(t.split())
+_AUDIO_EXTENSIONS = match_utils.AUDIO_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -498,7 +464,9 @@ class WebViewAPI:
         self.save_settings({"soundcloud": {"oauth_token": oauth_token, "client_id": client_id}})
         self._sc_user_info = user_info
 
-        threshold = self.controller.get_config_value("duplicate_checker", {}).get("similarity_threshold", 85)
+        threshold = self.controller.get_config_value("duplicate_checker", {}).get(
+            "similarity_threshold", match_utils.MATCH_THRESHOLD
+        )
         self._sync_manager = SyncManager(
             oauth_token, client_id,
             self.controller.get_config_value("dest_folder", ""),
@@ -506,6 +474,7 @@ class WebViewAPI:
             similarity_threshold=threshold,
             filename_pattern=self.controller.get_config_value("filename_pattern", "{artist} - {title}"),
             subfolder_by_artist=self.controller.get_config_value("subfolder_by_artist", False),
+            library_folders=self._library_folders(),
         )
         try:
             self._sync_manager.validate_credentials()
@@ -697,6 +666,31 @@ class WebViewAPI:
         parent = os.path.dirname(dest.rstrip("\\/")) if dest else ""
         return parent or dest
 
+    def _library_folders(self) -> list[str]:
+        """
+        Carpetas donde ya tenés música, para que la detección de duplicados
+        no se limite a dest_folder. Si no hay ninguna configurada se asume
+        la carpeta padre del destino, que es donde suelen convivir las
+        carpetas por género.
+        """
+        configured = self.controller.get_config_value("library_folders", []) or []
+        if configured:
+            return [f for f in configured if f]
+        default = self.get_default_scan_folder()
+        return [default] if default else []
+
+    def get_library_folders(self) -> list[str]:
+        return self._library_folders()
+
+    def set_library_folders(self, folders: list[str]) -> dict:
+        """Fija las carpetas de biblioteca y reconstruye el índice de duplicados."""
+        folders = [f for f in (folders or []) if f]
+        self.controller.set_config_value("library_folders", folders)
+        if self._sync_manager:
+            self._sync_manager.checker.library_folders = list(folders)
+            self._sync_manager.checker.invalidate_index()
+        return {"ok": True, "library_folders": folders}
+
     def reconcile_library(self, folder: str) -> dict:
         """
         Escanea `folder` COMPLETO (todas las subcarpetas) buscando archivos
@@ -731,30 +725,14 @@ class WebViewAPI:
         threading.Thread(target=run, daemon=True).start()
         return {"ok": True}
 
-    def _match_candidates_like(self, like: dict) -> set[str]:
-        """
-        Variantes normalizadas de un like para comparar. Incluye el título
-        SOLO además de "artista + título" porque en SoundCloud el campo
-        artista es el uploader (sello/canal, p.ej. "GEWOONRAVES") mientras
-        que el artista real vive dentro del título; el archivo en disco casi
-        siempre está nombrado "ArtistaReal - Título".
-        """
-        artist = like.get("artist") or ""
-        title = like.get("title") or ""
-        cands = {_clean_for_match(f"{artist} {title}"), _clean_for_match(title)}
-        return {c for c in cands if len(c) >= _MIN_MATCH_LEN}
-
     def _do_reconcile(self, folder: str, progress_cb) -> dict:
         history = self._sync_manager.history
+        threshold = self.controller.get_config_value("duplicate_checker", {}).get(
+            "similarity_threshold", match_utils.MATCH_THRESHOLD
+        )
 
         progress_cb(0, f"Escaneando {folder}…")
-        files: list[tuple[Path, set[str]]] = []
-        for p in Path(folder).rglob("*"):
-            if p.is_file() and p.suffix.lower() in _AUDIO_EXTENSIONS:
-                cands = {_clean_for_match(p.stem)}
-                cands = {c for c in cands if len(c) >= _MIN_MATCH_LEN}
-                if cands:
-                    files.append((p, cands))
+        files = match_utils.index_audio_files([folder])
         progress_cb(8, f"{len(files)} archivos de audio encontrados")
 
         likes = history.load_likes()
@@ -768,15 +746,13 @@ class WebViewAPI:
             if like["url"] in existing_urls:
                 already += 1
             else:
-                like_cands = self._match_candidates_like(like)
-                best_score, best_file = 0, None
-                for file_path, file_cands in files:
-                    for a in like_cands:
-                        for b in file_cands:
-                            score = max(fuzz.token_sort_ratio(a, b), fuzz.ratio(a, b))
-                            if score > best_score:
-                                best_score, best_file = score, file_path
-                if best_file and best_score >= _RECONCILE_THRESHOLD:
+                candidates = match_utils.like_candidates(
+                    like.get("artist") or "", like.get("title") or ""
+                )
+                best_file, best_score = match_utils.find_best_match(
+                    candidates, files, threshold
+                )
+                if best_file is not None:
                     pending.append((best_score, like, best_file))
 
             if total and i % 10 == 0:
