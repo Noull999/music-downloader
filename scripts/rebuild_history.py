@@ -2,6 +2,12 @@
 Script para reconstruir historial basado en archivos existentes en una carpeta.
 Uso: python rebuild_history.py [ruta_a_carpeta_musica]
      Si no se proporciona ruta, usa ~/Music por defecto.
+
+Escribe en la tabla "sync_downloads" (la misma que usa db/history.py /
+SyncManager para el flujo de Sincronizar). No toca la tabla "downloads"
+de db/history_manager.py, que es la que usa el flujo principal de
+"pegar link" — ambas viven en el mismo .db pero en tablas separadas
+a propósito, para no pisarse los esquemas entre sí.
 """
 import sqlite3
 import os
@@ -31,7 +37,7 @@ def rebuild_history():
 
     # Crear tabla si no existe
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS downloads (
+        CREATE TABLE IF NOT EXISTS sync_downloads (
             url         TEXT PRIMARY KEY,
             title       TEXT NOT NULL,
             artist      TEXT,
@@ -69,7 +75,7 @@ def rebuild_history():
 
                 try:
                     cursor.execute("""
-                        INSERT OR IGNORE INTO downloads
+                        INSERT OR IGNORE INTO sync_downloads
                         (url, title, artist, file_path, platform, downloaded_at)
                         VALUES (?, ?, ?, ?, 'soundcloud', ?)
                     """, (fake_url, title, artist, file_path, datetime.now().isoformat()))

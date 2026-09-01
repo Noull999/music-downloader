@@ -1,7 +1,16 @@
 """
-Historial de descargas en SQLite.
-Registra: qué se descargó, cuándo, de dónde, dónde está el archivo.
-Usado para evitar re-descargar lo mismo.
+Historial de descargas en SQLite, usado por el flujo de Sincronizar
+(SyncManager) para saber qué likes de SoundCloud ya se bajaron y para
+reconciliar archivos locales existentes (sync_filesystem_to_db).
+
+Vive en el mismo archivo .db que db/history_manager.py (HistoryManager,
+usado por el flujo principal de "pegar link"), pero en tablas con
+nombres propios: ambas clases usaban antes una tabla "downloads" con
+esquemas distintos, y como comparten el mismo archivo SQLite, la que
+se inicializaba primero "ganaba" el esquema y dejaba a la otra
+escribiendo en columnas que no existían (fallaba en silencio, o
+lanzaba sqlite3.OperationalError en las consultas crudas). Por eso
+esta clase usa "sync_downloads", no "downloads".
 """
 import sqlite3
 import threading
@@ -37,7 +46,7 @@ class DownloadHistory:
         try:
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self.conn.executescript("""
-                CREATE TABLE IF NOT EXISTS downloads (
+                CREATE TABLE IF NOT EXISTS sync_downloads (
                     url         TEXT PRIMARY KEY,
                     title       TEXT NOT NULL,
                     artist      TEXT,
@@ -66,10 +75,10 @@ class DownloadHistory:
                     errors      INTEGER DEFAULT 0
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_downloads_platform
-                    ON downloads(platform);
-                CREATE INDEX IF NOT EXISTS idx_downloads_artist
-                    ON downloads(artist);
+                CREATE INDEX IF NOT EXISTS idx_sync_downloads_platform
+                    ON sync_downloads(platform);
+                CREATE INDEX IF NOT EXISTS idx_sync_downloads_artist
+                    ON sync_downloads(artist);
                 CREATE INDEX IF NOT EXISTS idx_likes_url
                     ON soundcloud_likes(url);
             """)
@@ -92,7 +101,7 @@ class DownloadHistory:
         with self.lock:
             try:
                 cursor = self.conn.execute(
-                    "SELECT 1 FROM downloads WHERE url = ?", (url,)
+                    "SELECT 1 FROM sync_downloads WHERE url = ?", (url,)
                 )
                 return cursor.fetchone() is not None
             except sqlite3.Error as e:
@@ -121,7 +130,7 @@ class DownloadHistory:
             try:
                 self.conn.execute(
                     """
-                    INSERT OR REPLACE INTO downloads
+                    INSERT OR REPLACE INTO sync_downloads
                     (url, title, artist, file_path, platform)
                     VALUES (?, ?, ?, ?, ?)
                     """,
@@ -244,13 +253,13 @@ class DownloadHistory:
             try:
                 # Total de tracks y artistas únicos
                 cursor = self.conn.execute(
-                    "SELECT COUNT(*), COUNT(DISTINCT artist) FROM downloads"
+                    "SELECT COUNT(*), COUNT(DISTINCT artist) FROM sync_downloads"
                 )
                 total, artists = cursor.fetchone()
 
                 # Desglose por plataforma
                 cursor = self.conn.execute(
-                    "SELECT platform, COUNT(*) FROM downloads GROUP BY platform"
+                    "SELECT platform, COUNT(*) FROM sync_downloads GROUP BY platform"
                 )
                 by_platform = {row[0]: row[1] for row in cursor.fetchall()}
 
@@ -278,7 +287,7 @@ class DownloadHistory:
             try:
                 cursor = self.conn.execute(
                     "SELECT url, title, artist, file_path, platform, downloaded_at "
-                    "FROM downloads ORDER BY downloaded_at DESC"
+                    "FROM sync_downloads ORDER BY downloaded_at DESC"
                 )
                 return [
                     {

@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Script de diagnóstico para verificar la base de datos."""
+"""
+Script de diagnóstico para verificar la base de datos.
+
+El .db tiene DOS tablas de descargas independientes, a propósito:
+- "downloads"       -> db/history_manager.py (flujo principal, pegar link)
+- "sync_downloads"  -> db/history.py (flujo de Sincronizar / likes de SoundCloud)
+Se reportan por separado para no confundirlas.
+"""
 import sqlite3
 from pathlib import Path
 
@@ -12,19 +19,37 @@ if not DB_PATH.exists():
 print(f"[OK] Base de datos encontrada: {DB_PATH}")
 print()
 
+
+def count_table(cursor, table_name: str) -> int | None:
+    """Retorna COUNT(*) de la tabla, o None si no existe todavía."""
+    try:
+        cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+        return cursor.fetchone()[0]
+    except sqlite3.OperationalError:
+        return None
+
+
 try:
     conn = sqlite3.connect(str(DB_PATH))
     cursor = conn.cursor()
 
     # Contar likes
-    cursor.execute("SELECT COUNT(*) FROM soundcloud_likes")
-    likes_count = cursor.fetchone()[0]
+    likes_count = count_table(cursor, "soundcloud_likes") or 0
     print(f"[INFO] Total de likes en DB: {likes_count}")
 
-    # Contar descargas
-    cursor.execute("SELECT COUNT(*) FROM downloads")
-    downloads_count = cursor.fetchone()[0]
-    print(f"[INFO] Total de descargas registradas: {downloads_count}")
+    # Contar descargas (flujo principal, "pegar link")
+    downloads_count = count_table(cursor, "downloads")
+    if downloads_count is None:
+        print("[INFO] Tabla 'downloads' (flujo principal) aún no existe")
+    else:
+        print(f"[INFO] Total de descargas registradas (flujo principal): {downloads_count}")
+
+    # Contar descargas (flujo de Sincronizar)
+    sync_downloads_count = count_table(cursor, "sync_downloads")
+    if sync_downloads_count is None:
+        print("[INFO] Tabla 'sync_downloads' (flujo de Sincronizar) aún no existe")
+    else:
+        print(f"[INFO] Total de descargas registradas (flujo de Sincronizar): {sync_downloads_count}")
 
     # Mostrar los primeros likes si hay
     if likes_count > 0:

@@ -798,11 +798,15 @@ class SyncManager:
                 artist_dir = file_path.parent.name
 
                 # Verificar si ya está en historial (con lock)
-                with self.history.lock:
-                    existing = self.history.conn.execute(
-                        "SELECT 1 FROM downloads WHERE file_path = ?",
-                        (str(file_path),)
-                    ).fetchone()
+                try:
+                    with self.history.lock:
+                        existing = self.history.conn.execute(
+                            "SELECT 1 FROM sync_downloads WHERE file_path = ?",
+                            (str(file_path),)
+                        ).fetchone()
+                except Exception as e:
+                    logger.warning(f"Error consultando historial para {filename}: {e}")
+                    continue
 
                 if existing:
                     already_tracked += 1
