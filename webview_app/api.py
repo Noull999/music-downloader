@@ -20,7 +20,10 @@ import subprocess
 import sys
 import threading
 from dataclasses import asdict
+from pathlib import Path
 from typing import Optional
+
+from thefuzz import fuzz
 
 from download_manager import DownloadManager
 from gui.ui_controller import UIController
@@ -34,6 +37,8 @@ from sync.soundcloud_api import SoundCloudAPIClient
 from sync.sync_manager import SyncManager
 from url_detector import detect_handler, detect_platform_name
 from utils.validators import parse_urls_from_text
+
+_AUDIO_EXTENSIONS = {'.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus', '.aac'}
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +127,21 @@ class WebViewAPI:
         folder = result[0] if isinstance(result, (list, tuple)) else result
         self.controller.set_config_value("dest_folder", folder)
         return folder
+
+    def browse_any_folder(self, initial: str = "") -> Optional[str]:
+        """Diálogo nativo de carpeta que NO toca dest_folder (para escanear otra ubicación)."""
+        if not self.window:
+            return None
+        try:
+            import webview
+            kwargs = {"directory": initial} if initial and os.path.isdir(initial) else {}
+            result = self.window.create_file_dialog(webview.FOLDER_DIALOG, **kwargs)
+        except Exception:
+            logger.exception("Error abriendo diálogo de carpeta")
+            return None
+        if not result:
+            return None
+        return result[0] if isinstance(result, (list, tuple)) else result
 
     # ------------------------------------------------------------------ #
     # Cola de tracks                                                       #
@@ -637,6 +657,100 @@ class WebViewAPI:
             on_status=on_status,
             oauth_token=oauth_token,
         )
+
+    def get_default_scan_folder(self) -> str:
+        """Carpeta padre de dest_folder (p. ej. D:\\Musik si dest_folder es D:\\Musik\\prueba)."""
+        dest = self.controller.get_config_value("dest_folder", "")
+        parent = os.path.dirname(dest.rstrip("\\/")) if dest else ""
+        return parent or dest
+
+    def reconcile_library(self, folder: str) -> dict:
+        """
+        Escanea `folder` COMPLETO (todas las subcarpetas) buscando archivos
+        de audio que correspondan a likes guardados pero que la app no
+        tiene registrados como descargados — típicamente música bajada
+        antes de usar esta app, o guardada en otras carpetas de género en
+        vez de dest_folder. Usa el mismo matching difuso (artista+título)
+        que el resto de la app (sync.duplicate_checker), pero a diferencia
+        de sync_filesystem_to_db() SÍ vincula cada archivo al URL real del
+        like (no un local:// falso), así que get_likes_with_status() y
+        las estadísticas reflejan correctamente qué likes ya tenés.
+        No bloquea: corre en background y reporta progreso por
+        'sync_progress' y el resultado final por 'reconcile_complete'.
+        """
+        guard = self._require_sync_manager()
+        if not guard["ok"]:
+            return guard
+        if not folder or not os.path.isdir(folder):
+            return {"ok": False, "error": f"Carpeta no encontrada: {folder}"}
+
+        def progress_cb(pct: int, msg: str):
+            self._push("sync_progress", {"pct": pct, "msg": msg})
+
+        def run():
+            try:
+                result = self._do_reconcile(folder, progress_cb)
+                self._push("reconcile_complete", {"ok": True, **result})
+            except Exception as e:
+                logger.exception("Error reconciliando biblioteca")
+                self._push("reconcile_complete", {"ok": False, "error": str(e)})
+
+        threading.Thread(target=run, daemon=True).start()
+        return {"ok": True}
+
+    def _do_reconcile(self, folder: str, progress_cb) -> dict:
+        checker = self._sync_manager.checker
+        history = self._sync_manager.history
+
+        progress_cb(0, f"Escaneando {folder}…")
+        files: list[tuple[Path, str]] = []
+        for p in Path(folder).rglob("*"):
+            if p.is_file() and p.suffix.lower() in _AUDIO_EXTENSIONS:
+                files.append((p, checker._normalize(p.stem)))
+        progress_cb(8, f"{len(files)} archivos de audio encontrados")
+
+        likes = history.load_likes()
+        existing_urls = {d["url"] for d in history.get_all_downloads()}
+        threshold = checker.SIMILARITY_THRESHOLD
+
+        matched = 0
+        already = 0
+        total = len(likes)
+        for i, like in enumerate(likes):
+            if like["url"] in existing_urls:
+                already += 1
+            else:
+                search = checker._normalize(f"{like['artist']} {like['title']}")
+                best_file, best_score = None, 0
+                for file_path, norm_name in files:
+                    score = max(
+                        fuzz.token_sort_ratio(search, norm_name),
+                        fuzz.partial_token_sort_ratio(search, norm_name),
+                        fuzz.ratio(search, norm_name),
+                    )
+                    if score > best_score:
+                        best_score, best_file = score, file_path
+                if best_file and best_score >= threshold:
+                    history.mark_downloaded(
+                        like["url"], like["title"], like["artist"], str(best_file),
+                        platform="soundcloud",
+                    )
+                    history.mark_like_downloaded(
+                        url=like["url"], title=like["title"], artist=like["artist"],
+                        track_id=like.get("id"), duration_ms=like.get("duration_ms"),
+                        artwork_url=like.get("artwork_url"), genre=like.get("genre"),
+                        created_at=like.get("created_at"),
+                    )
+                    matched += 1
+
+            if total and i % 10 == 0:
+                progress_cb(8 + int(88 * i / total), f"Comparando likes… {i}/{total}")
+
+        progress_cb(100, f"✓ {matched} coincidencias nuevas · {already} ya registradas")
+        return {
+            "matched": matched, "already_registered": already,
+            "total_likes": total, "files_scanned": len(files),
+        }
 
     # ------------------------------------------------------------------ #
     # Ciclo de vida                                                       #

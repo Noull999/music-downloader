@@ -576,6 +576,13 @@
         <button class="btn btn-ghost" id="btnLikesSelectAll">Seleccionar todo</button>
         <button class="btn btn-ghost" id="btnLikesSelectNone">Deseleccionar</button>
       </div>
+      <button class="btn btn-ghost btn-block" id="btnScanLibrary">📁 Escanear carpeta completa (buscar ya descargadas)</button>
+      <div class="hint">
+        Compara tus likes contra TODOS los archivos de audio de una carpeta
+        (subcarpetas incluidas) y marca como descargados los que coincidan
+        por artista/título, aunque estén guardados fuera de la carpeta de
+        destino actual — útil si tenías música bajada antes de usar esta app.
+      </div>
       <span class="sc-status-line" id="likesStatus"></span>
       <div class="likes-list" id="likesList">
         <div class="empty-state">Conectá tu cuenta y actualizá para ver tus likes</div>
@@ -655,6 +662,9 @@
         break;
       case "likes_scanned":
         onLikesScanned(payload);
+        break;
+      case "reconcile_complete":
+        onReconcileComplete(payload);
         break;
     }
     refreshQueueCounters();
@@ -923,6 +933,19 @@
       if (!r.ok) { el.textContent = `✗ ${r.error}`; el.className = "sc-status-line off"; }
     });
 
+    document.getElementById("btnScanLibrary").addEventListener("click", async () => {
+      const def = await api().get_default_scan_folder();
+      const target = await api().browse_any_folder(def);
+      if (!target) return; // usuario canceló el diálogo
+      const el = document.getElementById("likesStatus");
+      el.textContent = `Escaneando ${target}…`;
+      el.className = "sc-status-line";
+      document.getElementById("scProgressBar").style.display = "";
+      setScProgress(0, "Iniciando escaneo…");
+      const r = await api().reconcile_library(target);
+      if (!r.ok) { el.textContent = `✗ ${r.error}`; el.className = "sc-status-line off"; }
+    });
+
     document.getElementById("likesSearch").addEventListener("input", () => renderLikesList());
     document.getElementById("btnLikesSelectAll").addEventListener("click", () => {
       likesFiltered().forEach(l => selectedLikes.add(l.url));
@@ -1067,6 +1090,19 @@
       : "Sin likes guardados — tocá Actualizar";
     statusEl.className = "sc-status-line";
     renderLikesList();
+  }
+
+  function onReconcileComplete(payload) {
+    const el = document.getElementById("likesStatus");
+    if (payload.ok) {
+      el.textContent = `✓ ${payload.matched} nuevas coincidencias · ${payload.already_registered} ya registradas · ${payload.files_scanned} archivos escaneados`;
+      el.className = "sc-status-line on";
+      loadLikes();
+      refreshStats();
+    } else {
+      el.textContent = `✗ ${payload.error}`;
+      el.className = "sc-status-line off";
+    }
   }
 
   function onLikesScanned(payload) {
