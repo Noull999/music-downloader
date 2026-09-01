@@ -65,11 +65,13 @@ class WebViewAPI:
     de devolver el objeto window.
     """
 
-    def __init__(self, base_dir: Optional[str] = None):
+    def __init__(self, base_dir: Optional[str] = None, config_path: Optional[str] = None):
         self._base_dir = base_dir or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.window = None  # se setea vía attach_window()
 
-        self.controller = UIController(base_dir=self._base_dir)
+        # config_path explícito (lo usa el .exe empaquetado, que no puede
+        # guardar junto al ejecutable); si no, se deriva de base_dir.
+        self.controller = UIController(base_dir=self._base_dir, config_path=config_path)
 
         # Igual que gui/main_window.py: DownloadManager propio, independiente
         # del que crea UIController internamente (ese no se usa en la GUI real).
@@ -398,6 +400,18 @@ class WebViewAPI:
             minutes = max(5, min(1440, int(minutes)))
             self.save_settings({"soundcloud": {"sync_interval_minutes": minutes}})
             script = os.path.join(self._base_dir, "scripts", "setup_task_scheduler.py")
+            if not os.path.isfile(script):
+                # En el .exe empaquetado no viaja el árbol de scripts: la
+                # tarea se registra desde el repo, no desde el ejecutable.
+                return {
+                    "ok": False,
+                    "minutes": minutes,
+                    "error": (
+                        "Intervalo guardado, pero la tarea programada solo se puede "
+                        "registrar desde la carpeta del proyecto:\n"
+                        "python scripts/setup_task_scheduler.py --register"
+                    ),
+                }
             result = subprocess.run(
                 [sys.executable, script, "--register", "--interval-minutes", str(minutes)],
                 capture_output=True, text=True, timeout=30,
@@ -475,6 +489,7 @@ class WebViewAPI:
             filename_pattern=self.controller.get_config_value("filename_pattern", "{artist} - {title}"),
             subfolder_by_artist=self.controller.get_config_value("subfolder_by_artist", False),
             library_folders=self._library_folders(),
+            track_event_callback=self._on_sync_track_event,
         )
         try:
             self._sync_manager.validate_credentials()
@@ -496,6 +511,53 @@ class WebViewAPI:
         if not self._sync_manager:
             return {"ok": False, "error": "Verificá tus credenciales de SoundCloud primero"}
         return {"ok": True}
+
+    def _on_sync_track_event(self, event: str, track, detail: str = "") -> None:
+        """
+        Refleja en la cola de la UI cada canción que baja la sincronización.
+        Sin esto, la sync descarga en su propio bucle interno y la cola se
+        queda en 0 aunque haya descargas en curso.
+        """
+        url = getattr(track, "url", "") or ""
+        if not url:
+            return
+
+        with self._lock:
+            info = self._tracks.get(url)
+            if info is None:
+                info = TrackInfo(
+                    url=url,
+                    title=getattr(track, "title", "") or url,
+                    artist=getattr(track, "artist", "") or "",
+                    platform="soundcloud",
+                    thumbnail_url=getattr(track, "artwork_url", "") or "",
+                )
+                self._tracks[url] = info
+                is_new = True
+            else:
+                is_new = False
+
+            status = {
+                "start": STATUS_DOWNLOADING,
+                "done": STATUS_DONE,
+                "error": STATUS_ERROR,
+                "cancelled": STATUS_CANCELLED,
+            }.get(event, STATUS_PENDING)
+            info.status = status
+            if event == "done":
+                info.progress = 1.0
+                info.local_path = detail or ""
+            elif event == "error":
+                info.error_msg = detail or ""
+
+        if is_new:
+            self._push("track_added", _track_to_dict(info))
+        self._push("track_status", {
+            "url": url,
+            "status": status,
+            "error_msg": detail if event == "error" else "",
+            "emoji": _STATUS_EMOJI.get(status, "•"),
+        })
 
     def start_sync(self, mode: str = "full", count: int = 10) -> dict:
         """
@@ -562,6 +624,32 @@ class WebViewAPI:
 
         threading.Thread(target=run, daemon=True).start()
         return {"ok": True}
+
+    def get_failed_downloads(self) -> list[dict]:
+        """Canciones que fallaron al descargar, con el motivo."""
+        if not self._sync_manager:
+            return []
+        try:
+            return self._sync_manager.history.get_failed()
+        except Exception:
+            logger.exception("Error obteniendo descargas fallidas")
+            return []
+
+    def retry_failed_downloads(self, url: str = "") -> dict:
+        """
+        Olvida los fallos registrados para que la próxima sincronización los
+        vuelva a intentar. Sin `url`, olvida todos. Útil cuando el motivo era
+        temporal (caída de red) o si el track dejó de estar bloqueado.
+        """
+        guard = self._require_sync_manager()
+        if not guard["ok"]:
+            return guard
+        try:
+            n = self._sync_manager.history.clear_failed(url or None)
+            return {"ok": True, "cleared": n}
+        except Exception as e:
+            logger.exception("Error reintentando fallidas")
+            return {"ok": False, "error": str(e)}
 
     def get_likes(self) -> list[dict]:
         """Likes guardados en DB con su estado de descarga (sin red, instantáneo)."""

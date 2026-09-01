@@ -1,5 +1,5 @@
 """
-Music Downloader — entry point experimental con pywebview.
+Music Downloader — entry point con pywebview.
 Ejecutar: python main_webview.py
 
 No reemplaza main.py/gui/ (sigue intacto). Vista HTML/CSS en vez de
@@ -7,15 +7,53 @@ CustomTkinter, misma lógica de negocio (UIController, DownloadManager).
 
 Requiere: pip install pywebview
 """
+import io
 import os
+import shutil
 import sys
+from pathlib import Path
 
+# Empaquetado con console=False, stdout/stderr pueden ser None o tener
+# encoding cp1252 (los prints/logs de abajo llevan emojis) -> crash al
+# abrir. Se arregla ANTES de cualquier print.
+for _name in ("stdout", "stderr"):
+    _stream = getattr(sys, _name)
+    if _stream is None:
+        setattr(sys, _name, io.StringIO())
+    elif hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+from config.manager import DEFAULT_CONFIG_PATH
 from utils.logger import setup_logging
 from utils.dependencies import validate_all_dependencies
 from utils.exceptions import DependencyNotFoundError
 
-_BASE = os.path.dirname(os.path.abspath(__file__))
-_VIEW_HTML = os.path.join(_BASE, "webview_app", "view.html")
+# ── Base portable: desarrollo (.py) y PyInstaller (.exe) ───────────────
+if getattr(sys, "frozen", False):
+    _BASE = str(Path(sys.executable).parent)
+    # Los datas empaquetados (webview_app/, assets/) se extraen a _MEIPASS,
+    # no a la carpeta del .exe.
+    _RESOURCES = getattr(sys, "_MEIPASS", _BASE)
+else:
+    _BASE = str(Path(__file__).resolve().parent)
+    _RESOURCES = _BASE
+
+_VIEW_HTML = os.path.join(_RESOURCES, "webview_app", "view.html")
+
+# config.json vive en ~/.music_downloader/ (estable, igual que la BD) y no
+# junto al ejecutable: en el .exe empaquetado esa ruta es una carpeta
+# temporal que Windows borra al cerrar, así que se perderían los ajustes en
+# cada arranque. Misma ubicación que usa la GUI de tkinter, para que ambas
+# interfaces compartan configuración en vez de divergir.
+_CONFIG_PATH = str(DEFAULT_CONFIG_PATH)
+if not os.path.isfile(_CONFIG_PATH):
+    _legacy_config = os.path.join(_BASE, "config.json")
+    if os.path.isfile(_legacy_config):
+        os.makedirs(os.path.dirname(_CONFIG_PATH), exist_ok=True)
+        shutil.copy2(_legacy_config, _CONFIG_PATH)
 
 
 def validate_startup() -> bool:
@@ -63,7 +101,7 @@ def main():
 
     from webview_app.api import WebViewAPI
 
-    api = WebViewAPI(base_dir=_BASE)
+    api = WebViewAPI(base_dir=_BASE, config_path=_CONFIG_PATH)
 
     window = webview.create_window(
         "Music Downloader",

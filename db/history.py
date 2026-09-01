@@ -17,6 +17,7 @@ import threading
 import logging
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,19 @@ class DownloadHistory:
                     new_tracks  INTEGER DEFAULT 0,
                     skipped     INTEGER DEFAULT 0,
                     errors      INTEGER DEFAULT 0
+                );
+
+                -- Descargas que fallaron. Sin esto, una canción con DRM o
+                -- bloqueo geográfico se reintenta en cada sincronización,
+                -- para siempre, y ensucia el conteo de errores.
+                CREATE TABLE IF NOT EXISTS failed_downloads (
+                    url          TEXT PRIMARY KEY,
+                    title        TEXT,
+                    artist       TEXT,
+                    error        TEXT,
+                    permanent    INTEGER DEFAULT 0,
+                    attempts     INTEGER DEFAULT 1,
+                    last_attempt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_sync_downloads_platform
@@ -180,6 +194,116 @@ class DownloadHistory:
                 logger.debug(f"✓ Registrada en soundcloud_likes: {artist} - {title}")
             except sqlite3.Error as e:
                 logger.error(f"Error registrando en soundcloud_likes: {e}")
+
+    # ────────────────────────────────────────────────────────────────── #
+    # Descargas fallidas                                                   #
+    # ────────────────────────────────────────────────────────────────── #
+
+    def mark_failed(
+        self,
+        url: str,
+        title: str,
+        artist: str,
+        error: str,
+        permanent: bool = False,
+    ) -> None:
+        """
+        Registra (o actualiza) una descarga fallida, acumulando el número de
+        intentos para poder dejar de reintentar lo que nunca va a funcionar.
+        """
+        with self.lock:
+            try:
+                self.conn.execute(
+                    """
+                    INSERT INTO failed_downloads
+                        (url, title, artist, error, permanent, attempts, last_attempt)
+                    VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+                    ON CONFLICT(url) DO UPDATE SET
+                        error        = excluded.error,
+                        permanent    = excluded.permanent,
+                        attempts     = failed_downloads.attempts + 1,
+                        last_attempt = CURRENT_TIMESTAMP
+                    """,
+                    (url, title, artist, error[:500], 1 if permanent else 0),
+                )
+                self.conn.commit()
+            except sqlite3.Error as e:
+                logger.error(f"Error registrando descarga fallida: {e}")
+
+    def clear_failed(self, url: Optional[str] = None) -> int:
+        """
+        Olvida fallos para que se vuelvan a intentar. Sin `url`, los borra
+        todos. Devuelve cuántos se borraron.
+        """
+        with self.lock:
+            try:
+                if url:
+                    cur = self.conn.execute(
+                        "DELETE FROM failed_downloads WHERE url = ?", (url,)
+                    )
+                else:
+                    cur = self.conn.execute("DELETE FROM failed_downloads")
+                self.conn.commit()
+                return cur.rowcount
+            except sqlite3.Error as e:
+                logger.error(f"Error limpiando fallidas: {e}")
+                return 0
+
+    def get_failed(self) -> list[dict]:
+        """Lista de descargas fallidas, las permanentes primero."""
+        with self.lock:
+            try:
+                cursor = self.conn.execute(
+                    """
+                    SELECT url, title, artist, error, permanent, attempts, last_attempt
+                    FROM failed_downloads
+                    ORDER BY permanent DESC, last_attempt DESC
+                    """
+                )
+                return [
+                    {
+                        "url": row[0],
+                        "title": row[1],
+                        "artist": row[2],
+                        "error": row[3],
+                        "permanent": bool(row[4]),
+                        "attempts": row[5],
+                        "last_attempt": row[6],
+                    }
+                    for row in cursor.fetchall()
+                ]
+            except sqlite3.Error as e:
+                logger.error(f"Error obteniendo fallidas: {e}")
+                return []
+
+    def get_skippable_failures(self, max_attempts: int = 3) -> dict[str, str]:
+        """
+        URLs que no vale la pena reintentar: las de error permanente (DRM,
+        bloqueo geográfico, track borrado) y las que ya se intentaron
+        `max_attempts` veces sin éxito.
+
+        Returns:
+            {url: motivo_legible}
+        """
+        with self.lock:
+            try:
+                cursor = self.conn.execute(
+                    """
+                    SELECT url, error, permanent, attempts FROM failed_downloads
+                    WHERE permanent = 1 OR attempts >= ?
+                    """,
+                    (max_attempts,),
+                )
+                out = {}
+                for url, error, permanent, attempts in cursor.fetchall():
+                    if permanent:
+                        out[url] = f"No descargable: {error}"
+                    else:
+                        out[url] = f"Falló {attempts} veces: {error}"
+                return out
+            except sqlite3.Error as e:
+                logger.error(f"Error obteniendo fallidas a omitir: {e}")
+                return {}
 
     def log_sync(self, new: int, skipped: int, errors: int):
         """

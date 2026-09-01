@@ -438,6 +438,22 @@
       </div>
     </section>
 
+    <section class="panel" id="failedPanel" style="display:none">
+      <header class="panel-head">
+        <span class="panel-title">No se pudieron descargar</span>
+        <span class="panel-count" id="failedCount">0</span>
+      </header>
+      <div class="panel-body">
+        <div class="hint">
+          Estas se omiten en las próximas sincronizaciones para no reintentarlas
+          en vano. Las marcadas como permanentes (DRM, bloqueo geográfico) no
+          van a funcionar; el resto puede que sí, más adelante.
+        </div>
+        <div class="log" id="failedList" style="max-height:200px"></div>
+        <button class="btn btn-ghost btn-block" id="btnRetryFailed">↻ Volver a intentarlas en la próxima sync</button>
+      </div>
+    </section>
+
     <section class="panel">
       <header class="panel-head">
         <span class="panel-title">Historial (SQLite)</span>
@@ -786,6 +802,39 @@
     document.getElementById("statSize").textContent = fmtBytes(stats.total_size_bytes || 0);
   }
 
+  async function refreshFailed() {
+    const items = await api().get_failed_downloads();
+    const panel = document.getElementById("failedPanel");
+    const list = document.getElementById("failedList");
+    if (!items.length) {
+      panel.style.display = "none";
+      return;
+    }
+    panel.style.display = "";
+    document.getElementById("failedCount").textContent =
+      `${items.length} · ${items.filter(i => i.permanent).length} permanentes`;
+    list.innerHTML = "";
+    for (const it of items) {
+      const row = document.createElement("div");
+      row.className = "hrow";
+      const glyph = document.createElement("span");
+      glyph.className = "hrow-glyph";
+      glyph.style.color = it.permanent ? "var(--blood)" : "var(--amber)";
+      glyph.textContent = it.permanent ? "✗" : "!";
+      const main = document.createElement("div");
+      main.className = "hrow-main";
+      const title = document.createElement("span");
+      title.className = "hrow-title";
+      title.textContent = it.artist ? `${it.artist} — ${it.title}` : (it.title || it.url);
+      const sub = document.createElement("span");
+      sub.className = "hrow-sub";
+      sub.textContent = `${it.permanent ? "permanente" : `${it.attempts} intento(s)`} · ${it.error || ""}`.slice(0, 110);
+      main.append(title, sub);
+      row.append(glyph, main);
+      list.appendChild(row);
+    }
+  }
+
   async function loadConfig() {
     const cfg = await api().get_config();
     document.getElementById("destPath").textContent = cfg.dest_folder || "—";
@@ -933,6 +982,16 @@
       if (!r.ok) { el.textContent = `✗ ${r.error}`; el.className = "sc-status-line off"; }
     });
 
+    document.getElementById("btnRetryFailed").addEventListener("click", async () => {
+      const r = await api().retry_failed_downloads();
+      if (r.ok) {
+        setStatus(`${r.cleared} marcadas para reintentar`, "ok");
+        refreshFailed();
+      } else {
+        setStatus(r.error, "err");
+      }
+    });
+
     document.getElementById("btnScanLibrary").addEventListener("click", async () => {
       const def = await api().get_default_scan_folder();
       const target = await api().browse_any_folder(def);
@@ -1046,6 +1105,7 @@
     }
     refreshHistory();
     refreshStats();
+    refreshFailed();
   }
 
   async function refreshScStatus() {
@@ -1189,6 +1249,7 @@
     setStatus("listo", "ok");
     wireEvents();
     await Promise.all([loadConfig(), refreshHistory(), refreshStats(), refreshScStatus()]);
+    refreshFailed();  // depende de refreshScStatus (necesita el SyncManager conectado)
   }
 
   if (window.pywebview) {

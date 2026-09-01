@@ -48,6 +48,7 @@ class SyncManager:
         subfolder_by_artist: bool = False,
         activity_log_callback: Optional[Callable[[str], None]] = None,
         library_folders: Optional[list] = None,
+        track_event_callback: Optional[Callable[[str, object, str], None]] = None,
     ):
         """
         Args:
@@ -63,6 +64,11 @@ class SyncManager:
             activity_log_callback: Función(mensaje: str) para logging en tiempo real a ActivityPanel
             library_folders: Carpetas extra donde ya tenés música, además de
                        download_folder, para no re-descargar lo que ya existe
+            track_event_callback: Función(evento, track, detalle) llamada por
+                       cada canción de la sincronización, con evento en
+                       ('start', 'done', 'error'). Permite a la GUI mostrar
+                       la cola real; sin ella la sync solo reporta un
+                       porcentaje global.
         """
         self.api = SoundCloudAPIClient(oauth_token, client_id)
         self.history = DownloadHistory()
@@ -75,9 +81,78 @@ class SyncManager:
         self.filename_pattern = filename_pattern
         self.subfolder_by_artist = subfolder_by_artist
         self.activity_log_callback = activity_log_callback
+        self.track_event_callback = track_event_callback
 
         self._stop_event = threading.Event()
         self._is_syncing = False
+
+    def _emit_track(self, event: str, track, detail: str = "") -> None:
+        """Notifica el estado de una canción concreta a la GUI, si hay callback."""
+        if not self.track_event_callback:
+            return
+        try:
+            self.track_event_callback(event, track, detail)
+        except Exception:
+            logger.exception("Error en track_event_callback (%s)", event)
+
+    @staticmethod
+    def _is_permanent_error(error: str) -> bool:
+        """
+        Distingue fallos que nunca van a funcionar (no tiene sentido
+        reintentarlos en cada sync) de los transitorios de red.
+        """
+        e = (error or "").lower()
+        return any(s in e for s in (
+            "drm",
+            "geo restriction",
+            "not available from your location",
+            "video unavailable",
+            "track not found",
+            "410",
+            "404",
+            "private",
+            "removed",
+            "copyright",
+        ))
+
+    def _record_failure(self, track, error: str) -> None:
+        """Guarda el fallo para no reintentarlo indefinidamente."""
+        permanent = self._is_permanent_error(error)
+        try:
+            self.history.mark_failed(
+                track.url, track.title, track.artist, error, permanent=permanent
+            )
+        except Exception:
+            logger.exception("No se pudo registrar la descarga fallida")
+
+    def _filter_unrecoverable(self, tracks: list) -> tuple[list, list]:
+        """
+        Aparta las canciones que ya sabemos que no se pueden bajar (DRM,
+        bloqueo geográfico, o demasiados intentos fallidos).
+
+        Returns:
+            (tracks_a_intentar, [(track, motivo), ...])
+        """
+        try:
+            skippable = self.history.get_skippable_failures()
+        except Exception:
+            logger.exception("No se pudieron leer las descargas fallidas")
+            return tracks, []
+
+        if not skippable:
+            return tracks, []
+
+        pending, skipped = [], []
+        for t in tracks:
+            reason = skippable.get(t.url)
+            if reason:
+                skipped.append((t, reason))
+            else:
+                pending.append(t)
+
+        if skipped:
+            logger.info("Omitidas %d canciones que fallaron antes", len(skipped))
+        return pending, skipped
 
     def _build_output_path(self, artist: str, title: str) -> str:
         """Construye el output_path con patrón de nombre y artista."""
@@ -332,6 +407,11 @@ class SyncManager:
                 all_likes, self.download_folder
             )
 
+            # Apartar lo que ya sabemos que no se puede bajar (DRM, geo,
+            # reintentos agotados) para no chocar con lo mismo cada vez.
+            new_tracks, unrecoverable = self._filter_unrecoverable(new_tracks)
+            duplicates = duplicates + unrecoverable
+
             results['skipped'] = len(duplicates)
             results['duplicates'] = duplicates
 
@@ -367,6 +447,7 @@ class SyncManager:
                         pct,
                         f"Descargando: {track.artist} - {track.title}"
                     )
+                self._emit_track("start", track)
 
                 try:
                     output_path = self._build_output_path(track.artist, track.title)
@@ -410,16 +491,20 @@ class SyncManager:
                     logger.info(msg)
                     if self.activity_log_callback:
                         self.activity_log_callback(msg)
+                    self._emit_track("done", track, file_path)
 
                 except Exception as e:
                     # Si fue cancelado por el usuario, detener loop sin contar como error
                     if "cancelled" in str(e).lower():
                         logger.info(f"Descarga cancelada por el usuario")
+                        self._emit_track("cancelled", track)
                         break
                     results['errors'] += 1
                     logger.error(
                         f"Error descargando {track.artist} - {track.title}: {e}"
                     )
+                    self._record_failure(track, str(e))
+                    self._emit_track("error", track, str(e))
 
             # PASO 4: Log y notificación final
             if progress_callback:
@@ -526,6 +611,9 @@ class SyncManager:
             logger.info(f"Filtrando {len(all_likes)} canciones (rápido, sin búsqueda en carpeta)...")
             new_tracks, duplicates = self.get_new_tracks_fast(all_likes)
 
+            new_tracks, unrecoverable = self._filter_unrecoverable(new_tracks)
+            duplicates = duplicates + unrecoverable
+
             results['duplicates'] = duplicates
             results['skipped'] = len(duplicates)
 
@@ -576,6 +664,7 @@ class SyncManager:
                         f"[{progress_idx + 1}/{total_to_download}] "
                         f"Descargando: {track.artist} - {track.title}"
                     )
+                self._emit_track("start", track)
 
                 try:
                     output_path = self._build_output_path(track.artist, track.title)
@@ -599,14 +688,18 @@ class SyncManager:
                     results['new'] += 1
                     results['tracks'].append(track)
                     logger.info(f"✓ Descargada: {track.artist} - {track.title}")
+                    self._emit_track("done", track, file_path)
 
                 except Exception as e:
                     # Si fue cancelado por el usuario, detener loop sin contar como error
                     if "cancelled" in str(e).lower():
                         logger.info(f"Descarga cancelada por el usuario")
+                        self._emit_track("cancelled", track)
                         break
                     results['errors'] += 1
                     logger.error(f"Error descargando {track.artist} - {track.title}: {e}")
+                    self._record_failure(track, str(e))
+                    self._emit_track("error", track, str(e))
 
             if progress_callback:
                 progress_callback(
@@ -684,6 +777,9 @@ class SyncManager:
                 recent_likes, self.download_folder
             )
 
+            new_tracks, unrecoverable = self._filter_unrecoverable(new_tracks)
+            duplicates = duplicates + unrecoverable
+
             results['skipped'] = len(duplicates)
             results['duplicates'] = duplicates
 
@@ -696,6 +792,7 @@ class SyncManager:
                 if progress_callback:
                     pct = int((i / total) * 100) if total > 0 else 0
                     progress_callback(pct, f"Descargando: {track.title}")
+                self._emit_track("start", track)
 
                 try:
                     output_path = self._build_output_path(track.artist, track.title)
@@ -730,12 +827,15 @@ class SyncManager:
                     msg = f"⬇ Descargando: {track.artist} - {track.title}"
                     if self.activity_log_callback:
                         self.activity_log_callback(msg)
+                    self._emit_track("done", track, file_path)
                 except Exception as e:
                     results['errors'] += 1
                     msg = f"✗ Error: {track.artist} - {track.title}"
                     if self.activity_log_callback:
                         self.activity_log_callback(msg)
                     logger.error(f"Error en sync_recent: {e}")
+                    self._record_failure(track, str(e))
+                    self._emit_track("error", track, str(e))
 
             # Log final con resultados precisos
             logger.info(
