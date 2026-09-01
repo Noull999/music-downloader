@@ -103,24 +103,81 @@
     font-size: 10px;
     letter-spacing: .1em;
     text-transform: uppercase;
-    padding: 9px 12px;
+    padding: 10px 16px;
     border: 2px solid;
+    border-radius: 999px; /* píldora, no esquinas en punta: los paneles y
+      modales siguen con el corte pixel, solo los botones pasan a este
+      estilo neón redondeado */
     cursor: pointer;
-    box-shadow: 3px 3px 0 #000;
-    transition: transform 50ms steps(1), background 60ms steps(2);
+    transition: box-shadow 150ms ease, transform 100ms ease, background 150ms ease, border-color 150ms ease;
   }
-  .btn:active { transform: translate(2px, 2px); box-shadow: 0 0 0 #000; }
+  .btn:active { transform: scale(.96); }
   .btn:disabled { opacity: .45; cursor: default; }
-  .btn:disabled:active { transform: none; box-shadow: 3px 3px 0 #000; }
+  .btn:disabled:active { transform: none; }
   .btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
-  .btn-blood { background: var(--blood); border-color: var(--ember); color: #fbeeea; }
-  .btn-blood:hover:not(:disabled) { background: var(--ember); }
+  .btn-blood {
+    background: var(--void);
+    border-color: var(--ember);
+    color: var(--bone);
+    box-shadow: 0 0 10px rgba(232,69,44,.45);
+  }
+  .btn-blood:hover:not(:disabled) {
+    color: #fff;
+    box-shadow: 0 0 20px rgba(232,69,44,.8), 0 0 40px rgba(165,18,24,.4);
+  }
 
-  .btn-ghost { background: var(--iron-hi); border-color: #3a3543; color: var(--bone-dim); }
-  .btn-ghost:hover:not(:disabled) { color: var(--bone); border-color: var(--smoke); }
+  .btn-ghost {
+    background: var(--void);
+    border-color: var(--blood);
+    color: var(--bone-dim);
+    box-shadow: 0 0 5px rgba(165,18,24,.25);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    color: var(--bone);
+    border-color: var(--ember);
+    box-shadow: 0 0 14px rgba(232,69,44,.5);
+  }
 
   .btn-block { width: 100%; }
+
+  /* Esquinas escalonadas estilo cuadro de diálogo RPG de 8-bit (no un
+     clip-path liso): dos escalones de 4px por esquina. Se usa en elementos
+     internos comunes (botones, paneles) — nunca en la ventana en sí. */
+  .pixel-corners {
+    clip-path: polygon(
+      0 8px, 4px 8px, 4px 4px, 8px 4px, 8px 0,
+      calc(100% - 8px) 0, calc(100% - 8px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 8px, 100% 8px,
+      100% calc(100% - 8px), calc(100% - 4px) calc(100% - 8px), calc(100% - 4px) calc(100% - 4px), calc(100% - 8px) calc(100% - 4px), calc(100% - 8px) 100%,
+      8px 100%, 8px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 8px), 0 calc(100% - 8px)
+    );
+  }
+
+  .btn .picon { width: 13px; height: 13px; vertical-align: -2px; margin-right: 5px; }
+
+  /* Escalón más grande, para elementos grandes (banner, paneles, modales) */
+  .pixel-corners-lg {
+    clip-path: polygon(
+      0 12px, 6px 12px, 6px 6px, 12px 6px, 12px 0,
+      calc(100% - 12px) 0, calc(100% - 12px) 6px, calc(100% - 6px) 6px, calc(100% - 6px) 12px, 100% 12px,
+      100% calc(100% - 12px), calc(100% - 6px) calc(100% - 12px), calc(100% - 6px) calc(100% - 6px), calc(100% - 12px) calc(100% - 6px), calc(100% - 12px) 100%,
+      12px 100%, 12px calc(100% - 6px), 6px calc(100% - 6px), 6px calc(100% - 12px), 0 calc(100% - 12px)
+    );
+  }
+
+  /* Textura de líneas de escaneo (retro-futurista): muy sutil, decorativa
+     sobre paneles/banner oscuros, no interfiere con la lectura. */
+  .scanlines {
+    position: relative;
+  }
+  .scanlines::before {
+    content: "";
+    position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg, rgba(255,255,255,.025) 0px, rgba(255,255,255,.025) 1px,
+      transparent 1px, transparent 3px
+    );
+  }
 
   .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
@@ -209,10 +266,13 @@
   .task-actions { display: flex; gap: 6px; flex: none; }
   .mini-btn {
     font-family: var(--f-label); font-size: 8px; letter-spacing: .08em; text-transform: uppercase;
-    padding: 4px 8px; border: 2px solid var(--iron-hi); background: var(--iron); color: var(--bone-dim); cursor: pointer;
+    padding: 4px 10px; border: 2px solid var(--iron-hi); border-radius: 999px;
+    background: var(--iron); color: var(--bone-dim); cursor: pointer;
+    transition: box-shadow 150ms ease, color 150ms ease, border-color 150ms ease;
   }
   .mini-btn:hover { color: var(--bone); border-color: var(--smoke); }
-  .mini-btn.dl { border-color: var(--blood); color: var(--ember); }
+  .mini-btn.dl { border-color: var(--blood); color: var(--ember); box-shadow: 0 0 5px rgba(232,69,44,.25); }
+  .mini-btn.dl:hover { box-shadow: 0 0 10px rgba(232,69,44,.5); }
 
   /* ---------- Historial ---------- */
 
@@ -278,9 +338,11 @@
   .modal-title { font-family: var(--f-display); font-size: 16px; font-weight: 700; color: var(--bone); }
   .modal-close {
     margin-left: auto; background: transparent; border: 2px solid var(--iron-hi); color: var(--bone-dim);
+    border-radius: 999px;
     font-family: var(--f-label); font-size: 12px; width: 26px; height: 26px; cursor: pointer;
+    transition: box-shadow 150ms ease, color 150ms ease, border-color 150ms ease;
   }
-  .modal-close:hover { color: var(--bone); border-color: var(--smoke); }
+  .modal-close:hover { color: var(--bone); border-color: var(--blood); box-shadow: 0 0 10px rgba(165,18,24,.4); }
   .modal-body { padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
   .modal-foot { padding: 12px 16px; border-top: 2px solid var(--iron-hi); display: flex; gap: 8px; justify-content: flex-end; }
 
@@ -342,7 +404,7 @@
     <div class="field">
       <span class="field-label">Carpeta de destino</span>
       <div class="path-box" id="destPath">—</div>
-      <button class="btn btn-ghost btn-block" id="btnBrowse">Examinar</button>
+      <button class="btn btn-ghost btn-block" id="btnBrowse"><svg class="picon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v2H4zm0 14h16v2H4zM20 8h2v10h-2zM2 6h2v12H2zm8 0h10v2H10z"/></svg>Examinar</button>
     </div>
 
 
@@ -362,14 +424,14 @@
       <div class="sc-progress" id="scProgressBar" style="display:none"><i id="scProgressFill"></i></div>
       <span class="sc-progress-msg" id="scProgressMsg"></span>
       <div class="row-2">
-        <button class="btn btn-blood" id="btnScSync">Sincronizar</button>
-        <button class="btn btn-ghost" id="btnScLikes">Mis Likes</button>
+        <button class="btn btn-blood" id="btnScSync"><svg class="picon" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M13 20H9V18H13V20ZM19 16H21V18H19V20H17V18H15V16H17V8H19V16ZM9 18H7V16H9V18ZM7 6H9V8H7V16H5V8H3V6H5V4H7V6ZM15 16H13V14H15V16ZM23 16H21V14H23V16ZM3 10H1V8H3V10ZM11 10H9V8H11V10ZM17 8H15V6H17V8ZM15 6H11V4H15V6Z"/></svg>Sincronizar</button>
+        <button class="btn btn-ghost" id="btnScLikes"><svg class="picon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M13 22h-2v-2h2v2Zm-2-2H9v-2h2v2Zm4 0h-2v-2h2v2Zm-6-2H7v-2h2v2Zm8 0h-2v-2h2v2ZM7 16H5v-2h2v2Zm12 0h-2v-2h2v2ZM5 14H3v-2h2v2Zm16 0h-2v-2h2v2ZM3 12H1V6h2v6Zm20 0h-2V6h2v6ZM13 8h-2V6h2v2ZM5 6H3V4h2v2Zm6 0H9V4h2v2Zm4 0h-2V4h2v2Zm6 0h-2V4h2v2ZM9 4H5V2h4v2Zm10 0h-4V2h4v2Z"/></svg>Mis Likes</button>
       </div>
-      <button class="btn btn-ghost btn-block" id="btnScConnect">Conectar cuenta</button>
+      <button class="btn btn-ghost btn-block" id="btnScConnect"><svg class="picon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h7v2H4zm0 10h7v2H4zM2 8h2v8H2zm18-2h-7v2h7zm0 10h-7v2h7zm2-8h-2v8h2zM7 11h10v2H7z"/></svg>Conectar cuenta</button>
     </div>
 
     <div class="field">
-      <button class="btn btn-ghost btn-block" id="btnSettings">⚙ Configuración</button>
+      <button class="btn btn-ghost btn-block" id="btnSettings"><svg class="picon" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M18 22H13V24H11V22H6V20H18V22ZM4 22H2V20H4V22ZM22 22H20V20H22V22ZM6 20H4V18H6V20ZM20 20H18V18H20V20ZM4 18H2V13H0V11H2V6H4V18ZM8 18H6V16H8V18ZM22 11H24V13H22V18H20V13H16V16H8V8H16V11H20V6H22V11ZM10 10V14H14V10H10ZM8 8H6V6H8V8ZM6 6H4V4H6V6ZM20 6H18V4H20V6ZM4 4H2V2H4V4ZM13 2H18V4H6V2H11V0H13V2ZM22 4H20V2H22V4Z"/></svg>Configuración</button>
     </div>
 
     <div class="sidebar-foot">
@@ -389,7 +451,7 @@
   </aside>
 
   <main class="main">
-    <section class="banner">
+    <section class="banner pixel-corners-lg scanlines">
       <h1>MUSIC DOWNLOADER</h1>
       <div class="banner-meta">
         <span id="bannerStatus">● Conectando…</span>
@@ -398,7 +460,7 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel pixel-corners-lg">
       <header class="panel-head">
         <span class="panel-title">Nueva descarga</span>
         <span class="panel-count">YouTube · SoundCloud</span>
@@ -412,7 +474,7 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel pixel-corners-lg">
       <header class="panel-head">
         <span class="panel-title">Cola</span>
         <span class="panel-count" id="queueCount">0 tracks</span>
@@ -424,7 +486,7 @@
       </div>
     </section>
 
-    <section class="panel" id="failedPanel" style="display:none">
+    <section class="panel pixel-corners-lg" id="failedPanel" style="display:none">
       <header class="panel-head">
         <span class="panel-title">No se pudieron descargar</span>
         <span class="panel-count" id="failedCount">0</span>
@@ -440,7 +502,7 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel pixel-corners-lg">
       <header class="panel-head">
         <span class="panel-title">Historial (SQLite)</span>
         <span class="panel-count" id="historyCount">0 registros</span>
@@ -461,7 +523,7 @@
 
 <!-- ============ Modal: Conectar SoundCloud ============ -->
 <div class="modal-overlay" id="modalConnect">
-  <div class="modal">
+  <div class="modal pixel-corners-lg">
     <div class="modal-head">
       <span class="modal-title">Conectar SoundCloud</span>
       <button class="modal-close" data-close="modalConnect">✕</button>
@@ -495,7 +557,7 @@
 
 <!-- ============ Modal: Configuración ============ -->
 <div class="modal-overlay" id="modalSettings">
-  <div class="modal">
+  <div class="modal pixel-corners-lg">
     <div class="modal-head">
       <span class="modal-title">Configuración</span>
       <button class="modal-close" data-close="modalSettings">✕</button>
@@ -567,7 +629,7 @@
 
 <!-- ============ Modal: Mis Likes ============ -->
 <div class="modal-overlay" id="modalLikes">
-  <div class="modal" style="max-width: 640px;">
+  <div class="modal pixel-corners-lg" style="max-width: 640px;">
     <div class="modal-head">
       <span class="modal-title">Mis Likes de SoundCloud</span>
       <button class="modal-close" data-close="modalLikes">✕</button>
