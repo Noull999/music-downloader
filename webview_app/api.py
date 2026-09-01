@@ -16,9 +16,11 @@ en el HTML. Ese callback debe registrarse en el HTML antes de usarse.
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
+import unicodedata
 from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
@@ -39,6 +41,37 @@ from url_detector import detect_handler, detect_platform_name
 from utils.validators import parse_urls_from_text
 
 _AUDIO_EXTENSIONS = {'.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus', '.aac'}
+
+# Ruido de promo/versionado que aparece tanto en los títulos de SoundCloud
+# como en los nombres de archivo, y que infla la similitud entre canciones
+# que no tienen nada que ver ("X [FREE DL]" vs "Y [FREE DL]"). Quitarlo
+# sube el score de las coincidencias reales y baja el de las falsas.
+_MATCH_NOISE = re.compile(
+    r"\b(free\s*(dl|download)|full\s*length|out\s*now|premiere|preview|"
+    r"extended(\s*(mix|version))?|original\s*mix|radio\s*edit|"
+    r"master(ed|ing)?|mstr|final|v\d+(\.\d+)?|hq|clip|temporary)\b",
+    re.I,
+)
+_MATCH_BRACKETS = re.compile(r"[\[\(\{][^\]\)\}]*[\]\)\}]")
+
+# Umbral propio para la reconciliación: las cadenas ya vienen limpias de
+# ruido, así que puntúan distinto que en sync/duplicate_checker. 80 se
+# eligió midiendo contra la biblioteca real: por encima no aparecían
+# falsos positivos, por debajo sí (p.ej. "No Good" vs "Raise The Roof").
+_RECONCILE_THRESHOLD = 80
+_MIN_MATCH_LEN = 4
+
+
+def _clean_for_match(text: str) -> str:
+    """Normaliza y quita ruido de promo/versionado para comparar títulos."""
+    if not text:
+        return ""
+    t = _MATCH_BRACKETS.sub(" ", text)
+    t = _MATCH_NOISE.sub(" ", t)
+    t = unicodedata.normalize("NFD", t)
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    t = re.sub(r"[^\w\s]", " ", t.lower())
+    return " ".join(t.split())
 
 logger = logging.getLogger(__name__)
 
@@ -698,53 +731,77 @@ class WebViewAPI:
         threading.Thread(target=run, daemon=True).start()
         return {"ok": True}
 
+    def _match_candidates_like(self, like: dict) -> set[str]:
+        """
+        Variantes normalizadas de un like para comparar. Incluye el título
+        SOLO además de "artista + título" porque en SoundCloud el campo
+        artista es el uploader (sello/canal, p.ej. "GEWOONRAVES") mientras
+        que el artista real vive dentro del título; el archivo en disco casi
+        siempre está nombrado "ArtistaReal - Título".
+        """
+        artist = like.get("artist") or ""
+        title = like.get("title") or ""
+        cands = {_clean_for_match(f"{artist} {title}"), _clean_for_match(title)}
+        return {c for c in cands if len(c) >= _MIN_MATCH_LEN}
+
     def _do_reconcile(self, folder: str, progress_cb) -> dict:
-        checker = self._sync_manager.checker
         history = self._sync_manager.history
 
         progress_cb(0, f"Escaneando {folder}…")
-        files: list[tuple[Path, str]] = []
+        files: list[tuple[Path, set[str]]] = []
         for p in Path(folder).rglob("*"):
             if p.is_file() and p.suffix.lower() in _AUDIO_EXTENSIONS:
-                files.append((p, checker._normalize(p.stem)))
+                cands = {_clean_for_match(p.stem)}
+                cands = {c for c in cands if len(c) >= _MIN_MATCH_LEN}
+                if cands:
+                    files.append((p, cands))
         progress_cb(8, f"{len(files)} archivos de audio encontrados")
 
         likes = history.load_likes()
         existing_urls = {d["url"] for d in history.get_all_downloads()}
-        threshold = checker.SIMILARITY_THRESHOLD
 
-        matched = 0
+        # Primera pasada: mejor archivo por like (sin escribir todavía).
+        pending: list[tuple[int, dict, Path]] = []
         already = 0
         total = len(likes)
         for i, like in enumerate(likes):
             if like["url"] in existing_urls:
                 already += 1
             else:
-                search = checker._normalize(f"{like['artist']} {like['title']}")
-                best_file, best_score = None, 0
-                for file_path, norm_name in files:
-                    score = max(
-                        fuzz.token_sort_ratio(search, norm_name),
-                        fuzz.partial_token_sort_ratio(search, norm_name),
-                        fuzz.ratio(search, norm_name),
-                    )
-                    if score > best_score:
-                        best_score, best_file = score, file_path
-                if best_file and best_score >= threshold:
-                    history.mark_downloaded(
-                        like["url"], like["title"], like["artist"], str(best_file),
-                        platform="soundcloud",
-                    )
-                    history.mark_like_downloaded(
-                        url=like["url"], title=like["title"], artist=like["artist"],
-                        track_id=like.get("id"), duration_ms=like.get("duration_ms"),
-                        artwork_url=like.get("artwork_url"), genre=like.get("genre"),
-                        created_at=like.get("created_at"),
-                    )
-                    matched += 1
+                like_cands = self._match_candidates_like(like)
+                best_score, best_file = 0, None
+                for file_path, file_cands in files:
+                    for a in like_cands:
+                        for b in file_cands:
+                            score = max(fuzz.token_sort_ratio(a, b), fuzz.ratio(a, b))
+                            if score > best_score:
+                                best_score, best_file = score, file_path
+                if best_file and best_score >= _RECONCILE_THRESHOLD:
+                    pending.append((best_score, like, best_file))
 
             if total and i % 10 == 0:
-                progress_cb(8 + int(88 * i / total), f"Comparando likes… {i}/{total}")
+                progress_cb(8 + int(85 * i / total), f"Comparando likes… {i}/{total}")
+
+        # Un archivo no puede ser la descarga de dos likes distintos: si dos
+        # likes apuntan al mismo archivo, gana el de mayor similitud.
+        pending.sort(key=lambda t: t[0], reverse=True)
+        claimed: set[str] = set()
+        matched = 0
+        for score, like, file_path in pending:
+            key = str(file_path)
+            if key in claimed:
+                continue
+            claimed.add(key)
+            history.mark_downloaded(
+                like["url"], like["title"], like["artist"], key, platform="soundcloud",
+            )
+            history.mark_like_downloaded(
+                url=like["url"], title=like["title"], artist=like["artist"],
+                track_id=like.get("id"), duration_ms=like.get("duration_ms"),
+                artwork_url=like.get("artwork_url"), genre=like.get("genre"),
+                created_at=like.get("created_at"),
+            )
+            matched += 1
 
         progress_cb(100, f"✓ {matched} coincidencias nuevas · {already} ya registradas")
         return {
