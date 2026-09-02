@@ -504,9 +504,10 @@
 
     <section class="panel pixel-corners-lg">
       <header class="panel-head">
-        <span class="panel-title">Historial (SQLite)</span>
+        <span class="panel-title">Últimas descargas</span>
         <span class="panel-count" id="historyCount">0 registros</span>
       </header>
+      <span class="sc-status-line" id="lastSyncLine"></span>
       <div class="log" id="historyList">
         <div class="empty-state">Sin descargas registradas</div>
       </div>
@@ -845,7 +846,7 @@
   // ------------------------------------------------------------------ //
 
   async function refreshHistory() {
-    const items = await api().get_recent_downloads(30);
+    const items = await api().get_recent_activity(30);
     const list = document.getElementById("historyList");
     document.getElementById("historyCount").textContent = `${items.length} registros`;
     document.getElementById("bannerHistory").textContent = items.length;
@@ -864,17 +865,29 @@
       main.className = "hrow-main";
       const title = document.createElement("span");
       title.className = "hrow-title";
-      title.textContent = it.artist ? `${it.artist} — ${it.title}` : (it.title || it.url);
+      title.textContent = it.artist ? `${it.artist} — ${it.title}` : (it.title || "?");
       const sub = document.createElement("span");
       sub.className = "hrow-sub";
-      sub.textContent = `${it.platform || "?"} · ${it.local_path ? "descargado" : "importado (sin archivo)"}`;
+      const sourceLabel = it.source === "sync" ? "sync" : "manual";
+      sub.textContent = `${it.platform || "?"} · ${sourceLabel}`;
       main.append(title, sub);
       const date = document.createElement("span");
       date.className = "hrow-sub";
-      date.textContent = (it.download_date || "").slice(0, 16);
+      date.textContent = (it.date || "").slice(0, 16);
       row.append(glyph, main, date);
       list.appendChild(row);
     }
+  }
+
+  function renderLastSync(lastSync) {
+    const el = document.getElementById("lastSyncLine");
+    if (!el) return;
+    if (!lastSync) {
+      el.textContent = "";
+      return;
+    }
+    const when = (lastSync.synced_at || "").slice(0, 16);
+    el.textContent = `Última sync: ${when} · +${lastSync.new_tracks} nuevas, ${lastSync.skipped} ya tenías${lastSync.errors ? `, ${lastSync.errors} errores` : ""}`;
   }
 
   async function refreshStats() {
@@ -1205,6 +1218,7 @@
       }
     }
     renderScStatus(status.connected, status.user_info);
+    renderLastSync(status.last_sync);
     if (status.sync_interval_minutes) {
       const field = document.getElementById("cfgSyncInterval");
       if (field && !field.value) field.value = status.sync_interval_minutes;
@@ -1285,7 +1299,15 @@
         title.textContent = like.artist ? `${like.artist} — ${like.title}` : like.title;
         const sub = document.createElement("span");
         sub.className = "like-sub";
-        sub.textContent = like.genre || "soundcloud";
+        if (like.downloaded) {
+          const when = (like.downloaded_at || "").slice(0, 16);
+          sub.textContent = when
+            ? `descargada ${when}`
+            : "descargada";
+        } else {
+          sub.textContent = like.genre || "soundcloud";
+        }
+        if (like.file_path) sub.title = like.file_path;
         main.append(title, sub);
 
         const flag = document.createElement("span");

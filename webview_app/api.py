@@ -348,6 +348,39 @@ class WebViewAPI:
     def get_recent_downloads(self, limit: int = 50) -> list[dict]:
         return self.controller.get_recent_downloads(limit)
 
+    def get_recent_activity(self, limit: int = 30) -> list[dict]:
+        """
+        Historial unificado para el panel principal: descargas manuales
+        (pegando URL) + descargas por sync de SoundCloud, en un solo orden
+        cronológico. Excluye las entradas de reconciliación de biblioteca
+        (url "local://..."): esas son archivos que YA tenías, no descargas
+        hechas por la app, y no tiene sentido mostrarlas como actividad.
+        """
+        items = []
+        for d in self.controller.get_recent_downloads(1000):
+            if str(d.get("url", "")).startswith("local://"):
+                continue
+            items.append({
+                "title": d.get("title"),
+                "artist": d.get("artist"),
+                "platform": d.get("platform"),
+                "local_path": d.get("local_path"),
+                "date": d.get("download_date"),
+                "source": "manual",
+            })
+        if self._sync_manager:
+            for d in self._sync_manager.history.get_all_downloads():
+                items.append({
+                    "title": d.get("title"),
+                    "artist": d.get("artist"),
+                    "platform": d.get("platform"),
+                    "local_path": d.get("file_path"),
+                    "date": d.get("downloaded_at"),
+                    "source": "sync",
+                })
+        items.sort(key=lambda d: d.get("date") or "", reverse=True)
+        return items[:limit]
+
     def get_stats(self) -> dict:
         return self.controller.get_stats()
 

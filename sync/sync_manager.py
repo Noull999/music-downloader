@@ -1050,6 +1050,7 @@ class SyncManager:
                 'artist': str,
                 'downloaded': bool,
                 'file_path': str | None,
+                'downloaded_at': str | None,
                 'created_at': str,
                 'genre': str | None
             }
@@ -1067,6 +1068,7 @@ class SyncManager:
                 'artist': like['artist'],
                 'downloaded': download_info is not None,
                 'file_path': download_info['file_path'] if download_info else None,
+                'downloaded_at': download_info['downloaded_at'] if download_info else None,
                 'created_at': like['created_at'],
                 'genre': like['genre'],
                 'duration_ms': like['duration_ms'],
