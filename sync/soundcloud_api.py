@@ -166,11 +166,15 @@ class SoundCloudAPIClient:
                     )
 
             except requests.Timeout:
-                logger.error(f"Timeout en página {page}")
-                break
+                # Un error a mitad de la paginación NO es "fin de la lista":
+                # antes se cortaba en silencio y se devolvía lo juntado hasta
+                # ahí, que el caller guarda tal cual con save_likes()
+                # (reemplaza TODO lo guardado) — un timeout en la página 3 de
+                # 5 borraba de la BD los likes de las páginas 4 y 5 que ya
+                # tenías. Ahora se propaga como error real.
+                raise ConnectionError(f"Timeout obteniendo likes en página {page}")
             except requests.RequestException as e:
-                logger.error(f"Error de red en página {page}: {e}")
-                break
+                raise ConnectionError(f"Error de red obteniendo likes en página {page}: {e}")
 
             if response.status_code == 429:
                 # Rate limiting: esperar y reintentar
@@ -181,17 +185,14 @@ class SoundCloudAPIClient:
                 continue
 
             if response.status_code != 200:
-                logger.warning(
-                    f"Error en página {page}: {response.status_code}. "
-                    f"Deteniendo paginación."
+                raise ConnectionError(
+                    f"Error de SoundCloud API en página {page}: {response.status_code}"
                 )
-                break
 
             try:
                 data = response.json()
             except requests.JSONDecodeError:
-                logger.error(f"Respuesta no-JSON en página {page}")
-                break
+                raise ConnectionError(f"Respuesta no-JSON de SoundCloud en página {page}")
 
             collection = data.get("collection", [])
             logger.debug(f"Página {page}: {len(collection)} items")
