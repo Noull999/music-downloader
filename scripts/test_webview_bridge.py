@@ -88,7 +88,7 @@ def run() -> None:
 
             print("\n== Ciclo completo de descarga (handler falso, sin red/ffmpeg) ==")
             fake_win = _FakeWindow()
-            api.window = fake_win
+            api._window = fake_win
 
             fake_track = TrackInfo(url="https://soundcloud.com/fake/track",
                                     title="Fake Track", artist="Fake Artist")

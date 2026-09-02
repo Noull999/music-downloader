@@ -67,7 +67,7 @@ class WebViewAPI:
 
     def __init__(self, base_dir: Optional[str] = None, config_path: Optional[str] = None):
         self._base_dir = base_dir or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.window = None  # se setea vía attach_window()
+        self._window = None  # se setea vía attach_window()
 
         # config_path explícito (lo usa el .exe empaquetado, que no puede
         # guardar junto al ejecutable); si no, se deriva de base_dir.
@@ -87,18 +87,18 @@ class WebViewAPI:
         self._sc_user_info: Optional[dict] = None
 
     def attach_window(self, window) -> None:
-        self.window = window
+        self._window = window
 
     # ------------------------------------------------------------------ #
     # Push de eventos al frontend                                          #
     # ------------------------------------------------------------------ #
 
     def _push(self, event: str, payload: dict) -> None:
-        if not self.window:
+        if not self._window:
             return
         try:
             js = f"window.__bridgeEvent && window.__bridgeEvent({json.dumps(event)}, {json.dumps(payload)})"
-            self.window.evaluate_js(js)
+            self._window.evaluate_js(js)
         except Exception:
             logger.exception("Error empujando evento '%s' al frontend", event)
 
@@ -115,11 +115,11 @@ class WebViewAPI:
 
     def browse_folder(self) -> Optional[str]:
         """Abre el diálogo NATIVO de carpeta (no HTML) via pywebview."""
-        if not self.window:
+        if not self._window:
             return None
         try:
             import webview
-            result = self.window.create_file_dialog(webview.FOLDER_DIALOG)
+            result = self._window.create_file_dialog(webview.FOLDER_DIALOG)
         except Exception:
             logger.exception("Error abriendo diálogo de carpeta")
             return None
@@ -131,12 +131,12 @@ class WebViewAPI:
 
     def browse_any_folder(self, initial: str = "") -> Optional[str]:
         """Diálogo nativo de carpeta que NO toca dest_folder (para escanear otra ubicación)."""
-        if not self.window:
+        if not self._window:
             return None
         try:
             import webview
             kwargs = {"directory": initial} if initial and os.path.isdir(initial) else {}
-            result = self.window.create_file_dialog(webview.FOLDER_DIALOG, **kwargs)
+            result = self._window.create_file_dialog(webview.FOLDER_DIALOG, **kwargs)
         except Exception:
             logger.exception("Error abriendo diálogo de carpeta")
             return None
