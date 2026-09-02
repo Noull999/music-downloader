@@ -17,6 +17,7 @@ from analysis import fingerprint as audio_fingerprint
 from db.history import DownloadHistory
 from notifications.notifier import Notifier
 from quality.post_processor import PostProcessor
+from quality.presets import DEFAULT_PRESET, get_preset
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,8 @@ class SyncManager:
         analyze_audio: bool = False,
         key_format: str = "camelot",
         fingerprint_check: bool = True,
+        quality_preset: str = DEFAULT_PRESET,
+        post_options: Optional[dict] = None,
     ):
         """
         Args:
@@ -82,6 +85,13 @@ class SyncManager:
                        marcó como duplicada. Atrapa casos que el nombre solo
                        no puede: mismo tema con nombre de archivo muy
                        distinto. Ver analysis/fingerprint.py.
+            quality_preset: Clave del preset de calidad (ver quality/presets.py).
+                       Antes la sync ignoraba la elección del usuario y bajaba
+                       siempre MP3 320.
+            post_options: Opciones de post-proceso (normalize_volume,
+                       remove_silence, embed_artwork, embed_metadata). Antes
+                       estaban hardcodeadas, así que "normalizar volumen" y
+                       "eliminar silencios" no tenían efecto en la sync.
         """
         self.api = SoundCloudAPIClient(oauth_token, client_id)
         self.history = DownloadHistory()
@@ -98,6 +108,8 @@ class SyncManager:
         self.analyze_audio = analyze_audio
         self.key_format = key_format
         self.fingerprint_check = fingerprint_check
+        self.quality_preset = quality_preset
+        self.post_options = dict(post_options or {})
         self.library_folders = list(library_folders or [])
         self.oauth_token = oauth_token
         self._fingerprint_index: Optional[audio_fingerprint.LibraryFingerprintIndex] = None
@@ -244,8 +256,10 @@ class SyncManager:
             return
         try:
             pp = PostProcessor({
-                "embed_artwork": True, "embed_metadata": True,
-                "normalize_volume": False, "remove_silence": False,
+                "embed_artwork": self.post_options.get("embed_artwork", True),
+                "embed_metadata": self.post_options.get("embed_metadata", True),
+                "normalize_volume": self.post_options.get("normalize_volume", False),
+                "remove_silence": self.post_options.get("remove_silence", False),
                 "analyze_audio": self.analyze_audio, "key_format": self.key_format,
             })
             pp.process(file_path, {"title": track.title, "artist": track.artist,
@@ -541,12 +555,7 @@ class SyncManager:
                     file_path = self.downloader.download(
                         track.url,
                         output_path,
-                        quality_preset={
-                            "sc_format": "bestaudio/best",
-                            "yt_format": "bestaudio/best",
-                            "convert_to": "mp3",
-                            "bitrate": "320"
-                        },
+                        quality_preset=get_preset(self.quality_preset),
                         progress_callback=lambda p: None,  # No mostrar progreso individual
                         cancel_check=lambda: self._stop_event.is_set()
                     )
@@ -758,7 +767,7 @@ class SyncManager:
                     file_path = self.downloader.download(
                         track.url,
                         output_path,
-                        quality_preset={"format": "best"},
+                        quality_preset=get_preset(self.quality_preset),
                         progress_callback=lambda p: None,
                         cancel_check=lambda: self._stop_event.is_set()
                     )
@@ -886,12 +895,7 @@ class SyncManager:
                     file_path = self.downloader.download(
                         track.url,
                         output_path,
-                        quality_preset={
-                            "sc_format": "bestaudio/best",
-                            "yt_format": "bestaudio/best",
-                            "convert_to": "mp3",
-                            "bitrate": "320"
-                        },
+                        quality_preset=get_preset(self.quality_preset),
                         progress_callback=None
                     )
                     self.history.mark_downloaded(

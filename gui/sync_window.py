@@ -616,6 +616,13 @@ ADVERTENCIA:
                 analyze_audio=self._config.get("analyze_audio", False),
                 key_format=self._config.get("key_format", "camelot"),
                 fingerprint_check=self._config.get("fingerprint_check", True),
+                quality_preset=self._config.get("quality_preset", "mp3_320"),
+                post_options={
+                    "normalize_volume": self._config.get("normalize_volume", False),
+                    "remove_silence": self._config.get("remove_silence", False),
+                    "embed_artwork": self._config.get("embed_artwork", True),
+                    "embed_metadata": self._config.get("embed_metadata", True),
+                },
             )
             # Validar credenciales en el nuevo client para obtener user_id
             self.manager.validate_credentials()

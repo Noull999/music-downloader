@@ -102,6 +102,13 @@ def build_manager(config: dict) -> SyncManager:
         analyze_audio=config.get("analyze_audio", False),
         key_format=config.get("key_format", "camelot"),
         fingerprint_check=config.get("fingerprint_check", True),
+        quality_preset=config.get("quality_preset", "mp3_320"),
+        post_options={
+            "normalize_volume": config.get("normalize_volume", False),
+            "remove_silence": config.get("remove_silence", False),
+            "embed_artwork": config.get("embed_artwork", True),
+            "embed_metadata": config.get("embed_metadata", True),
+        },
     )
 
 

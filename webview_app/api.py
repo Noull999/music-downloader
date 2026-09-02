@@ -521,6 +521,13 @@ class WebViewAPI:
             analyze_audio=self.controller.get_config_value("analyze_audio", False),
             key_format=self.controller.get_config_value("key_format", "camelot"),
             fingerprint_check=self.controller.get_config_value("fingerprint_check", True),
+            quality_preset=self.controller.get_config_value("quality_preset", "mp3_320"),
+            post_options={
+                "normalize_volume": self.controller.get_config_value("normalize_volume", False),
+                "remove_silence": self.controller.get_config_value("remove_silence", False),
+                "embed_artwork": self.controller.get_config_value("embed_artwork", True),
+                "embed_metadata": self.controller.get_config_value("embed_metadata", True),
+            },
         )
         # SyncManager arma su PROPIO SoundCloudAPIClient (self._sync_manager.api),
         # un objeto distinto al que se usó arriba para el chequeo inicial.
