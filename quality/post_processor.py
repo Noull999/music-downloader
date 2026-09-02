@@ -39,6 +39,8 @@ class PostProcessor:
         self.remove_silence: bool = options.get("remove_silence", False)
         self.embed_artwork: bool = options.get("embed_artwork", True)
         self.embed_metadata: bool = options.get("embed_metadata", True)
+        self.analyze_audio: bool = options.get("analyze_audio", False)
+        self.key_format: str = options.get("key_format", "camelot")
 
     def process(
         self,
@@ -64,7 +66,21 @@ class PostProcessor:
         if (self.embed_metadata or self.embed_artwork) and ext == ".mp3":
             self._embed_tags(input_file, metadata, thumbnail_url if self.embed_artwork else "")
 
+        # BPM + tonalidad (Camelot). Es la operación más lenta (~2s/track,
+        # más ~60-80s de compilación de numba la primera vez en el proceso),
+        # así que va al final y nunca interrumpe la descarga si falla:
+        # librosa es una dependencia opcional (ver analysis/audio_analysis.py).
+        if self.analyze_audio:
+            self._analyze_audio(input_file)
+
         return input_file
+
+    def _analyze_audio(self, input_file: str) -> None:
+        try:
+            from analysis import audio_analysis
+            audio_analysis.analyze_and_tag(input_file, key_format=self.key_format)
+        except Exception:
+            logger.exception("Error analizando BPM/tonalidad de %s (no crítico)", input_file)
 
     # ------------------------------------------------------------------ #
     # Filtros ffmpeg                                                       #

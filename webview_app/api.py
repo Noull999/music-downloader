@@ -278,6 +278,8 @@ class WebViewAPI:
             "remove_silence": self.controller.get_config_value("remove_silence", False),
             "embed_artwork": self.controller.get_config_value("embed_artwork", True),
             "embed_metadata": self.controller.get_config_value("embed_metadata", True),
+            "analyze_audio": self.controller.get_config_value("analyze_audio", False),
+            "key_format": self.controller.get_config_value("key_format", "camelot"),
         }
         # Mismo fallback que gui/main_window.py: soundcloud.oauth_token primero,
         # luego el oauth_token plano en config (legado).
@@ -483,6 +485,9 @@ class WebViewAPI:
             subfolder_by_artist=self.controller.get_config_value("subfolder_by_artist", False),
             library_folders=self._library_folders(),
             track_event_callback=self._on_sync_track_event,
+            analyze_audio=self.controller.get_config_value("analyze_audio", False),
+            key_format=self.controller.get_config_value("key_format", "camelot"),
+            fingerprint_check=self.controller.get_config_value("fingerprint_check", True),
         )
         # SyncManager arma su PROPIO SoundCloudAPIClient (self._sync_manager.api),
         # un objeto distinto al que se usó arriba para el chequeo inicial.
@@ -709,6 +714,8 @@ class WebViewAPI:
             "remove_silence": self.controller.get_config_value("remove_silence", False),
             "embed_artwork": self.controller.get_config_value("embed_artwork", True),
             "embed_metadata": self.controller.get_config_value("embed_metadata", True),
+            "analyze_audio": self.controller.get_config_value("analyze_audio", False),
+            "key_format": self.controller.get_config_value("key_format", "camelot"),
         }
         oauth_token = self.controller.get_config_value("soundcloud", {}).get("oauth_token", "")
 

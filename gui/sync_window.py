@@ -613,6 +613,9 @@ ADVERTENCIA:
                 subfolder_by_artist=self._config.get("subfolder_by_artist", False),
                 activity_log_callback=activity_log_callback,
                 library_folders=library_folders,
+                analyze_audio=self._config.get("analyze_audio", False),
+                key_format=self._config.get("key_format", "camelot"),
+                fingerprint_check=self._config.get("fingerprint_check", True),
             )
             # Validar credenciales en el nuevo client para obtener user_id
             self.manager.validate_credentials()

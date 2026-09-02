@@ -99,6 +99,9 @@ def build_manager(config: dict) -> SyncManager:
         filename_pattern=config.get("filename_pattern", "{artist} - {title}"),
         subfolder_by_artist=config.get("subfolder_by_artist", False),
         library_folders=library_folders,
+        analyze_audio=config.get("analyze_audio", False),
+        key_format=config.get("key_format", "camelot"),
+        fingerprint_check=config.get("fingerprint_check", True),
     )
 
 

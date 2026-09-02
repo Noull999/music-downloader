@@ -15,6 +15,7 @@ datas = [
     ('quality', 'quality'),
     ('utils', 'utils'),
     ('sync', 'sync'),
+    ('analysis', 'analysis'),
     ('config', 'config'),
     ('notifications', 'notifications'),
     ('assets', 'assets'),
@@ -25,7 +26,16 @@ hiddenimports = [
     'clr_loader', 'pythonnet',
     'yt_dlp', 'mutagen', 'PIL', 'thefuzz', 'Levenshtein',
     'customtkinter',  # gui/ sigue importándose desde utils compartidos
+    'librosa',  # análisis de BPM/tonalidad (analysis/audio_analysis.py)
 ]
+
+# fpcalc (Chromaprint) para huella de audio: scripts/build.py lo descarga a
+# build/fpcalc/ antes de invocar PyInstaller. Se empaqueta como carpeta
+# 'fpcalc/' junto al resto (no como binary suelto) para que
+# analysis/fingerprint.py lo encuentre en sys._MEIPASS/fpcalc/fpcalc.exe.
+_fpcalc_bundle = os.path.join('build', 'fpcalc', 'fpcalc.exe')
+if os.path.isfile(_fpcalc_bundle):
+    datas.append((_fpcalc_bundle, 'fpcalc'))
 
 # pywebview trae backends por plataforma y assets propios que no se detectan
 # siguiendo imports.

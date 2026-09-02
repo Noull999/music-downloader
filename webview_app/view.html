@@ -604,6 +604,36 @@
       </div>
 
       <div class="form-group">
+        <span class="form-group-title">Análisis (BPM / tonalidad)</span>
+        <label class="check-row"><input type="checkbox" id="cfgAnalyzeAudio"><span>Detectar BPM y tonalidad al descargar</span></label>
+        <div class="form-row">
+          <label>Formato de tonalidad</label>
+          <select id="cfgKeyFormat">
+            <option value="camelot">Camelot (9A, 5B…) — mezcla armónica</option>
+            <option value="musical">Musical (Gm, D#…)</option>
+          </select>
+        </div>
+        <div class="hint">
+          Se escribe en los tags del archivo (BPM y Key), Serato lo lee
+          directo sin tener que analizar de nuevo. Agrega ~2 segundos por
+          canción; la tonalidad solo se escribe si la detección es
+          confiable — mejor dejarla vacía que escribir una equivocada.
+        </div>
+      </div>
+
+      <div class="form-group">
+        <span class="form-group-title">Duplicados por audio</span>
+        <label class="check-row"><input type="checkbox" id="cfgFingerprintCheck"><span>Comprobar por huella de audio antes de descargar</span></label>
+        <div class="hint">
+          Cuando el nombre no coincide con nada de tu biblioteca, compara
+          el audio real (huella Chromaprint) antes de bajar el tema
+          completo. Atrapa el caso que el nombre solo no puede: mismo
+          tema, nombre de archivo muy distinto. Validado sin falsos
+          positivos ni con remixes/edits de título casi idéntico.
+        </div>
+      </div>
+
+      <div class="form-group">
         <span class="form-group-title">Auto-sincronización</span>
         <div class="form-row">
           <label>Cada (minutos, tarea programada de Windows)</label>
@@ -1084,6 +1114,9 @@
         subfolder_by_artist: document.getElementById("cfgSubArtist").checked,
         subfolder_by_genre: document.getElementById("cfgSubGenre").checked,
         delay: parseFloat(document.getElementById("cfgDelay").value) || 0,
+        analyze_audio: document.getElementById("cfgAnalyzeAudio").checked,
+        key_format: document.getElementById("cfgKeyFormat").value,
+        fingerprint_check: document.getElementById("cfgFingerprintCheck").checked,
         soundcloud: {
           sync_interval_minutes: parseInt(document.getElementById("cfgSyncInterval").value, 10) || 1440,
         },
@@ -1286,6 +1319,9 @@
     document.getElementById("cfgSubArtist").checked = !!cfg.subfolder_by_artist;
     document.getElementById("cfgSubGenre").checked = !!cfg.subfolder_by_genre;
     document.getElementById("cfgDelay").value = cfg.delay ?? 0.5;
+    document.getElementById("cfgAnalyzeAudio").checked = !!cfg.analyze_audio;
+    document.getElementById("cfgKeyFormat").value = cfg.key_format || "camelot";
+    document.getElementById("cfgFingerprintCheck").checked = cfg.fingerprint_check !== false;
     document.getElementById("cfgSyncInterval").value =
       (cfg.soundcloud && cfg.soundcloud.sync_interval_minutes) || 1440;
     await refreshTaskStatus();

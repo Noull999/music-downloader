@@ -78,6 +78,68 @@ def ensure_ffmpeg() -> Path | None:
         return None
 
 
+def ensure_fpcalc() -> Path | None:
+    """
+    Asegura que exista fpcalc.exe (Chromaprint) para empaquetar: lo usa
+    analysis/fingerprint.py para la huella de audio. Sin él, esa función
+    degrada sola (fingerprint_file devuelve None), así que no es fatal
+    si no se consigue.
+    """
+    target_dir = BASE / "build" / "fpcalc"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    if SYSTEM != "Windows":
+        path = shutil.which("fpcalc")
+        if path:
+            print(f"✓ fpcalc del sistema: {path}")
+            return Path(path)
+        print("⚠️  fpcalc no encontrado en PATH; se construirá sin él")
+        return None
+
+    target = target_dir / "fpcalc.exe"
+    if target.exists() and target.stat().st_size > 100_000:
+        print(f"✓ fpcalc ya presente en {target}")
+        return target
+
+    # Ya instalado en esta máquina (p.ej. vía winget): copiarlo alcanza,
+    # sin depender de la red.
+    local = shutil.which("fpcalc")
+    if local:
+        shutil.copy(local, target)
+        print(f"✓ fpcalc copiado desde {local}")
+        return target
+
+    print("⬇️  Descargando fpcalc (Chromaprint) para Windows...")
+    url = (
+        "https://github.com/acoustid/chromaprint/releases/download/"
+        "v1.6.1/chromaprint-fpcalc-1.6.1-windows-x86_64.zip"
+    )
+    zip_path = target_dir / "fpcalc.zip"
+    try:
+        import urllib.request
+        urllib.request.urlretrieve(url, zip_path)
+
+        import zipfile
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(target_dir)
+
+        for root, _, files in os.walk(target_dir):
+            for f in files:
+                if f.lower() == "fpcalc.exe":
+                    src = Path(root) / f
+                    if src != target:
+                        shutil.move(str(src), str(target))
+                    zip_path.unlink(missing_ok=True)
+                    print(f"✓ fpcalc listo en {target}")
+                    return target
+
+        print("⚠️  No se pudo extraer fpcalc.exe del zip descargado")
+        return None
+    except Exception as e:
+        print(f"⚠️  No se pudo descargar fpcalc ({e}); se construirá sin él")
+        return None
+
+
 def build(console: bool, no_ffmpeg: bool, clean: bool):
     # 1️⃣ Limpiar si pide
     if clean:
@@ -91,8 +153,9 @@ def build(console: bool, no_ffmpeg: bool, clean: bool):
                     # de la app) no impiden el build: PyInstaller pisa el exe.
                     print(f"⚠️  No se pudo borrar todo {folder} ({e}); se continúa")
 
-    # 2️⃣ ffmpeg
+    # 2️⃣ ffmpeg + fpcalc
     ffmpeg_path = None if no_ffmpeg else ensure_ffmpeg()
+    fpcalc_path = ensure_fpcalc()
 
     # 3️⃣ PyInstaller
     # (ffmpeg se embebe leyendo build/ffmpeg/ffmpeg.exe desde el propio .spec,
@@ -111,6 +174,8 @@ def build(console: bool, no_ffmpeg: bool, clean: bool):
 
     if ffmpeg_path and ffmpeg_path.exists():
         print(f"✅ ffmpeg embebido en el .exe (bundle onefile): {ffmpeg_path}")
+    if fpcalc_path and fpcalc_path.exists():
+        print(f"✅ fpcalc embebido en el .exe (bundle onefile): {fpcalc_path}")
 
     bundle_root = BASE / "dist"
     exe_path = bundle_root / ("MusicDownloader.exe" if SYSTEM == "Windows" else "MusicDownloader")

@@ -6,12 +6,14 @@ import threading
 import logging
 import os
 import re
+import shutil
 from pathlib import Path
 from typing import Callable, Optional
 
 from .soundcloud_api import SoundCloudAPIClient, SoundCloudTrack
 from .duplicate_checker import DuplicateChecker
 from . import match_utils
+from analysis import fingerprint as audio_fingerprint
 from db.history import DownloadHistory
 from notifications.notifier import Notifier
 from quality.post_processor import PostProcessor
@@ -49,6 +51,9 @@ class SyncManager:
         activity_log_callback: Optional[Callable[[str], None]] = None,
         library_folders: Optional[list] = None,
         track_event_callback: Optional[Callable[[str, object, str], None]] = None,
+        analyze_audio: bool = False,
+        key_format: str = "camelot",
+        fingerprint_check: bool = True,
     ):
         """
         Args:
@@ -69,6 +74,14 @@ class SyncManager:
                        ('start', 'done', 'error'). Permite a la GUI mostrar
                        la cola real; sin ella la sync solo reporta un
                        porcentaje global.
+            analyze_audio: Si detectar BPM y tonalidad (Camelot) de cada
+                       canción descargada, vía librosa (opcional, ~2s/track)
+            key_format: "camelot" (9A, 5B...) o "musical" (Gm, D#...)
+            fingerprint_check: Si comparar audio real (Chromaprint) antes de
+                       descargar una canción que el matching por nombre NO
+                       marcó como duplicada. Atrapa casos que el nombre solo
+                       no puede: mismo tema con nombre de archivo muy
+                       distinto. Ver analysis/fingerprint.py.
         """
         self.api = SoundCloudAPIClient(oauth_token, client_id)
         self.history = DownloadHistory()
@@ -82,6 +95,12 @@ class SyncManager:
         self.subfolder_by_artist = subfolder_by_artist
         self.activity_log_callback = activity_log_callback
         self.track_event_callback = track_event_callback
+        self.analyze_audio = analyze_audio
+        self.key_format = key_format
+        self.fingerprint_check = fingerprint_check
+        self.library_folders = list(library_folders or [])
+        self.oauth_token = oauth_token
+        self._fingerprint_index: Optional[audio_fingerprint.LibraryFingerprintIndex] = None
 
         self._stop_event = threading.Event()
         self._is_syncing = False
@@ -154,6 +173,51 @@ class SyncManager:
             logger.info("Omitidas %d canciones que fallaron antes", len(skipped))
         return pending, skipped
 
+    def _ensure_fingerprint_index(self) -> audio_fingerprint.LibraryFingerprintIndex:
+        if self._fingerprint_index is None:
+            self._fingerprint_index = audio_fingerprint.LibraryFingerprintIndex()
+            folders = [self.download_folder, *self.library_folders]
+            self._fingerprint_index.build(folders)
+        return self._fingerprint_index
+
+    def _fingerprint_precheck(self, track: "SoundCloudTrack") -> Optional[tuple[str, float]]:
+        """
+        Última red de seguridad antes de descargar: si el matching por
+        nombre no encontró nada, compara el audio real (huella Chromaprint
+        de un preview de 30s) contra toda la biblioteca. Atrapa el caso
+        que el nombre solo no puede: mismo tema, nombre de archivo muy
+        distinto. Nunca bloquea la descarga si algo falla (fpcalc ausente,
+        preview no disponible, etc): simplemente no encuentra nada.
+
+        Returns:
+            (ruta_local, similitud) si encontró coincidencia, si no None.
+        """
+        index = self._ensure_fingerprint_index()
+        if len(index) == 0:
+            return None
+
+        import tempfile
+        tmp_dir = tempfile.mkdtemp(prefix="mdl_fp_")
+        preview_base = os.path.join(tmp_dir, "preview")
+        try:
+            preview_path = audio_fingerprint.download_preview(
+                track.url, preview_base, oauth_token=self.oauth_token
+            )
+            if not preview_path:
+                return None
+            fp = audio_fingerprint.fingerprint_file(preview_path)
+            if not fp:
+                return None
+            return index.find_best_match(fp)
+        except Exception:
+            logger.exception("Error en pre-chequeo de huella de audio (%s)", track.url)
+            return None
+        finally:
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
     def _build_output_path(self, artist: str, title: str) -> str:
         """Construye el output_path con patrón de nombre y artista."""
         safe_artist = sanitize_filename(artist)
@@ -179,8 +243,11 @@ class SyncManager:
         if not file_path or not os.path.exists(file_path):
             return
         try:
-            pp = PostProcessor({"embed_artwork": True, "embed_metadata": True,
-                                "normalize_volume": False, "remove_silence": False})
+            pp = PostProcessor({
+                "embed_artwork": True, "embed_metadata": True,
+                "normalize_volume": False, "remove_silence": False,
+                "analyze_audio": self.analyze_audio, "key_format": self.key_format,
+            })
             pp.process(file_path, {"title": track.title, "artist": track.artist,
                                    "album": "", "year": ""}, track.artwork_url or "")
         except Exception as e:
@@ -447,6 +514,26 @@ class SyncManager:
                         pct,
                         f"Descargando: {track.artist} - {track.title}"
                     )
+
+                if self.fingerprint_check:
+                    match = self._fingerprint_precheck(track)
+                    if match:
+                        local_path, score = match
+                        reason = f"Duplicado por audio ({score:.0%} de similitud): {Path(local_path).name}"
+                        logger.info("✓ %s: %s", reason, track.url)
+                        self.history.mark_downloaded(
+                            track.url, track.title, track.artist, local_path,
+                            platform="soundcloud",
+                        )
+                        self.history.mark_like_downloaded(
+                            url=track.url, title=track.title, artist=track.artist,
+                            track_id=track.id, duration_ms=track.duration_ms,
+                        )
+                        results['skipped'] += 1
+                        results['duplicates'].append((track, reason))
+                        self._emit_track("done", track, reason)
+                        continue
+
                 self._emit_track("start", track)
 
                 try:
