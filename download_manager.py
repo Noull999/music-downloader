@@ -274,11 +274,22 @@ class DownloadManager:
                 try:
                     from quality.ffmpeg_queue import FFmpegQueue
                     queue = FFmpegQueue()
+                    # El género va RESUELTO (Schranz, Hardgroove...), no el
+                    # crudo de la plataforma: YouTube devuelve su categoría
+                    # ("Music", "Entertainment") y SoundCloud tira a lo
+                    # genérico. Sin esta clave, embed_genre no escribía nada
+                    # en las descargas manuales. Ver sync/genre_utils.py.
+                    from sync import genre_utils
                     metadata = {
                         "title": track.title,
                         "artist": track.artist,
                         "album": track.album,
                         "year": track.year,
+                        "genre": genre_utils.resolve_genre(
+                            getattr(track, "genre", None),
+                            getattr(track, "tags", None),
+                            track.title,
+                        ) or "",
                     }
                     queue.enqueue(
                         downloaded,

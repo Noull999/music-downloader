@@ -192,9 +192,21 @@ class PostProcessor:
                 except Exception as meta_exc:
                     logger.warning("Error embebiendo metadatos: %s", meta_exc)
 
-            if self.embed_genre and metadata.get("genre"):
+            if self.embed_genre:
                 try:
-                    audio.tags.add(TCON(encoding=3, text=metadata["genre"]))
+                    genero = metadata.get("genre")
+                    if genero:
+                        audio.tags.add(TCON(encoding=3, text=genero))
+                    else:
+                        # No hay género válido. yt-dlp ya escribió el suyo
+                        # durante la descarga y para YouTube eso es la
+                        # CATEGORÍA del video ("Music", "Entertainment"),
+                        # que no dice nada del estilo: si es de esas, se
+                        # borra en vez de dejarla.
+                        from sync import genre_utils
+                        actual = audio.tags.get("TCON")
+                        if actual and not genre_utils.resolve_genre(str(actual)):
+                            audio.tags.delall("TCON")
                 except Exception as meta_exc:
                     logger.warning("Error embebiendo metadatos: %s", meta_exc)
 
@@ -207,10 +219,11 @@ class PostProcessor:
                         # miniatura que quedarse sin carátula.
                         img_data = self._fetch_image_cached(thumbnail_url)
                     if img_data and len(img_data) > 0:
+                        img_data, mime = self.normalizar_imagen(img_data)
                         audio.tags.add(
                             APIC(
                                 encoding=3,
-                                mime=self._mime_de(img_data),
+                                mime=mime,
                                 type=3,   # Cover (front)
                                 desc="Cover",
                                 data=img_data,
@@ -233,10 +246,43 @@ class PostProcessor:
         """
         if not url:
             return url
-        for chico in ("-large.", "-t300x300.", "-small.", "-badge.", "-tiny."):
-            if chico in url:
-                return url.replace(chico, "-t500x500.")
+        for otro in ("-large.", "-t300x300.", "-small.", "-badge.", "-tiny.",
+                     "-original."):
+            if otro in url:
+                # "original" también se cambia, pero por lo contrario: son
+                # 3000x3000 y ~900 KB metidos en cada mp3.
+                return url.replace(otro, "-t500x500.")
         return url
+
+    @staticmethod
+    def normalizar_imagen(data: bytes, lado_max: int = 600) -> tuple[bytes, str]:
+        """
+        Deja la imagen lista para incrustar: JPEG y de tamaño razonable.
+
+        YouTube devuelve las miniaturas en WebP, que Serato y varios
+        reproductores no muestran como carátula; y algunas fuentes dan
+        imágenes de 3000x3000 que inflan cada archivo casi 1 MB. Si algo
+        falla se devuelve el original tal cual: mejor una carátula
+        imperfecta que ninguna.
+        """
+        try:
+            from PIL import Image
+        except ImportError:
+            return data, PostProcessor._mime_de(data)
+        try:
+            im = Image.open(io.BytesIO(data))
+            formato = (im.format or "").upper()
+            grande = max(im.size) > lado_max
+            if formato in ("JPEG", "PNG") and not grande:
+                return data, PostProcessor._mime_de(data)
+            if grande:
+                im.thumbnail((lado_max, lado_max), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.convert("RGB").save(buf, "JPEG", quality=88, optimize=True)
+            return buf.getvalue(), "image/jpeg"
+        except Exception as exc:
+            logger.debug("No se pudo normalizar la carátula (%s); se usa tal cual", exc)
+            return data, PostProcessor._mime_de(data)
 
     @staticmethod
     def _mime_de(data: bytes) -> str:
