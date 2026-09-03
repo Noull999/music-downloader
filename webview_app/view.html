@@ -522,6 +522,29 @@
 
 </div>
 
+<!-- ============ Modal: Ordenar por género ============ -->
+<div class="modal-overlay" id="modalOrganize">
+  <div class="modal pixel-corners-lg" style="max-width: 560px;">
+    <div class="modal-head">
+      <span class="modal-title">Ordenar por género</span>
+      <button class="modal-close" data-close="modalOrganize">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="hint" id="organizeIntro">Calculando…</div>
+      <div class="log" id="organizeList" style="max-height:260px"></div>
+      <div class="hint">
+        Nada se mueve hasta que confirmes. Se guarda un archivo para
+        deshacer, y se actualizan las rutas del historial.
+      </div>
+      <span class="sc-status-line" id="organizeStatus"></span>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close="modalOrganize">Cancelar</button>
+      <button class="btn btn-blood" id="btnOrganizeApply">Ordenar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ Modal: Conectar SoundCloud ============ -->
 <div class="modal-overlay" id="modalConnect">
   <div class="modal pixel-corners-lg">
@@ -593,7 +616,13 @@
           <input type="text" id="cfgPattern" placeholder="{artist} - {title}">
         </div>
         <label class="check-row"><input type="checkbox" id="cfgSubArtist"><span>Subcarpeta por artista</span></label>
-        <label class="check-row"><input type="checkbox" id="cfgSubGenre"><span>Subcarpeta por género</span></label>
+        <label class="check-row"><input type="checkbox" id="cfgSubGenre"><span>Ordenar por género en carpetas</span></label>
+        <div class="hint" id="genreRootHint">
+          Cada canción se guarda sola en la carpeta de su subgénero
+          (Schranz, Hardgroove…), leyendo los tags de SoundCloud y no solo
+          el género genérico. Se reusan las carpetas que ya tengas.
+        </div>
+        <button class="btn btn-ghost btn-block" id="btnOrganize">📁 Ordenar la música que ya tengo…</button>
       </div>
 
       <div class="form-group">
@@ -1115,6 +1144,74 @@
       openModal("modalSettings");
     });
 
+    document.getElementById("btnOrganize").addEventListener("click", async () => {
+      // Se abre DESDE Configuración: sin cerrarla, los dos overlays quedan
+      // con el mismo z-index y el de Configuración tapa a este.
+      closeModal("modalSettings");
+      openModal("modalOrganize");
+      const intro = document.getElementById("organizeIntro");
+      const list = document.getElementById("organizeList");
+      const apply = document.getElementById("btnOrganizeApply");
+      document.getElementById("organizeStatus").textContent = "";
+      intro.textContent = "Calculando…";
+      list.innerHTML = "";
+      apply.disabled = true;
+
+      const r = await api().preview_organize();
+      if (!r.ok) {
+        intro.textContent = r.error || "No se pudo calcular";
+        return;
+      }
+      if (!r.total) {
+        intro.textContent = "No hay canciones sueltas para ordenar.";
+        return;
+      }
+      intro.textContent = `${r.total} canciones se moverían a estas carpetas, dentro de ${r.raiz}:`;
+      for (const f of r.carpetas) {
+        const row = document.createElement("div");
+        row.className = "hrow";
+        // .hrow es una grilla de 3 columnas (18px 1fr auto): sin el glifo,
+        // el nombre cae en la columna de 18px y se corta.
+        const glyph = document.createElement("span");
+        glyph.className = "hrow-glyph";
+        glyph.textContent = f.existe ? "✓" : "+";
+        const main = document.createElement("div");
+        main.className = "hrow-main";
+        const t = document.createElement("span");
+        t.className = "hrow-title";
+        t.textContent = f.genero;
+        const s = document.createElement("span");
+        s.className = "hrow-sub";
+        s.textContent = f.existe ? "carpeta existente" : "carpeta nueva";
+        main.append(t, s);
+        const n = document.createElement("span");
+        n.className = "hrow-sub";
+        n.textContent = `${f.cantidad}`;
+        row.append(glyph, main, n);
+        list.appendChild(row);
+      }
+      apply.disabled = false;
+    });
+
+    document.getElementById("btnOrganizeApply").addEventListener("click", async () => {
+      const apply = document.getElementById("btnOrganizeApply");
+      const st = document.getElementById("organizeStatus");
+      apply.disabled = true;
+      st.textContent = "Moviendo…";
+      const r = await api().organize_library();
+      if (!r.ok) {
+        st.textContent = r.error || "Error al ordenar";
+        st.className = "sc-status-line err";
+        apply.disabled = false;
+        return;
+      }
+      st.textContent = `Listo: ${r.movidos} movidas` +
+        (r.omitidos ? `, ${r.omitidos} ya existían en destino` : "");
+      st.className = "sc-status-line on";
+      setStatus(`Biblioteca ordenada: ${r.movidos} canciones`, "ok");
+      refreshHistory();
+    });
+
     document.getElementById("btnSaveSettings").addEventListener("click", async () => {
       const updates = {
         quality_preset: document.getElementById("cfgQuality").value,
@@ -1344,6 +1441,16 @@
     document.getElementById("cfgAnalyzeAudio").checked = !!cfg.analyze_audio;
     document.getElementById("cfgKeyFormat").value = cfg.key_format || "camelot";
     document.getElementById("cfgFingerprintCheck").checked = cfg.fingerprint_check !== false;
+    try {
+      const raiz = await api().genre_root();
+      if (raiz) {
+        document.getElementById("genreRootHint").innerHTML =
+          "Cada canción se guarda sola en la carpeta de su subgénero " +
+          "(Schranz, Hardgroove…), leyendo los tags de SoundCloud y no solo " +
+          "el género genérico. Se reusan las carpetas que ya tengas.<br>" +
+          "Las carpetas se crean en <b>" + raiz + "</b>.";
+      }
+    } catch (e) { /* el hint estático ya explica lo esencial */ }
     document.getElementById("cfgSyncInterval").value =
       (cfg.soundcloud && cfg.soundcloud.sync_interval_minutes) || 1440;
     await refreshTaskStatus();

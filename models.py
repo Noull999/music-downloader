@@ -38,6 +38,8 @@ class TrackInfo:
     detected_quality: str = ""        # ej: "251kbps Opus", "128kbps Mp3"
     available_qualities: list = field(default_factory=list)
     track_id: str = ""
+    genre: str = ""                   # género declarado por la plataforma
+    tags: str = ""                    # tags libres; ver sync/genre_utils.py
 
     # ── Estado de descarga (mutable) ─────────────────────────────────── #
     status: str = STATUS_PENDING
@@ -72,6 +74,8 @@ class TrackInfo:
             detected_quality=meta.detected_quality,
             available_qualities=list(meta.available_qualities or []),
             track_id=meta.track_id,
+            genre=getattr(meta, "genre", "") or "",
+            tags=getattr(meta, "tags", "") or "",
         )
 
     def update_from_metadata(self, meta: TrackMetadata) -> None:
@@ -82,6 +86,8 @@ class TrackInfo:
         self.thumbnail_url = meta.thumbnail_url or ""
         self.album = meta.album or ""
         self.year = meta.year or ""
+        self.genre = getattr(meta, "genre", "") or ""
+        self.tags = getattr(meta, "tags", "") or ""
         self.platform = meta.platform
         self.detected_quality = meta.detected_quality
         self.available_qualities = list(meta.available_qualities or [])

@@ -31,7 +31,7 @@ from models import (
     STATUS_DONE, STATUS_ERROR, STATUS_SKIP, STATUS_CANCELLED,
 )
 from quality.presets import get_preset
-from sync import match_utils, task_scheduler
+from sync import genre_utils, match_utils, task_scheduler
 from sync.soundcloud_api import SoundCloudAPIClient
 from sync.sync_manager import SyncManager
 from url_detector import detect_handler, detect_platform_name
@@ -301,7 +301,7 @@ class WebViewAPI:
         self.download_manager.submit_download(
             track=track,
             handler=handler,
-            dest_folder=dest_folder,
+            dest_folder=self._dest_for_track(track),
             filename_pattern=self.controller.get_config_value("filename_pattern", "{artist} - {title}"),
             subfolder_by_artist=self.controller.get_config_value("subfolder_by_artist", False),
             quality_preset=preset,
@@ -733,6 +733,9 @@ class WebViewAPI:
             track = TrackInfo(
                 url=like["url"], title=like["title"], artist=like["artist"] or "",
                 platform="soundcloud", thumbnail_url=like.get("artwork_url") or "",
+                # Necesarios para resolver el subgénero y rutear la descarga
+                # a su carpeta (ver _dest_for_track / sync/genre_utils.py).
+                genre=like.get("genre") or "", tags=like.get("tags") or "",
             )
             track.status = STATUS_PENDING
             with self._lock:
@@ -786,7 +789,7 @@ class WebViewAPI:
         self.download_manager.submit_download(
             track=track,
             handler=SoundCloudHandler(),
-            dest_folder=dest_folder,
+            dest_folder=self._dest_for_track(track),
             filename_pattern=self.controller.get_config_value("filename_pattern", "{artist} - {title}"),
             subfolder_by_artist=self.controller.get_config_value("subfolder_by_artist", False),
             quality_preset=preset,
@@ -796,6 +799,217 @@ class WebViewAPI:
             on_status=on_status,
             oauth_token=oauth_token,
         )
+
+    def genre_root(self) -> str:
+        """
+        Raíz donde viven las carpetas de género. Es la carpeta de la
+        biblioteca (p. ej. D:\\Musik), no la de descarga (D:\\Musik\\prueba):
+        si no, quedarían dos juegos de carpetas separados.
+        """
+        folders = self._library_folders()
+        if folders:
+            return folders[0]
+        return self.get_default_scan_folder()
+
+    def _dest_for_track(self, track) -> str:
+        """
+        Carpeta destino de una descarga concreta. Con 'subfolder_by_genre'
+        activo devuelve la carpeta del subgénero resuelto (reusando la que
+        ya exista, sin importar mayúsculas); si no, la de descarga normal.
+        """
+        dest = self.controller.get_config_value("dest_folder", "")
+        if not self.controller.get_config_value("subfolder_by_genre", False):
+            return dest
+        raiz = self.genre_root() or dest
+        nombre = genre_utils.genre_folder(
+            getattr(track, "genre", None),
+            getattr(track, "tags", None),
+            getattr(track, "title", None),
+        )
+        try:
+            for d in os.listdir(raiz):
+                if d.lower() == nombre.lower() and os.path.isdir(os.path.join(raiz, d)):
+                    nombre = d
+                    break
+        except OSError:
+            pass
+        return os.path.join(raiz, nombre)
+
+    # ------------------------------------------------------------------ #
+    # Ordenar la biblioteca por género                                     #
+    # ------------------------------------------------------------------ #
+
+    def _plan_organize(self) -> tuple[list[tuple[Path, str]], str]:
+        """
+        Calcula, sin tocar nada, a qué carpeta de subgénero iría cada
+        archivo que hoy está suelto en la carpeta de descarga.
+
+        Solo mira la carpeta de descarga: las carpetas de género que el
+        usuario ya armó a mano son su criterio, y re-clasificarlas con los
+        tags (a menudo peores) le rompería la organización.
+        """
+        raiz = self.genre_root()
+        dest = self.controller.get_config_value("dest_folder", "")
+        origenes = [f for f in {dest} if f and os.path.isdir(f)]
+        if not origenes:
+            return [], raiz
+
+        likes = []
+        if self._sync_manager:
+            try:
+                likes = self._sync_manager.history.load_likes()
+            except Exception:
+                logger.exception("No se pudieron leer los likes para ordenar")
+
+        index = match_utils.index_audio_files(origenes)
+        por_archivo: dict[Path, dict] = {}
+        for lk in likes:
+            cands = match_utils.like_candidates(lk.get("artist") or "", lk.get("title") or "")
+            if not cands:
+                continue
+            path, _ = match_utils.find_best_match(cands, index, match_utils.MATCH_THRESHOLD)
+            if path is not None and path not in por_archivo:
+                por_archivo[path] = lk
+
+        plan: list[tuple[Path, str]] = []
+        for path, _ in index:
+            lk = por_archivo.get(path)
+            genero = None
+            if lk:
+                genero = genre_utils.resolve_genre(
+                    lk.get("genre"), lk.get("tags"), lk.get("title")
+                )
+            if not genero:
+                genero = genre_utils.resolve_genre(
+                    self._genre_tag_of(path), None, path.stem
+                )
+            if genero:
+                plan.append((path, genero))
+        return plan, raiz
+
+    @staticmethod
+    def _genre_tag_of(path: Path) -> Optional[str]:
+        try:
+            import mutagen
+            audio = mutagen.File(path, easy=True)
+            if audio:
+                val = audio.get("genre")
+                if val:
+                    return val[0] if isinstance(val, list) else str(val)
+        except Exception:
+            pass
+        return None
+
+    def preview_organize(self) -> dict:
+        """Vista previa: cuántos archivos irían a cada carpeta."""
+        try:
+            plan, raiz = self._plan_organize()
+        except Exception as e:
+            logger.exception("Error calculando el orden por género")
+            return {"ok": False, "error": str(e)}
+
+        from collections import Counter
+        conteo = Counter(g for _, g in plan)
+        existentes = set()
+        try:
+            existentes = {d.lower() for d in os.listdir(raiz)
+                          if os.path.isdir(os.path.join(raiz, d))}
+        except OSError:
+            pass
+        filas = [
+            {"genero": g, "cantidad": n, "existe": g.lower() in existentes}
+            for g, n in conteo.most_common()
+        ]
+        return {"ok": True, "raiz": raiz, "total": len(plan), "carpetas": filas}
+
+    def organize_library(self) -> dict:
+        """
+        Mueve los archivos a la carpeta de su subgénero. Deja un archivo de
+        deshacer y actualiza las rutas guardadas, que si no quedarían
+        apuntando a la ubicación vieja.
+        """
+        try:
+            plan, raiz = self._plan_organize()
+        except Exception as e:
+            logger.exception("Error calculando el orden por género")
+            return {"ok": False, "error": str(e)}
+        if not plan:
+            return {"ok": True, "movidos": 0, "mensaje": "No hay nada que ordenar."}
+
+        import shutil
+        from datetime import datetime
+
+        movimientos, colisiones = [], 0
+        for path, genero in plan:
+            nombre = genero
+            try:
+                for d in os.listdir(raiz):
+                    if d.lower() == genero.lower() and os.path.isdir(os.path.join(raiz, d)):
+                        nombre = d
+                        break
+            except OSError:
+                pass
+            destino_dir = Path(raiz) / genre_utils.genre_folder(nombre)
+            destino_dir.mkdir(parents=True, exist_ok=True)
+            destino = destino_dir / path.name
+            if destino.exists():
+                colisiones += 1
+                continue
+            try:
+                shutil.move(str(path), str(destino))
+                movimientos.append({"de": str(path), "a": str(destino)})
+            except Exception:
+                logger.exception("No se pudo mover %s", path)
+
+        undo = Path.home() / ".music_downloader" / f"undo_organizar_{datetime.now():%Y%m%d_%H%M%S}.json"
+        try:
+            undo.write_text(json.dumps(movimientos, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            logger.exception("No se pudo escribir el archivo para deshacer")
+
+        self._repath_after_move(movimientos)
+        return {
+            "ok": True, "movidos": len(movimientos), "omitidos": colisiones,
+            "deshacer": str(undo), "raiz": raiz,
+        }
+
+    def _repath_after_move(self, movimientos: list[dict]) -> None:
+        """Actualiza rutas en la BD e invalida el índice de huellas."""
+        if not movimientos:
+            return
+        import sqlite3
+        db = Path.home() / ".music_downloader" / "history.db"
+        try:
+            conn = sqlite3.connect(db)
+            for m in movimientos:
+                viejo, nuevo = m["de"], m["a"]
+                conn.execute(
+                    "UPDATE downloads SET local_path = ?, url = ? "
+                    "WHERE local_path = ? AND url LIKE 'local://%'",
+                    (nuevo, f"local://{nuevo}", viejo),
+                )
+                conn.execute(
+                    "UPDATE downloads SET local_path = ? "
+                    "WHERE local_path = ? AND url NOT LIKE 'local://%'",
+                    (nuevo, viejo),
+                )
+                conn.execute(
+                    "UPDATE sync_downloads SET file_path = ? WHERE file_path = ?",
+                    (nuevo, viejo),
+                )
+            conn.commit()
+            conn.close()
+        except Exception:
+            logger.exception("No se pudieron actualizar las rutas en la BD")
+
+        cache = Path.home() / ".music_downloader" / "fingerprint_index.json"
+        try:
+            if cache.exists():
+                cache.unlink()
+        except Exception:
+            logger.exception("No se pudo invalidar el índice de huellas")
+        if self._sync_manager:
+            self._sync_manager.checker.invalidate_index()
 
     def get_default_scan_folder(self) -> str:
         """Carpeta padre de dest_folder (p. ej. D:\\Musik si dest_folder es D:\\Musik\\prueba)."""

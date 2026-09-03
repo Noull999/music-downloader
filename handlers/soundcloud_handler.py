@@ -95,6 +95,9 @@ class SoundCloudHandler(BaseHandler):
             platform=_PLATFORM,
             detected_quality=quality,
             track_id=track_id,
+            genre=info.get("genre") or "",
+            tags=" ".join(info.get("tags") or []) if isinstance(info.get("tags"), list)
+                 else (info.get("tags") or ""),
         )
 
     # ------------------------------------------------------------------ #

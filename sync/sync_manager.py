@@ -1122,6 +1122,7 @@ class SyncManager:
                 'downloaded_at': download_info['downloaded_at'] if download_info else None,
                 'created_at': like['created_at'],
                 'genre': like['genre'],
+                'tags': like.get('tags', ''),
                 'duration_ms': like['duration_ms'],
                 'artwork_url': like['artwork_url']
             })
