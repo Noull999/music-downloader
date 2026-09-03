@@ -20,6 +20,8 @@ import sys
 from pathlib import Path
 from typing import Iterable, Optional
 
+from sync import match_utils
+
 logger = logging.getLogger(__name__)
 
 MATCH_THRESHOLD = 0.85
@@ -28,7 +30,9 @@ FP_LENGTH = 60
 
 CACHE_PATH = Path.home() / ".music_downloader" / "fingerprint_index.json"
 
-AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".wav", ".ogg", ".opus", ".aac"}
+# Compartidas con el matching por nombre: una sola lista, y el mismo filtro
+# de archivos basura del sistema.
+AUDIO_EXTENSIONS = match_utils.AUDIO_EXTENSIONS
 
 
 def _fpcalc_path() -> str:
@@ -133,7 +137,12 @@ class LibraryFingerprintIndex:
             root = Path(folder)
             if not root.is_dir():
                 continue
-            files.extend(p for p in root.rglob("*") if p.suffix.lower() in AUDIO_EXTENSIONS and p.is_file())
+            files.extend(
+                p for p in root.rglob("*")
+                if p.suffix.lower() in AUDIO_EXTENSIONS
+                and p.is_file()
+                and not match_utils.es_basura_del_sistema(p)
+            )
 
         new_entries = {}
         computed = 0

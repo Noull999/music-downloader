@@ -1,6 +1,6 @@
 # 🎵 Music Downloader
 
-Aplicación de escritorio para descargar música de **SoundCloud y YouTube**, con sincronización automática de tus likes, detección de duplicados (por nombre de archivo *y* por audio real), y detección de BPM/tonalidad para mezcla armónica.
+Aplicación de escritorio para descargar música de **SoundCloud y YouTube**, con sincronización automática de tus likes, organización en carpetas por subgénero, detección de duplicados (por nombre de archivo *y* por audio real), y detección de BPM/tonalidad para mezcla armónica.
 
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -15,6 +15,12 @@ Aplicación de escritorio para descargar música de **SoundCloud y YouTube**, co
   - Descarga automática de tus likes de SoundCloud
   - Sincronización periódica (manual o programada con el Task Scheduler de Windows)
   - Explorador de "Mis Likes" con estado de descarga y fecha
+
+- **Organización automática por subgénero**
+  - Cada descarga va sola a la carpeta de su género (`Schranz/`, `Hardgroove/`, `Industrial Techno/`…), sin elegir nada por canción
+  - El subgénero se resuelve leyendo los **tags** de SoundCloud, no solo el campo `genre`, que el uploader suele dejar en algo genérico. Medido sobre una biblioteca real de 402 canciones: 34% tenían género genérico mientras el subgénero estaba en los tags, y *schranz* aparecía 57 veces en los tags contra 14 en `genre`
+  - Reusa las carpetas que ya tengas (ignorando mayúsculas) y descarta basura como categorías de YouTube (`Music`, `Entertainment`) o volcados de tags
+  - Panel **"Ordenar la música que ya tengo"**: vista previa de a qué carpeta iría cada canción antes de mover nada, con archivo de deshacer
 
 - **Detección de duplicados en dos capas**
   - Matching difuso de nombre de archivo contra toda tu biblioteca (no solo la carpeta de destino)
@@ -91,6 +97,7 @@ Ingresá estos valores desde "Conectar cuenta" en la app.
 2. **Sincronizar** — conectá tu cuenta y sincronizá tus likes; la app se encarga de no re-descargar lo que ya tenés.
 3. **Mis Likes** — explorá tus likes guardados, con estado de descarga y fecha, y bajá selecciones puntuales.
 4. **Sincronización automática** — desde Configuración podés registrar una tarea programada de Windows para que sincronice sola cada X horas, incluso con la app cerrada.
+5. **Ordenar por género** — activá "Ordenar por género en carpetas" y cada descarga nueva cae sola donde corresponde. Si ya tenés música suelta, el botón "Ordenar la música que ya tengo" la acomoda: primero te muestra la simulación, y solo mueve si confirmás.
 
 ## 📁 Estructura del Proyecto
 
@@ -105,6 +112,7 @@ music-downloader/
 │   ├── soundcloud_api.py
 │   ├── sync_manager.py
 │   ├── duplicate_checker.py # Matching difuso de nombres
+│   ├── genre_utils.py       # Resolución de subgénero (genre + tags + título)
 │   └── task_scheduler.py    # Integración con Task Scheduler de Windows
 ├── analysis/                 # BPM/tonalidad y huella de audio
 │   ├── audio_analysis.py     # Detección BPM/Camelot (librosa)
@@ -122,7 +130,8 @@ Desde el panel de Configuración de la app:
 
 - **Patrón de nombre de archivo**: `{artist} - {title}`, `{title}`, o personalizado
 - **Preset de calidad**: MP3 320/256/128 kbps, FLAC
-- **Post-procesamiento**: normalización de volumen, eliminación de silencios, metadatos, carátula
+- **Post-procesamiento**: normalización de volumen, eliminación de silencios, metadatos, carátula, género
+- **Ordenar por género en carpetas**: las carpetas se crean en la raíz de tu biblioteca (no dentro de la carpeta de descarga), y la app te muestra la ruta exacta
 - **Análisis de audio**: activar/desactivar BPM/tonalidad y elegir formato (Camelot o musical)
 - **Duplicados por audio**: activado por defecto; se puede desactivar si preferís solo el matching por nombre
 
@@ -144,7 +153,9 @@ Desde el panel de Configuración de la app:
 
 ## 📊 Base de datos
 
-El historial se guarda en `~/.music_downloader/history.db` (SQLite), con tablas separadas para descargas manuales, descargas por sync, likes guardados y fallos permanentes (DRM/geo-bloqueo).
+El historial se guarda en `~/.music_downloader/history.db` (SQLite), con tablas separadas para descargas manuales, descargas por sync, likes guardados (incluidos sus tags, para resolver el subgénero) y fallos permanentes (DRM/geo-bloqueo).
+
+En esa misma carpeta quedan el índice de huellas de audio (`fingerprint_index.json`, cacheado por fecha y tamaño para no re-analizar la biblioteca entera en cada sync) y los archivos `undo_organizar_*.json` que genera el ordenado por género.
 
 ## 🤝 Contribuciones
 

@@ -32,7 +32,23 @@ from thefuzz import fuzz
 
 logger = logging.getLogger(__name__)
 
-AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".wav", ".ogg", ".opus", ".aac"}
+AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".wav", ".ogg", ".opus", ".aac",
+                    ".aiff", ".aif"}
+
+
+def es_basura_del_sistema(path: Path) -> bool:
+    """
+    Archivos que NO son música aunque tengan extensión de audio.
+
+    macOS deja un "._NombreCancion.mp3" (AppleDouble, unos pocos KB con
+    metadatos) junto a cada archivo al copiar a un disco no-Mac, más los
+    .DS_Store de Finder. Como copian la extensión, se indexaban como
+    canciones reales: en una biblioteca de prueba había 613 de estos
+    falsos sobre 2036 archivos, y ensuciaban tanto la detección de
+    duplicados como el conteo y las huellas de audio.
+    """
+    name = path.name
+    return name.startswith("._") or name == ".DS_Store"
 
 # Umbral por defecto para considerar dos títulos la misma canción.
 # Elegido midiendo contra una biblioteca real de 1904 archivos y 392 likes:
@@ -118,6 +134,8 @@ def index_audio_files(folders: Iterable[str]) -> list[tuple[Path, set[str]]]:
             continue
         try:
             for path in root.rglob("*"):
+                if es_basura_del_sistema(path):
+                    continue
                 if not path.is_file() or path.suffix.lower() not in AUDIO_EXTENSIONS:
                     continue
                 key = str(path).lower()
