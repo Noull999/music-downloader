@@ -608,6 +608,7 @@ class MainWindow(ctk.CTk):
             "remove_silence": self._ui_controller.get_config_value("remove_silence", False),
             "embed_artwork": self._ui_controller.get_config_value("embed_artwork", True),
             "embed_metadata": self._ui_controller.get_config_value("embed_metadata", True),
+            "embed_genre": self._ui_controller.get_config_value("embed_genre", False),
         }
 
         counter_str = f"[{idx}/{total}] " if total > 0 else ""

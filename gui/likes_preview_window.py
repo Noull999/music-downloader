@@ -421,6 +421,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
         post_config = {
             "embed_artwork": self.config.get("embed_artwork", True),
             "embed_metadata": self.config.get("embed_metadata", True),
+            "embed_genre": self.config.get("embed_genre", False),
             "normalize_volume": self.config.get("normalize_volume", False),
             "remove_silence": self.config.get("remove_silence", False),
         }
@@ -500,6 +501,7 @@ class LikesPreviewWindow(ctk.CTkFrame):
         post_config = {
             "embed_artwork": self.config.get("embed_artwork", True),
             "embed_metadata": self.config.get("embed_metadata", True),
+            "embed_genre": self.config.get("embed_genre", False),
             "normalize_volume": self.config.get("normalize_volume", False),
             "remove_silence": self.config.get("remove_silence", False),
         }
