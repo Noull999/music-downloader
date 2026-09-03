@@ -27,6 +27,12 @@ class ConfigManager:
         "quality_preset": "mp3_320",
         "filename_pattern": "{artist} - {title}",
         "subfolder_by_artist": False,
+        # Activado de fábrica: si no, quien nunca abre Configuración termina
+        # con todo amontonado en una sola carpeta. Las carpetas de género se
+        # crean dentro de la carpeta de descarga, salvo que se configure una
+        # carpeta de biblioteca aparte (ver WebViewAPI.genre_root).
+        "subfolder_by_genre": True,
+        "embed_genre": True,
         "normalize_volume": False,
         "remove_silence": False,
         "embed_artwork": True,

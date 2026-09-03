@@ -802,14 +802,19 @@ class WebViewAPI:
 
     def genre_root(self) -> str:
         """
-        Raíz donde viven las carpetas de género. Es la carpeta de la
-        biblioteca (p. ej. D:\\Musik), no la de descarga (D:\\Musik\\prueba):
-        si no, quedarían dos juegos de carpetas separados.
+        Raíz donde se crean las carpetas de género.
+
+        Si el usuario configuró una carpeta de biblioteca, manda esa (así
+        las descargas caen junto a la música que ya tiene ordenada). Si no
+        configuró ninguna, se usa la CARPETA DE DESCARGA misma: antes se
+        usaba su carpeta padre, y eso hacía aparecer carpetas de género
+        fuera del destino elegido, mezcladas con lo que hubiera al lado.
         """
-        folders = self._library_folders()
-        if folders:
-            return folders[0]
-        return self.get_default_scan_folder()
+        configurada = self.controller.get_config_value("library_folders", []) or []
+        configurada = [f for f in configurada if f]
+        if configurada:
+            return configurada[0]
+        return self.controller.get_config_value("dest_folder", "")
 
     def _dest_for_track(self, track) -> str:
         """

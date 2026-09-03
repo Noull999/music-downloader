@@ -113,13 +113,13 @@ class SyncManager:
         self.post_options = dict(post_options or {})
         self.subfolder_by_genre = subfolder_by_genre
         self.library_folders = list(library_folders or [])
-        # Las carpetas de género viven en la raíz de la biblioteca, no dentro
-        # de la carpeta de descarga: si no, quedarían duplicadas
-        # (D:\Musik\Schranz y D:\Musik\prueba\Schranz) y separadas de la
-        # música que ya está ordenada.
+        # Raíz de las carpetas de género: la biblioteca configurada si la
+        # hay (así caen junto a la música ya ordenada), y si no la carpeta
+        # de descarga misma. Antes se usaba la carpeta PADRE del destino,
+        # que hacía aparecer carpetas de género fuera de la carpeta que el
+        # usuario eligió.
         self.genre_root = (
-            self.library_folders[0] if self.library_folders
-            else os.path.dirname(str(download_folder).rstrip("\\/"))
+            self.library_folders[0] if self.library_folders else download_folder
         )
         self.oauth_token = oauth_token
         self._fingerprint_index: Optional[audio_fingerprint.LibraryFingerprintIndex] = None
