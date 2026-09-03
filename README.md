@@ -23,8 +23,9 @@ Aplicación de escritorio para descargar música de **SoundCloud y YouTube**, co
   - Panel **"Ordenar la música que ya tengo"**: vista previa de a qué carpeta iría cada canción antes de mover nada, con archivo de deshacer
 
 - **Detección de duplicados en dos capas**
-  - Matching difuso de nombre de archivo contra toda tu biblioteca (no solo la carpeta de destino)
+  - Matching difuso de nombre de archivo contra toda tu biblioteca (no solo la carpeta de destino), ignorando archivos basura (`.DS_Store`, `._*` de macOS) que si no se cuentan como canciones reales
   - **Huella de audio (Chromaprint)** como red de seguridad: si el nombre no coincide con nada, compara el audio real de un preview antes de descargar — atrapa el caso de "mismo tema, nombre de archivo muy distinto" sin generar falsos positivos con remixes/edits de título parecido
+  - Soporta MP3, WAV, FLAC, M4A, AAC, OGG, OPUS, AIFF
 
 - **BPM y tonalidad para DJs**
   - Detecta BPM y tonalidad (notación Camelot o musical) de cada descarga con `librosa`
@@ -35,7 +36,8 @@ Aplicación de escritorio para descargar música de **SoundCloud y YouTube**, co
   - SoundCloud y YouTube
 
 - **Post-procesamiento**
-  - Metadatos y carátula incrustados
+  - Metadatos, género y carátula incrustados en **MP3, WAV y AIFF** (no solo MP3)
+  - La carátula se normaliza a JPEG y máx. 600px: SoundCloud a veces entrega miniaturas de 100×100 y YouTube las da en WebP, que Serato no muestra
   - Normalización de volumen, eliminación de silencios
 
 - **Interfaz de escritorio**
@@ -147,6 +149,9 @@ Desde el panel de Configuración de la app:
 
 ### "No new tracks found" en sync
 - Los likes pueden tardar unos minutos en indexarse en la API de SoundCloud
+
+### "HTTP Error 403: Forbidden" al consultar SoundCloud
+- Es un límite de tasa temporal de SoundCloud, no un problema de la cuenta ni del código. Aparece si se hacen muchas consultas seguidas (por ejemplo, reprocesando metadatos de decenas de canciones de una sola vez). Esperá unos minutos y volvé a intentar.
 
 ### Windows bloquea el .exe (Smart App Control)
 - `scripts/build.py` firma el .exe automáticamente con un certificado local. Si igual lo bloquea, revisá que el certificado quedó agregado a los almacenes `CurrentUser\Root` y `CurrentUser\TrustedPublisher`.
