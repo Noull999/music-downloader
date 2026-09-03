@@ -64,6 +64,7 @@ class DownloadHistory:
                     duration_ms INTEGER,
                     artwork_url TEXT,
                     genre       TEXT,
+                    tags        TEXT,
                     created_at  TEXT,
                     liked_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
@@ -96,6 +97,15 @@ class DownloadHistory:
                 CREATE INDEX IF NOT EXISTS idx_likes_url
                     ON soundcloud_likes(url);
             """)
+            # Migración: CREATE TABLE IF NOT EXISTS no agrega columnas a una
+            # tabla que ya existe, así que las bases anteriores a `tags` se
+            # quedarían sin ella.
+            cols = {r[1] for r in self.conn.execute(
+                "PRAGMA table_info(soundcloud_likes)"
+            )}
+            if "tags" not in cols:
+                self.conn.execute("ALTER TABLE soundcloud_likes ADD COLUMN tags TEXT")
+                logger.info("Migración: columna 'tags' agregada a soundcloud_likes")
             self.conn.commit()
             logger.info(f"✅ Base de datos inicializada en {self.db_path}")
         except sqlite3.Error as e:
@@ -445,8 +455,8 @@ class DownloadHistory:
                     self.conn.execute(
                         """
                         INSERT OR REPLACE INTO soundcloud_likes
-                        (id, url, title, artist, duration_ms, artwork_url, genre, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        (id, url, title, artist, duration_ms, artwork_url, genre, tags, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             track.id,
@@ -456,6 +466,7 @@ class DownloadHistory:
                             track.duration_ms,
                             track.artwork_url,
                             track.genre,
+                            getattr(track, "tags", "") or "",
                             track.created_at
                         )
                     )
@@ -469,14 +480,16 @@ class DownloadHistory:
         Carga los likes guardados en la DB.
 
         Returns:
-            Lista de {id, url, title, artist, duration_ms, artwork_url, genre, created_at}
+            Lista de {id, url, title, artist, duration_ms, artwork_url, genre,
+                      tags, created_at}
             O lista vacía si no hay likes guardados
         """
         with self.lock:
             try:
                 cursor = self.conn.execute(
                     """
-                    SELECT id, url, title, artist, duration_ms, artwork_url, genre, created_at
+                    SELECT id, url, title, artist, duration_ms, artwork_url, genre,
+                           tags, created_at
                     FROM soundcloud_likes ORDER BY liked_at DESC
                     """
                 )
@@ -489,7 +502,8 @@ class DownloadHistory:
                         "duration_ms": row[4],
                         "artwork_url": row[5],
                         "genre": row[6],
-                        "created_at": row[7]
+                        "tags": row[7] or "",
+                        "created_at": row[8]
                     }
                     for row in cursor.fetchall()
                 ]

@@ -12,7 +12,7 @@ from typing import Callable, Optional
 
 from .soundcloud_api import SoundCloudAPIClient, SoundCloudTrack
 from .duplicate_checker import DuplicateChecker
-from . import match_utils
+from . import genre_utils, match_utils
 from analysis import fingerprint as audio_fingerprint
 from db.history import DownloadHistory
 from notifications.notifier import Notifier
@@ -57,6 +57,7 @@ class SyncManager:
         fingerprint_check: bool = True,
         quality_preset: str = DEFAULT_PRESET,
         post_options: Optional[dict] = None,
+        subfolder_by_genre: bool = False,
     ):
         """
         Args:
@@ -110,7 +111,16 @@ class SyncManager:
         self.fingerprint_check = fingerprint_check
         self.quality_preset = quality_preset
         self.post_options = dict(post_options or {})
+        self.subfolder_by_genre = subfolder_by_genre
         self.library_folders = list(library_folders or [])
+        # Las carpetas de género viven en la raíz de la biblioteca, no dentro
+        # de la carpeta de descarga: si no, quedarían duplicadas
+        # (D:\Musik\Schranz y D:\Musik\prueba\Schranz) y separadas de la
+        # música que ya está ordenada.
+        self.genre_root = (
+            self.library_folders[0] if self.library_folders
+            else os.path.dirname(str(download_folder).rstrip("\\/"))
+        )
         self.oauth_token = oauth_token
         self._fingerprint_index: Optional[audio_fingerprint.LibraryFingerprintIndex] = None
 
@@ -230,16 +240,44 @@ class SyncManager:
             except Exception:
                 pass
 
-    def _build_output_path(self, artist: str, title: str) -> str:
-        """Construye el output_path con patrón de nombre y artista."""
+    def _carpeta_existente(self, nombre: str) -> str:
+        """
+        Reusa el nombre de una carpeta de género que ya exista, ignorando
+        mayúsculas: sin esto, un usuario con "hard techno" terminaría con
+        una segunda carpeta "Hard Techno" al lado.
+        """
+        try:
+            raiz = self.genre_root or self.download_folder
+            for d in os.listdir(raiz):
+                if d.lower() == nombre.lower() and os.path.isdir(os.path.join(raiz, d)):
+                    return d
+        except OSError:
+            pass
+        return nombre
+
+    def _build_output_path(self, artist: str, title: str, track=None) -> str:
+        """
+        Construye el output_path con patrón de nombre, artista y género.
+
+        Con subfolder_by_genre, el destino es la carpeta del subgénero
+        resuelto (Schranz, Hardgroove...) DENTRO de la biblioteca, no de la
+        carpeta de descarga: así cada tema cae junto a los de su mismo
+        estilo en vez de amontonarse todo en un solo lugar.
+        """
         safe_artist = sanitize_filename(artist)
         safe_title = sanitize_filename(title)
 
-        folder = (
-            os.path.join(self.download_folder, safe_artist)
-            if self.subfolder_by_artist
-            else self.download_folder
-        )
+        folder = self.download_folder
+        if self.subfolder_by_genre and track is not None:
+            nombre = genre_utils.genre_folder(
+                getattr(track, "genre", None),
+                getattr(track, "tags", None),
+                getattr(track, "title", None),
+            )
+            folder = os.path.join(self.genre_root or self.download_folder,
+                                  self._carpeta_existente(nombre))
+        elif self.subfolder_by_artist:
+            folder = os.path.join(self.download_folder, safe_artist)
         os.makedirs(folder, exist_ok=True)
 
         try:
@@ -261,9 +299,18 @@ class SyncManager:
                 "normalize_volume": self.post_options.get("normalize_volume", False),
                 "remove_silence": self.post_options.get("remove_silence", False),
                 "analyze_audio": self.analyze_audio, "key_format": self.key_format,
+                "embed_genre": self.post_options.get("embed_genre", False),
             })
+            # El género que se escribe es el RESUELTO (Schranz), no el crudo
+            # de SoundCloud (Techno): ver sync/genre_utils.py.
+            genero = genre_utils.resolve_genre(
+                getattr(track, "genre", None),
+                getattr(track, "tags", None),
+                getattr(track, "title", None),
+            )
             pp.process(file_path, {"title": track.title, "artist": track.artist,
-                                   "album": "", "year": ""}, track.artwork_url or "")
+                                   "album": "", "year": "", "genre": genero or ""},
+                       track.artwork_url or "")
         except Exception as e:
             logger.warning("Error en post-proceso de %s: %s", track.title, e)
 
@@ -551,7 +598,7 @@ class SyncManager:
                 self._emit_track("start", track)
 
                 try:
-                    output_path = self._build_output_path(track.artist, track.title)
+                    output_path = self._build_output_path(track.artist, track.title, track)
                     file_path = self.downloader.download(
                         track.url,
                         output_path,
@@ -763,7 +810,7 @@ class SyncManager:
                 self._emit_track("start", track)
 
                 try:
-                    output_path = self._build_output_path(track.artist, track.title)
+                    output_path = self._build_output_path(track.artist, track.title, track)
                     file_path = self.downloader.download(
                         track.url,
                         output_path,
@@ -891,7 +938,7 @@ class SyncManager:
                 self._emit_track("start", track)
 
                 try:
-                    output_path = self._build_output_path(track.artist, track.title)
+                    output_path = self._build_output_path(track.artist, track.title, track)
                     file_path = self.downloader.download(
                         track.url,
                         output_path,

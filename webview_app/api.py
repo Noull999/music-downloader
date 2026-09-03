@@ -527,7 +527,9 @@ class WebViewAPI:
                 "remove_silence": self.controller.get_config_value("remove_silence", False),
                 "embed_artwork": self.controller.get_config_value("embed_artwork", True),
                 "embed_metadata": self.controller.get_config_value("embed_metadata", True),
+                "embed_genre": self.controller.get_config_value("embed_genre", False),
             },
+            subfolder_by_genre=self.controller.get_config_value("subfolder_by_genre", False),
         )
         # SyncManager arma su PROPIO SoundCloudAPIClient (self._sync_manager.api),
         # un objeto distinto al que se usó arriba para el chequeo inicial.

@@ -23,6 +23,10 @@ class SoundCloudTrack:
     artwork_url: Optional[str]
     genre: Optional[str]
     created_at: str
+    # Tags libres del uploader. El campo `genre` tira a lo genérico
+    # ("Techno") mientras el subgénero real suele estar acá
+    # ("schranz", "hardgroove"); ver sync/genre_utils.py.
+    tags: str = ""
 
     def __repr__(self) -> str:
         return f"<SoundCloudTrack '{self.artist}' - '{self.title}' ({self.duration_ms}ms)>"
@@ -222,6 +226,7 @@ class SoundCloudAPIClient:
                         artwork_url=track_data.get("artwork_url"),
                         genre=track_data.get("genre"),
                         created_at=track_data.get("created_at", ""),
+                        tags=track_data.get("tag_list") or "",
                     )
                     tracks.append(track)
                 except (KeyError, TypeError) as e:
@@ -299,6 +304,7 @@ class SoundCloudAPIClient:
                     artwork_url=track_data.get("artwork_url"),
                     genre=track_data.get("genre"),
                     created_at=track_data.get("created_at", ""),
+                    tags=track_data.get("tag_list") or "",
                 ))
             except (KeyError, TypeError):
                 continue

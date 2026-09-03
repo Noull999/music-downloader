@@ -622,7 +622,9 @@ ADVERTENCIA:
                     "remove_silence": self._config.get("remove_silence", False),
                     "embed_artwork": self._config.get("embed_artwork", True),
                     "embed_metadata": self._config.get("embed_metadata", True),
+                    "embed_genre": self._config.get("embed_genre", False),
                 },
+                subfolder_by_genre=self._config.get("subfolder_by_genre", False),
             )
             # Validar credenciales en el nuevo client para obtener user_id
             self.manager.validate_credentials()

@@ -108,7 +108,9 @@ def build_manager(config: dict) -> SyncManager:
             "remove_silence": config.get("remove_silence", False),
             "embed_artwork": config.get("embed_artwork", True),
             "embed_metadata": config.get("embed_metadata", True),
+            "embed_genre": config.get("embed_genre", False),
         },
+        subfolder_by_genre=config.get("subfolder_by_genre", False),
     )
 
 

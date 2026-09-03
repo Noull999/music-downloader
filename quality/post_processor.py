@@ -39,6 +39,7 @@ class PostProcessor:
         self.remove_silence: bool = options.get("remove_silence", False)
         self.embed_artwork: bool = options.get("embed_artwork", True)
         self.embed_metadata: bool = options.get("embed_metadata", True)
+        self.embed_genre: bool = options.get("embed_genre", False)
         self.analyze_audio: bool = options.get("analyze_audio", False)
         self.key_format: str = options.get("key_format", "camelot")
 
@@ -63,7 +64,7 @@ class PostProcessor:
             input_file = self._apply_ffmpeg_filters(input_file)
 
         # Re-embebido de metadatos y carátula (solo MP3 con mutagen)
-        if (self.embed_metadata or self.embed_artwork) and ext == ".mp3":
+        if (self.embed_metadata or self.embed_artwork or self.embed_genre) and ext == ".mp3":
             self._embed_tags(input_file, metadata, thumbnail_url if self.embed_artwork else "")
 
         # BPM + tonalidad (Camelot). Es la operación más lenta (~2s/track,
@@ -165,7 +166,7 @@ class PostProcessor:
 
     def _embed_tags(self, file_path: str, metadata: dict, thumbnail_url: str) -> None:
         try:
-            from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, TDRC, error as ID3Error
+            from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, TCON, TDRC, error as ID3Error
             from mutagen.mp3 import MP3
         except ImportError:
             logger.warning("mutagen no disponible; no se puede embeber tags manualmente.")
@@ -188,6 +189,12 @@ class PostProcessor:
                         audio.tags.add(TALB(encoding=3, text=metadata["album"]))
                     if metadata.get("year"):
                         audio.tags.add(TDRC(encoding=3, text=metadata["year"]))
+                except Exception as meta_exc:
+                    logger.warning("Error embebiendo metadatos: %s", meta_exc)
+
+            if self.embed_genre and metadata.get("genre"):
+                try:
+                    audio.tags.add(TCON(encoding=3, text=metadata["genre"]))
                 except Exception as meta_exc:
                     logger.warning("Error embebiendo metadatos: %s", meta_exc)
 
