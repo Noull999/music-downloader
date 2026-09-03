@@ -63,8 +63,10 @@ class PostProcessor:
         if (self.normalize_volume or self.remove_silence) and ext == ".mp3":
             input_file = self._apply_ffmpeg_filters(input_file)
 
-        # Re-embebido de metadatos y carátula (solo MP3 con mutagen)
-        if (self.embed_metadata or self.embed_artwork or self.embed_genre) and ext == ".mp3":
+        # Re-embebido de metadatos y carátula: MP3, WAV y AIFF admiten
+        # tags ID3 (_embed_tags decide el contenedor según la extensión).
+        if (self.embed_metadata or self.embed_artwork or self.embed_genre) and \
+                ext in (".mp3", ".wav", ".aiff", ".aif"):
             self._embed_tags(input_file, metadata, thumbnail_url if self.embed_artwork else "")
 
         # BPM + tonalidad (Camelot). Es la operación más lenta (~2s/track,
@@ -167,17 +169,32 @@ class PostProcessor:
     def _embed_tags(self, file_path: str, metadata: dict, thumbnail_url: str) -> None:
         try:
             from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, TCON, TDRC, error as ID3Error
-            from mutagen.mp3 import MP3
         except ImportError:
             logger.warning("mutagen no disponible; no se puede embeber tags manualmente.")
             return
 
+        # WAV y AIFF admiten tags ID3 igual que MP3 (en un chunk propio del
+        # contenedor RIFF/IFF), pero antes solo se llamaba a esto para
+        # ".mp3": el resto del catálogo se descargaba y quedaba sin
+        # título, artista, género ni carátula.
+        ext = os.path.splitext(file_path)[1].lower()
         try:
-            audio = MP3(file_path, ID3=ID3)
-            try:
+            if ext == ".mp3":
+                from mutagen.mp3 import MP3
+                audio = MP3(file_path, ID3=ID3)
+            elif ext == ".wav":
+                from mutagen.wave import WAVE
+                audio = WAVE(file_path)
+            elif ext in (".aiff", ".aif"):
+                from mutagen.aiff import AIFF
+                audio = AIFF(file_path)
+            else:
+                return
+            # WAVE/AIFF.add_tags() con tags existentes lanza el `error`
+            # propio de cada módulo, no ID3Error (que sí lanza MP3) —
+            # comprobar audio.tags evita depender de cuál excepción es.
+            if audio.tags is None:
                 audio.add_tags()
-            except ID3Error:
-                pass  # ya tiene tags
 
             if self.embed_metadata:
                 try:
@@ -220,6 +237,13 @@ class PostProcessor:
                         img_data = self._fetch_image_cached(thumbnail_url)
                     if img_data and len(img_data) > 0:
                         img_data, mime = self.normalizar_imagen(img_data)
+                        # ID3 distingue frames APIC por su "desc": un archivo
+                        # que ya traía carátula con otro desc (yt-dlp suele
+                        # usar "cover" en minúscula, este código usa "Cover")
+                        # terminaba con DOS carátulas en vez de reemplazar
+                        # la vieja — bien grande en un caso real: 261 KB
+                        # sumados a la nueva.
+                        audio.tags.delall("APIC")
                         audio.tags.add(
                             APIC(
                                 encoding=3,
