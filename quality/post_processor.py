@@ -200,12 +200,17 @@ class PostProcessor:
 
             if self.embed_artwork and thumbnail_url:
                 try:
-                    img_data = self._fetch_image_cached(thumbnail_url)
+                    grande = self.upgrade_artwork_url(thumbnail_url)
+                    img_data = self._fetch_image_cached(grande)
+                    if not img_data and grande != thumbnail_url:
+                        # El tamaño grande no siempre existe; mejor la
+                        # miniatura que quedarse sin carátula.
+                        img_data = self._fetch_image_cached(thumbnail_url)
                     if img_data and len(img_data) > 0:
                         audio.tags.add(
                             APIC(
                                 encoding=3,
-                                mime="image/jpeg",
+                                mime=self._mime_de(img_data),
                                 type=3,   # Cover (front)
                                 desc="Cover",
                                 data=img_data,
@@ -217,6 +222,32 @@ class PostProcessor:
             audio.save()
         except Exception as exc:
             logger.warning("Error guardando tags en %s: %s", file_path, exc)
+
+    @staticmethod
+    def upgrade_artwork_url(url: str) -> str:
+        """
+        SoundCloud llama "large" a una miniatura de 100x100, que incrustada
+        se ve borrosa en Serato y en cualquier reproductor. La variante
+        t500x500 (500x500, ~57 KB) es el punto justo: nítida sin inflar
+        cada mp3 como haría "original" (3999x3999, ~1.9 MB).
+        """
+        if not url:
+            return url
+        for chico in ("-large.", "-t300x300.", "-small.", "-badge.", "-tiny."):
+            if chico in url:
+                return url.replace(chico, "-t500x500.")
+        return url
+
+    @staticmethod
+    def _mime_de(data: bytes) -> str:
+        """
+        Tipo real según los primeros bytes. Antes se declaraba siempre
+        image/jpeg, incluso para URLs .png: un reproductor estricto no
+        muestra una carátula cuyo mime no coincide con el contenido.
+        """
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image/png"
+        return "image/jpeg"
 
     def _fetch_image_cached(self, url: str, timeout: float = 5.0) -> Optional[bytes]:
         """Obtiene imagen con caché automático (evita re-descargar)."""
