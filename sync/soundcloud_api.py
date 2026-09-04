@@ -27,6 +27,15 @@ class SoundCloudTrack:
     # ("Techno") mientras el subgénero real suele estar acá
     # ("schranz", "hardgroove"); ver sync/genre_utils.py.
     tags: str = ""
+    # Dónde bajar la versión que ofrece el artista a cambio de seguir/dar
+    # like (Hypeddit, Bandcamp, fanlink...). SoundCloud lo trae en un campo
+    # dedicado — no hay que buscarlo en la descripción. Ver
+    # webview_app/api.py:get_upgrade_candidates().
+    purchase_url: str = ""
+    # Si el artista activó la descarga nativa de SoundCloud (el botón
+    # "Download" real, no un link externo): ahí yt-dlp ya se lleva el
+    # archivo original, no el stream. No hace falta gate para estos.
+    downloadable: bool = False
 
     def __repr__(self) -> str:
         return f"<SoundCloudTrack '{self.artist}' - '{self.title}' ({self.duration_ms}ms)>"
@@ -227,6 +236,8 @@ class SoundCloudAPIClient:
                         genre=track_data.get("genre"),
                         created_at=track_data.get("created_at", ""),
                         tags=track_data.get("tag_list") or "",
+                        purchase_url=track_data.get("purchase_url") or "",
+                        downloadable=bool(track_data.get("downloadable")),
                     )
                     tracks.append(track)
                 except (KeyError, TypeError) as e:
@@ -305,6 +316,8 @@ class SoundCloudAPIClient:
                     genre=track_data.get("genre"),
                     created_at=track_data.get("created_at", ""),
                     tags=track_data.get("tag_list") or "",
+                    purchase_url=track_data.get("purchase_url") or "",
+                    downloadable=bool(track_data.get("downloadable")),
                 ))
             except (KeyError, TypeError):
                 continue

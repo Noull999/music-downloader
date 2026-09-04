@@ -32,7 +32,7 @@ from models import (
     STATUS_DONE, STATUS_ERROR, STATUS_SKIP, STATUS_CANCELLED,
 )
 from quality.presets import get_preset
-from sync import genre_utils, match_utils, task_scheduler
+from sync import genre_utils, match_utils, task_scheduler, upgrade_links
 from sync.soundcloud_api import SoundCloudAPIClient
 from sync.sync_manager import SyncManager
 from url_detector import detect_handler, detect_platform_name
@@ -709,6 +709,37 @@ class WebViewAPI:
         except Exception:
             logger.exception("Error obteniendo likes")
             return []
+
+    def get_upgrade_candidates(self) -> list[dict]:
+        """
+        Likes ya descargados que tienen, según SoundCloud, un lugar mejor
+        de donde conseguirlos (el gate de descarga gratis del artista).
+        Panel aparte y opcional: la sync sigue bajando todo sola, esto es
+        para quien quiera ir a buscar mejor calidad puntualmente.
+        """
+        if not self._sync_manager:
+            return []
+        try:
+            likes = self._sync_manager.history.load_likes()
+            descargas = {
+                d["url"]: d for d in self._sync_manager.history.get_all_downloads()
+            }
+            return upgrade_links.candidatos_de_mejor_calidad(likes, descargas)
+        except Exception:
+            logger.exception("Error calculando candidatos de mejor calidad")
+            return []
+
+    def open_external_url(self, url: str) -> dict:
+        """Abre un link en el navegador del sistema (no en la ventana de la app)."""
+        if not url or not url.startswith(("http://", "https://")):
+            return {"ok": False, "error": "URL inválida"}
+        try:
+            import webbrowser
+            webbrowser.open(url)
+            return {"ok": True}
+        except Exception as e:
+            logger.exception("No se pudo abrir el link externo")
+            return {"ok": False, "error": str(e)}
 
     def download_selected_likes(self, urls: list[str]) -> dict:
         """

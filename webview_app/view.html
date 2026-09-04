@@ -432,6 +432,7 @@
         <button class="btn btn-blood" id="btnScSync"><svg class="picon" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M13 20H9V18H13V20ZM19 16H21V18H19V20H17V18H15V16H17V8H19V16ZM9 18H7V16H9V18ZM7 6H9V8H7V16H5V8H3V6H5V4H7V6ZM15 16H13V14H15V16ZM23 16H21V14H23V16ZM3 10H1V8H3V10ZM11 10H9V8H11V10ZM17 8H15V6H17V8ZM15 6H11V4H15V6Z"/></svg>Sincronizar</button>
         <button class="btn btn-ghost" id="btnScLikes"><svg class="picon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M13 22h-2v-2h2v2Zm-2-2H9v-2h2v2Zm4 0h-2v-2h2v2Zm-6-2H7v-2h2v2Zm8 0h-2v-2h2v2ZM7 16H5v-2h2v2Zm12 0h-2v-2h2v2ZM5 14H3v-2h2v2Zm16 0h-2v-2h2v2ZM3 12H1V6h2v6Zm20 0h-2V6h2v6ZM13 8h-2V6h2v2ZM5 6H3V4h2v2Zm6 0H9V4h2v2Zm4 0h-2V4h2v2Zm6 0h-2V4h2v2ZM9 4H5V2h4v2Zm10 0h-4V2h4v2Z"/></svg>Mis Likes</button>
       </div>
+      <button class="btn btn-ghost btn-block" id="btnUpgrades">📀 Mejor calidad disponible</button>
       <button class="btn btn-ghost btn-block" id="btnScConnect"><svg class="picon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h7v2H4zm0 10h7v2H4zM2 8h2v8H2zm18-2h-7v2h7zm0 10h-7v2h7zm2-8h-2v8h2zM7 11h10v2H7z"/></svg>Conectar cuenta</button>
     </div>
 
@@ -525,6 +526,30 @@
     <span class="right ok" id="sbRight">◤ conectando ◢</span>
   </div>
 
+</div>
+
+<!-- ============ Modal: Mejor calidad disponible ============ -->
+<div class="modal-overlay" id="modalUpgrades">
+  <div class="modal pixel-corners-lg" style="max-width: 620px;">
+    <div class="modal-head">
+      <span class="modal-title">Mejor calidad disponible</span>
+      <button class="modal-close" data-close="modalUpgrades">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="hint">
+        Estos temas los tenés bajados desde el stream de SoundCloud, pero
+        el artista dejó un link para conseguir la versión buena (WAV o
+        320 real) a cambio de un follow/like/repost. La app no completa
+        eso por vos — abrí el link, hacé lo que pide, y la próxima sync
+        se lleva la versión mejor sin que hagas nada más.
+      </div>
+      <div class="hint" id="upgradesIntro">Buscando…</div>
+      <div class="log" id="upgradesList" style="max-height:320px"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close="modalUpgrades">Cerrar</button>
+    </div>
+  </div>
 </div>
 
 <!-- ============ Modal: Ordenar por género ============ -->
@@ -1182,6 +1207,46 @@
         closeModal("modalLikes");
       } else {
         setStatus(r.error, "err");
+      }
+    });
+
+    // ---- Mejor calidad disponible ----
+    document.getElementById("btnUpgrades").addEventListener("click", async () => {
+      openModal("modalUpgrades");
+      const intro = document.getElementById("upgradesIntro");
+      const list = document.getElementById("upgradesList");
+      intro.textContent = "Buscando…";
+      list.innerHTML = "";
+
+      const items = await api().get_upgrade_candidates();
+      if (!items.length) {
+        intro.textContent = "Nada por ahora: o no hay gates detectados, o ya bajaste el original de todos.";
+        return;
+      }
+      intro.textContent = `${items.length} canciones tienen una versión mejor disponible:`;
+      for (const it of items) {
+        const row = document.createElement("div");
+        row.className = "hrow";
+        // .hrow es una grilla de 3 columnas (18px 1fr auto): el glifo va
+        // siempre, si no el título cae en la columna angosta y se corta.
+        const glyph = document.createElement("span");
+        glyph.className = "hrow-glyph";
+        glyph.textContent = "📀";
+        const main = document.createElement("div");
+        main.className = "hrow-main";
+        const t = document.createElement("span");
+        t.className = "hrow-title";
+        t.textContent = it.artist ? `${it.artist} — ${it.title}` : it.title;
+        const s = document.createElement("span");
+        s.className = "hrow-sub";
+        s.textContent = `vía ${it.servicio}`;
+        main.append(t, s);
+        const btn = document.createElement("button");
+        btn.className = "mini-btn";
+        btn.textContent = "Abrir";
+        btn.addEventListener("click", () => api().open_external_url(it.purchase_url));
+        row.append(glyph, main, btn);
+        list.appendChild(row);
       }
     });
 

@@ -65,6 +65,8 @@ class DownloadHistory:
                     artwork_url TEXT,
                     genre       TEXT,
                     tags        TEXT,
+                    purchase_url TEXT,
+                    downloadable INTEGER DEFAULT 0,
                     created_at  TEXT,
                     liked_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
@@ -106,6 +108,12 @@ class DownloadHistory:
             if "tags" not in cols:
                 self.conn.execute("ALTER TABLE soundcloud_likes ADD COLUMN tags TEXT")
                 logger.info("Migración: columna 'tags' agregada a soundcloud_likes")
+            if "purchase_url" not in cols:
+                self.conn.execute("ALTER TABLE soundcloud_likes ADD COLUMN purchase_url TEXT")
+                logger.info("Migración: columna 'purchase_url' agregada a soundcloud_likes")
+            if "downloadable" not in cols:
+                self.conn.execute("ALTER TABLE soundcloud_likes ADD COLUMN downloadable INTEGER DEFAULT 0")
+                logger.info("Migración: columna 'downloadable' agregada a soundcloud_likes")
             self.conn.commit()
             logger.info(f"✅ Base de datos inicializada en {self.db_path}")
         except sqlite3.Error as e:
@@ -455,8 +463,9 @@ class DownloadHistory:
                     self.conn.execute(
                         """
                         INSERT OR REPLACE INTO soundcloud_likes
-                        (id, url, title, artist, duration_ms, artwork_url, genre, tags, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (id, url, title, artist, duration_ms, artwork_url, genre, tags,
+                         purchase_url, downloadable, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             track.id,
@@ -467,6 +476,8 @@ class DownloadHistory:
                             track.artwork_url,
                             track.genre,
                             getattr(track, "tags", "") or "",
+                            getattr(track, "purchase_url", "") or "",
+                            1 if getattr(track, "downloadable", False) else 0,
                             track.created_at
                         )
                     )
@@ -489,7 +500,7 @@ class DownloadHistory:
                 cursor = self.conn.execute(
                     """
                     SELECT id, url, title, artist, duration_ms, artwork_url, genre,
-                           tags, created_at
+                           tags, purchase_url, downloadable, created_at
                     FROM soundcloud_likes ORDER BY liked_at DESC
                     """
                 )
@@ -503,7 +514,9 @@ class DownloadHistory:
                         "artwork_url": row[5],
                         "genre": row[6],
                         "tags": row[7] or "",
-                        "created_at": row[8]
+                        "purchase_url": row[8] or "",
+                        "downloadable": bool(row[9]),
+                        "created_at": row[10]
                     }
                     for row in cursor.fetchall()
                 ]
