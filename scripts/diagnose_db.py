@@ -21,12 +21,20 @@ print()
 
 
 def count_table(cursor, table_name: str) -> int | None:
-    """Retorna COUNT(*) de la tabla, o None si no existe todavía."""
-    try:
-        cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-        return cursor.fetchone()[0]
-    except sqlite3.OperationalError:
+    """
+    Retorna COUNT(*) de la tabla, o None si no existe todavía.
+
+    El nombre de tabla no puede ir como parámetro de SQL (solo los valores
+    pueden), así que se valida contra las tablas que realmente existen en
+    la base antes de interpolarlo. Sin esa validación, un nombre arbitrario
+    se concatenaría tal cual en la consulta.
+    """
+    cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    existentes = {fila[0] for fila in cursor.fetchall()}
+    if table_name not in existentes:
         return None
+    cursor.execute(f'SELECT COUNT(*) FROM "{table_name}"')
+    return cursor.fetchone()[0]
 
 
 try:

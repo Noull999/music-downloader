@@ -2,8 +2,10 @@
 Helpers para layouts responsivos en CustomTkinter.
 Permite que la UI se adapte a diferentes tamaños de pantalla.
 """
-import customtkinter as ctk
+import tkinter as tk
 from typing import Tuple
+
+import customtkinter as ctk
 
 
 class ResponsiveLayout:
@@ -129,6 +131,8 @@ class BreakpointListener:
 
             # Próxima verificación
             self.window.after(self._poll_interval, self._schedule_check)
-        except:
-            # Window destruida
+        except tk.TclError:
+            # La ventana ya fue destruida: es la salida normal de este bucle
+            # de polling. Antes era un `except:` desnudo, que además se
+            # tragaba KeyboardInterrupt y SystemExit.
             pass
