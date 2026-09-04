@@ -32,7 +32,7 @@ from models import (
     STATUS_DONE, STATUS_ERROR, STATUS_SKIP, STATUS_CANCELLED,
 )
 from quality.presets import get_preset
-from sync import genre_utils, match_utils, task_scheduler, upgrade_links
+from sync import genre_utils, match_utils, playlist_export, task_scheduler, upgrade_links
 from sync.soundcloud_api import SoundCloudAPIClient
 from sync.sync_manager import SyncManager
 from url_detector import detect_handler, detect_platform_name
@@ -709,6 +709,28 @@ class WebViewAPI:
         except Exception:
             logger.exception("Error obteniendo likes")
             return []
+
+    def export_playlists(self) -> dict:
+        """
+        Exporta cada carpeta de género como una playlist M3U8, en una
+        carpeta "Playlists" dentro de la raíz de la biblioteca. Serato y
+        Rekordbox la importan con File > Import Playlist.
+        """
+        raiz = self.genre_root()
+        if not raiz:
+            return {"ok": False, "error": "No hay carpeta de biblioteca configurada."}
+        destino = os.path.join(raiz, "Playlists")
+        try:
+            resultado = playlist_export.exportar_por_carpeta(
+                raiz, destino, carpetas_excluidas={"playlists"}
+            )
+        except Exception as e:
+            logger.exception("Error exportando playlists")
+            return {"ok": False, "error": str(e)}
+        return {
+            "ok": True, "destino": destino, "playlists": resultado,
+            "total_canciones": sum(p["canciones"] for p in resultado),
+        }
 
     def get_upgrade_candidates(self) -> list[dict]:
         """

@@ -123,6 +123,11 @@ class SyncManager:
         )
         self.oauth_token = oauth_token
         self._fingerprint_index: Optional[audio_fingerprint.LibraryFingerprintIndex] = None
+        # Callback de progreso de la sync en curso, para que el análisis de
+        # huellas (que corre por dentro, sin su propio callback) pueda
+        # avisarle algo a la interfaz en vez de quedarse mudo. Se setea al
+        # entrar a sync_once()/sync_recent() y se limpia al salir.
+        self._progress_callback: Optional[Callable[[int, str], None]] = None
 
         self._stop_event = threading.Event()
         self._is_syncing = False
@@ -199,7 +204,14 @@ class SyncManager:
         if self._fingerprint_index is None:
             self._fingerprint_index = audio_fingerprint.LibraryFingerprintIndex()
             folders = [self.download_folder, *self.library_folders]
-            self._fingerprint_index.build(folders)
+
+            def avisar(hecho, total):
+                if self._progress_callback and total:
+                    self._progress_callback(
+                        15, f"Analizando tu biblioteca por primera vez: {hecho}/{total}…"
+                    )
+
+            self._fingerprint_index.build(folders, on_progress=avisar)
         return self._fingerprint_index
 
     def _fingerprint_precheck(self, track: "SoundCloudTrack") -> Optional[tuple[str, float]]:
@@ -217,6 +229,9 @@ class SyncManager:
         index = self._ensure_fingerprint_index()
         if len(index) == 0:
             return None
+
+        if self._progress_callback:
+            self._progress_callback(20, f"Comprobando duplicados por audio: {track.title}…")
 
         import tempfile
         tmp_dir = tempfile.mkdtemp(prefix="mdl_fp_")
@@ -413,6 +428,7 @@ class SyncManager:
             return {'new': 0, 'skipped': 0, 'tracks': [], 'duplicates': []}
 
         self._is_syncing = True
+        self._progress_callback = progress_callback
         self._stop_event.clear()
 
         results = {
@@ -466,6 +482,7 @@ class SyncManager:
 
         finally:
             self._is_syncing = False
+            self._progress_callback = None
 
     def sync_once(
         self,
@@ -495,6 +512,7 @@ class SyncManager:
             }
 
         self._is_syncing = True
+        self._progress_callback = progress_callback
         self._stop_event.clear()
 
         results = {
@@ -694,6 +712,7 @@ class SyncManager:
 
         finally:
             self._is_syncing = False
+            self._progress_callback = None
             # Los archivos recién bajados deben contar como duplicados en la
             # próxima verificación.
             self.checker.invalidate_index()
@@ -721,6 +740,7 @@ class SyncManager:
                     'tracks': [], 'duplicates': []}
 
         self._is_syncing = True
+        self._progress_callback = progress_callback
         self._stop_event.clear()
 
         results = {
@@ -881,6 +901,7 @@ class SyncManager:
 
         finally:
             self._is_syncing = False
+            self._progress_callback = None
             self.checker.invalidate_index()
 
     def sync_recent(
@@ -906,6 +927,7 @@ class SyncManager:
             }
 
         self._is_syncing = True
+        self._progress_callback = progress_callback
         self._stop_event.clear()
 
         results = {
@@ -992,6 +1014,7 @@ class SyncManager:
 
         finally:
             self._is_syncing = False
+            self._progress_callback = None
 
     def stop(self):
         """Detiene la sincronización en curso."""

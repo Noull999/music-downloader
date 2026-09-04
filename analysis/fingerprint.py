@@ -181,7 +181,14 @@ class LibraryFingerprintIndex:
                 return 0
         return remapeados
 
-    def build(self, folders: Iterable[str]) -> None:
+    def build(self, folders: Iterable[str], on_progress=None) -> None:
+        """
+        on_progress(computado, total): se llama solo cuando de verdad hay
+        que sacarle la huella a un archivo (no en cada hit de caché, para
+        no llamar miles de veces cuando ya está todo calculado). Esta es
+        la parte silenciosa que hacía parecer colgada a la app: sin esto,
+        la interfaz no tenía forma de saber que seguía trabajando.
+        """
         cache = self._load_cache()
         files = []
         for folder in folders:
@@ -194,6 +201,22 @@ class LibraryFingerprintIndex:
                 and p.is_file()
                 and not match_utils.es_basura_del_sistema(p)
             )
+
+        # Para el mensaje de progreso: cuántos hacen falta calcular de
+        # verdad, no el total de archivos (la mayoría suele ya estar en
+        # caché y no tiene sentido contarlos para el "restan X").
+        pendientes = 0
+        for p in files:
+            try:
+                stat = p.stat()
+            except OSError:
+                continue
+            cached = cache.get(str(p))
+            if not (cached and cached.get("mtime") == stat.st_mtime and cached.get("size") == stat.st_size):
+                pendientes += 1
+
+        import time
+        ultimo_aviso = 0.0
 
         new_entries = {}
         computed = 0
@@ -209,6 +232,16 @@ class LibraryFingerprintIndex:
                 continue
             fp = fingerprint_file(key)
             computed += 1
+            # Como mucho cada 0.5s: llamar por cada archivo satura el hilo
+            # de la interfaz de eventos, que es justo lo que hacía ver la
+            # cola "pegada" y actualizándose de golpe en tandas.
+            ahora = time.monotonic()
+            if on_progress and (ahora - ultimo_aviso >= 0.5 or computed == pendientes):
+                ultimo_aviso = ahora
+                try:
+                    on_progress(computed, pendientes)
+                except Exception:
+                    pass
             if fp:
                 new_entries[key] = {"mtime": stat.st_mtime, "size": stat.st_size, "fp": fp}
 

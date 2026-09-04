@@ -659,6 +659,8 @@
           el género genérico. Se reusan las carpetas que ya tengas.
         </div>
         <button class="btn btn-ghost btn-block" id="btnOrganize">📁 Ordenar la música que ya tengo…</button>
+        <button class="btn btn-ghost btn-block" id="btnExportPlaylists">🎧 Exportar playlists (Serato/Rekordbox)</button>
+        <span class="sc-status-line" id="exportPlaylistsStatus"></span>
       </div>
 
       <div class="form-group">
@@ -1322,6 +1324,24 @@
       st.className = "sc-status-line on";
       setStatus(`Biblioteca ordenada: ${r.movidos} canciones`, "ok");
       refreshHistory();
+    });
+
+    document.getElementById("btnExportPlaylists").addEventListener("click", async () => {
+      const btn = document.getElementById("btnExportPlaylists");
+      const st = document.getElementById("exportPlaylistsStatus");
+      btn.disabled = true;
+      st.textContent = "Exportando…";
+      st.className = "sc-status-line";
+      const r = await api().export_playlists();
+      btn.disabled = false;
+      if (!r.ok) {
+        st.textContent = r.error || "Error al exportar";
+        st.className = "sc-status-line err";
+        return;
+      }
+      st.textContent = `${r.playlists.length} playlists (${r.total_canciones} temas) en ${r.destino}`;
+      st.className = "sc-status-line on";
+      setStatus(`Playlists exportadas a ${r.destino}`, "ok");
     });
 
     document.getElementById("btnSaveSettings").addEventListener("click", async () => {
