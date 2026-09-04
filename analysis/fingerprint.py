@@ -82,6 +82,42 @@ def fingerprint_file(path: str, length: int = FP_LENGTH) -> Optional[list[int]]:
     return None
 
 
+def fingerprint_comprimida(path: str, length: int = 120) -> Optional[tuple[int, str]]:
+    """
+    Huella en el formato comprimido (base64) que pide el servicio web de
+    AcoustID — distinto del array de enteros `-raw` que usa el resto de
+    este módulo para deduplicar contra la biblioteca local.
+
+    Returns: (duración_en_segundos, huella) o None.
+    """
+    try:
+        fpcalc = _fpcalc_path()
+    except FileNotFoundError as e:
+        logger.warning(str(e))
+        return None
+    try:
+        out = subprocess.run(
+            [fpcalc, "-length", str(length), path],
+            capture_output=True, text=True, timeout=60,
+            creationflags=NO_WINDOW,
+        )
+    except Exception as e:
+        logger.warning("fpcalc falló en %s: %s", path, e)
+        return None
+    duracion = huella = None
+    for line in out.stdout.splitlines():
+        if line.startswith("DURATION="):
+            try:
+                duracion = int(float(line[len("DURATION="):]))
+            except ValueError:
+                pass
+        elif line.startswith("FINGERPRINT="):
+            huella = line[len("FINGERPRINT="):].strip()
+    if duracion is None or not huella:
+        return None
+    return duracion, huella
+
+
 # Bits en 1 de cada byte posible: convierte contar bits en una búsqueda de
 # tabla vectorizada, en vez de un bin().count("1") por entero.
 _POPCOUNT = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint8)

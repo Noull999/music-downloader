@@ -38,6 +38,9 @@ class ConfigManager:
         "embed_artwork": True,
         "embed_metadata": True,
         "oauth_token": "",
+        # Key gratuita de https://acoustid.org/api-key, para identificar
+        # canciones con tags rotos/vacíos por su huella de audio.
+        "acoustid_api_key": "",
         "delay": 0.5,
         "log_level": "INFO",
         "theme": "dark",

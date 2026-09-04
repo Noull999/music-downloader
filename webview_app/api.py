@@ -23,6 +23,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
+from analysis import acoustid_lookup
 from analysis import fingerprint as audio_fingerprint
 from download_manager import DownloadManager
 from gui.ui_controller import UIController
@@ -36,6 +37,7 @@ from sync import genre_utils, match_utils, playlist_export, task_scheduler, upgr
 from sync.soundcloud_api import SoundCloudAPIClient
 from sync.sync_manager import SyncManager
 from url_detector import detect_handler, detect_platform_name
+from utils import disk_usage
 from utils.validators import parse_urls_from_text
 
 _AUDIO_EXTENSIONS = match_utils.AUDIO_EXTENSIONS
@@ -86,6 +88,12 @@ class WebViewAPI:
         # que gui/sync_window.py). None hasta la primera verificación OK.
         self._sync_manager: Optional[SyncManager] = None
         self._sc_user_info: Optional[dict] = None
+
+        # Cache del tamaño en disco (ver get_stats): recorrer la carpeta
+        # de biblioteca en cada refresh sería barato una vez, pero se
+        # llama tras cada descarga terminada y durante una sync eso es
+        # muchas veces seguidas.
+        self._disk_size_cache: Optional[tuple[float, int]] = None
 
     def attach_window(self, window) -> None:
         self._window = window
@@ -384,7 +392,27 @@ class WebViewAPI:
         return items[:limit]
 
     def get_stats(self) -> dict:
-        return self.controller.get_stats()
+        """
+        total_downloads sale del historial (siempre correcto). total_size_bytes
+        se recalcula recorriendo la carpeta de biblioteca en disco, en vez de
+        sumar la columna file_size del historial: esa columna queda vieja en
+        cuanto una canción se mueve o renombra (organizar por género, o el
+        historial migrado desde otra carpeta/máquina), así que sumarla
+        subestima el tamaño real. Cacheado 30s porque esto se llama después
+        de cada descarga terminada.
+        """
+        stats = self.controller.get_stats()
+        stats["total_size_bytes"] = self._disco_usado_bytes()
+        return stats
+
+    def _disco_usado_bytes(self) -> int:
+        import time
+        now = time.monotonic()
+        if self._disk_size_cache and now - self._disk_size_cache[0] < 30:
+            return self._disk_size_cache[1]
+        total = disk_usage.audio_bytes_in(self.genre_root())
+        self._disk_size_cache = (now, total)
+        return total
 
     def import_soundcloud_likes(self) -> dict:
         return self.controller.import_soundcloud_likes()
@@ -709,6 +737,66 @@ class WebViewAPI:
         except Exception:
             logger.exception("Error obteniendo likes")
             return []
+
+    def preview_missing_tags(self) -> dict:
+        """
+        Archivos de la biblioteca sin título o sin artista, candidatos a
+        completar con AcoustID. Solo cuenta y muestra: no consulta el
+        servicio todavía (eso es lento, una request por archivo).
+        """
+        raiz = self.genre_root()
+        api_key = self.controller.get_config_value("acoustid_api_key", "")
+        if not raiz:
+            return {"ok": False, "error": "No hay carpeta de biblioteca configurada."}
+        try:
+            faltantes = acoustid_lookup.archivos_con_tags_vacios([raiz])
+        except Exception as e:
+            logger.exception("Error buscando archivos con tags vacíos")
+            return {"ok": False, "error": str(e)}
+        return {
+            "ok": True,
+            "total": len(faltantes),
+            "tiene_api_key": bool(api_key),
+            "archivos": [str(p) for p in faltantes[:200]],
+        }
+
+    def fix_missing_tags(self) -> dict:
+        """
+        Consulta AcoustID para cada archivo sin título/artista y completa
+        SOLO los campos vacíos (nunca pisa un tag que ya existe). Corre
+        secuencial: una request HTTP por archivo, no tiene sentido
+        paralelizarlo contra un servicio gratuito compartido.
+        """
+        raiz = self.genre_root()
+        api_key = self.controller.get_config_value("acoustid_api_key", "")
+        if not api_key:
+            return {"ok": False, "error": "Falta configurar la API key de AcoustID."}
+        if not raiz:
+            return {"ok": False, "error": "No hay carpeta de biblioteca configurada."}
+
+        try:
+            faltantes = acoustid_lookup.archivos_con_tags_vacios([raiz])
+        except Exception as e:
+            logger.exception("Error buscando archivos con tags vacíos")
+            return {"ok": False, "error": str(e)}
+
+        completados, sin_match, errores = 0, 0, 0
+        for path in faltantes:
+            try:
+                resultado = acoustid_lookup.identificar(str(path), api_key)
+                if resultado and acoustid_lookup.aplicar_tags(str(path), resultado):
+                    completados += 1
+                else:
+                    sin_match += 1
+            except Exception:
+                logger.exception("Error identificando %s", path)
+                errores += 1
+
+        return {
+            "ok": True, "completados": completados,
+            "sin_match": sin_match, "errores": errores,
+            "total": len(faltantes),
+        }
 
     def export_playlists(self) -> dict:
         """

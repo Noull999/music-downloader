@@ -70,6 +70,15 @@ class UIController:
             # Usar local_path del track si existe, si no usar el track.url como fallback
             local_path = getattr(track, 'local_path', '')
 
+            # file_size nunca se pasaba acá, así que "En disco" quedaba
+            # siempre en 0 pese a tener miles de canciones descargadas.
+            file_size = 0
+            if local_path:
+                try:
+                    file_size = os.path.getsize(local_path)
+                except OSError:
+                    logger.debug(f"No se pudo leer tamaño de {local_path}")
+
             logger.debug(f"Registrando descarga: {track.title} (url: {track.url[:50]}...)")
 
             self.history.add_download(
@@ -79,6 +88,7 @@ class UIController:
                 album=track.album,
                 platform=track.platform,
                 local_path=local_path,
+                file_size=file_size,
                 duration=getattr(track, 'duration', 0),
             )
             logger.info(f"✓ Descarga registrada: {track.title}")
