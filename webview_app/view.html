@@ -909,7 +909,15 @@
       const sub = document.createElement("span");
       sub.className = "hrow-sub";
       const sourceLabel = it.source === "sync" ? "sync" : "manual";
-      sub.textContent = `${it.platform || "?"} · ${sourceLabel}`;
+      // Carpeta donde quedó el archivo, para no tener que ir a buscarla en
+      // el explorador: el nombre de la carpeta contenedora, o "sin carpeta"
+      // si el patrón de nombre no usa subcarpetas.
+      let carpeta = "";
+      if (it.local_path) {
+        const partes = it.local_path.replace(/\\/g, "/").split("/");
+        carpeta = partes.length > 1 ? partes[partes.length - 2] : "";
+      }
+      sub.textContent = `${it.platform || "?"} · ${sourceLabel}` + (carpeta ? ` · ${carpeta}` : "");
       main.append(title, sub);
       const date = document.createElement("span");
       date.className = "hrow-sub";

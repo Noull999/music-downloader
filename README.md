@@ -156,6 +156,10 @@ Desde el panel de Configuración de la app:
 ### Windows bloquea el .exe (Smart App Control)
 - `scripts/build.py` firma el .exe automáticamente con un certificado local. Si igual lo bloquea, revisá que el certificado quedó agregado a los almacenes `CurrentUser\Root` y `CurrentUser\TrustedPublisher`.
 
+### La primera sync tarda muchísimo (varios minutos, sin avisar nada)
+- Es la construcción inicial del índice de huellas de audio (`analysis/fingerprint.py`), que le saca la huella a toda tu biblioteca la primera vez. Un antivirus con protección en tiempo real puede escanear cada apertura de `fpcalc.exe` y volverlo bastante más lento que corrido fuera del .exe — es esperable solo la primera vez; después queda cacheado (`~/.music_downloader/fingerprint_index.json`) y solo recalcula lo nuevo o cambiado.
+- Reorganizar la biblioteca por género (o cualquier operación que MUEVA archivos existentes) actualiza ese caché en vez de borrarlo — remapea las rutas sin recalcular nada, porque el contenido del audio no cambió.
+
 ## 📊 Base de datos
 
 El historial se guarda en `~/.music_downloader/history.db` (SQLite), con tablas separadas para descargas manuales, descargas por sync, likes guardados (incluidos sus tags, para resolver el subgénero) y fallos permanentes (DRM/geo-bloqueo).

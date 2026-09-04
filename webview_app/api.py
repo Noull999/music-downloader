@@ -23,6 +23,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
+from analysis import fingerprint as audio_fingerprint
 from download_manager import DownloadManager
 from gui.ui_controller import UIController
 from handlers.soundcloud_handler import SoundCloudHandler
@@ -1009,14 +1010,15 @@ class WebViewAPI:
         except Exception:
             logger.exception("No se pudieron actualizar las rutas en la BD")
 
-        cache = Path.home() / ".music_downloader" / "fingerprint_index.json"
         try:
-            if cache.exists():
-                cache.unlink()
+            pares = [(m["de"], m["a"]) for m in movimientos]
+            n = audio_fingerprint.LibraryFingerprintIndex.remap_paths(pares)
+            logger.info("Índice de huellas: %d rutas remapeadas (sin recalcular)", n)
         except Exception:
-            logger.exception("No se pudo invalidar el índice de huellas")
+            logger.exception("No se pudo remapear el índice de huellas")
         if self._sync_manager:
             self._sync_manager.checker.invalidate_index()
+            self._sync_manager._fingerprint_index = None  # fuerza releer el JSON ya remapeado
 
     def get_default_scan_folder(self) -> str:
         """Carpeta padre de dest_folder (p. ej. D:\\Musik si dest_folder es D:\\Musik\\prueba)."""

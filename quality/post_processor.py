@@ -13,6 +13,7 @@ from typing import Optional
 
 from utils.exceptions import DependencyNotFoundError, DownloadError
 from utils.dependencies import FFmpegValidator
+from utils.subprocess_utils import NO_WINDOW
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,7 @@ class PostProcessor:
                 capture_output=True,
                 timeout=120,
                 text=False,
+                creationflags=NO_WINDOW,
             )
 
             if result.returncode == 0 and os.path.exists(temp_file):

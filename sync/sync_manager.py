@@ -592,7 +592,13 @@ class SyncManager:
                         )
                         results['skipped'] += 1
                         results['duplicates'].append((track, reason))
-                        self._emit_track("done", track, reason)
+                        # El "detail" de un evento "done" es la ruta del
+                        # archivo en los otros 3 lugares que lo emiten (ver
+                        # WebViewAPI._on_sync_track_event, que lo guarda tal
+                        # cual en local_path). Pasar `reason` acá rompía esa
+                        # convención: el panel de descargas terminaba
+                        # mostrando la frase entera donde debía ir una ruta.
+                        self._emit_track("done", track, local_path)
                         continue
 
                 self._emit_track("start", track)

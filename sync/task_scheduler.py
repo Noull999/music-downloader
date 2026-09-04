@@ -14,6 +14,8 @@ import logging
 import os
 import subprocess
 import sys
+
+from utils.subprocess_utils import NO_WINDOW
 from pathlib import Path
 
 from config.manager import DEFAULT_CONFIG_PATH
@@ -70,7 +72,7 @@ def _allow_battery(task_name: str = TASK_NAME) -> bool:
     )
     result = subprocess.run(
         ["powershell", "-NoProfile", "-Command", ps],
-        capture_output=True, text=True,
+        capture_output=True, text=True, creationflags=NO_WINDOW,
     )
     return result.returncode == 0
 
@@ -98,7 +100,7 @@ def register(interval_minutes: int, config_path: str = None) -> tuple[bool, str]
     result = subprocess.run(
         ["schtasks", "/create", "/tn", TASK_NAME, "/tr", command,
          "/sc", sc, "/mo", mo, "/f"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, creationflags=NO_WINDOW,
     )
     ok = result.returncode == 0
     msg = result.stdout.strip() if ok else (result.stderr.strip() or result.stdout.strip())
@@ -116,7 +118,7 @@ def register(interval_minutes: int, config_path: str = None) -> tuple[bool, str]
 def remove() -> tuple[bool, str]:
     result = subprocess.run(
         ["schtasks", "/delete", "/tn", TASK_NAME, "/f"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, creationflags=NO_WINDOW,
     )
     ok = result.returncode == 0
     return ok, (result.stdout.strip() if ok else result.stderr.strip())
@@ -125,7 +127,7 @@ def remove() -> tuple[bool, str]:
 def status() -> tuple[bool, str]:
     result = subprocess.run(
         ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, creationflags=NO_WINDOW,
     )
     ok = result.returncode == 0
     return ok, (result.stdout.strip() if ok else "No configurada")
