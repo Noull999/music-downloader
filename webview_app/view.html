@@ -105,9 +105,13 @@
     text-transform: uppercase;
     padding: 10px 16px;
     border: 2px solid;
-    border-radius: 999px; /* píldora, no esquinas en punta: los paneles y
-      modales siguen con el corte pixel, solo los botones pasan a este
-      estilo neón redondeado */
+    clip-path: polygon(
+      0 8px, 4px 8px, 4px 4px, 8px 4px, 8px 0,
+      calc(100% - 8px) 0, calc(100% - 8px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 8px, 100% 8px,
+      100% calc(100% - 8px), calc(100% - 4px) calc(100% - 8px), calc(100% - 4px) calc(100% - 4px), calc(100% - 8px) calc(100% - 4px), calc(100% - 8px) 100%,
+      8px 100%, 8px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 8px), 0 calc(100% - 8px)
+    ); /* mismo corte escalonado que .pixel-corners, para que los botones
+      vuelvan a hacer juego con paneles y modales en vez del estilo píldora */
     cursor: pointer;
     transition: box-shadow 150ms ease, transform 100ms ease, background 150ms ease, border-color 150ms ease;
   }
@@ -266,7 +270,13 @@
   .task-actions { display: flex; gap: 6px; flex: none; }
   .mini-btn {
     font-family: var(--f-label); font-size: 8px; letter-spacing: .08em; text-transform: uppercase;
-    padding: 4px 10px; border: 2px solid var(--iron-hi); border-radius: 999px;
+    padding: 4px 10px; border: 2px solid var(--iron-hi);
+    clip-path: polygon(
+      0 3px, 3px 3px, 3px 0,
+      calc(100% - 3px) 0, calc(100% - 3px) 3px, 100% 3px,
+      100% calc(100% - 3px), calc(100% - 3px) calc(100% - 3px), calc(100% - 3px) 100%,
+      3px 100%, 3px calc(100% - 3px), 0 calc(100% - 3px)
+    );
     background: var(--iron); color: var(--bone-dim); cursor: pointer;
     transition: box-shadow 150ms ease, color 150ms ease, border-color 150ms ease;
   }
@@ -338,7 +348,12 @@
   .modal-title { font-family: var(--f-display); font-size: 16px; font-weight: 700; color: var(--bone); }
   .modal-close {
     margin-left: auto; background: transparent; border: 2px solid var(--iron-hi); color: var(--bone-dim);
-    border-radius: 999px;
+    clip-path: polygon(
+      0 4px, 4px 4px, 4px 0,
+      calc(100% - 4px) 0, calc(100% - 4px) 4px, 100% 4px,
+      100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px), calc(100% - 4px) 100%,
+      4px 100%, 4px calc(100% - 4px), 0 calc(100% - 4px)
+    );
     font-family: var(--f-label); font-size: 12px; width: 26px; height: 26px; cursor: pointer;
     transition: box-shadow 150ms ease, color 150ms ease, border-color 150ms ease;
   }
