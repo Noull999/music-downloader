@@ -199,6 +199,16 @@ def resolve_genre(genre: Optional[str], tag_list=None, title: Optional[str] = No
     return None
 
 
+def carpeta_segura(nombre: Optional[str], fallback: str = "Sin género") -> str:
+    """
+    Convierte un género en un nombre de carpeta válido. Sin esto, un
+    género con barra ("Hip Hop/Rap", que aparece tal cual en SoundCloud)
+    crearía directorios anidados en vez de una sola carpeta.
+    """
+    safe = re.sub(r'[\\/:*?"<>|]', "_", nombre or fallback).strip(". ")
+    return safe or fallback
+
+
 def genre_folder(
     genre: Optional[str],
     tag_list=None,
@@ -209,6 +219,4 @@ def genre_folder(
     Nombre de carpeta para el subgénero resuelto, seguro para el sistema de
     archivos. `fallback` se usa cuando el track no tiene ninguna información.
     """
-    resolved = resolve_genre(genre, tag_list, title) or fallback
-    safe = re.sub(r'[\\/:*?"<>|]', "_", resolved).strip(". ")
-    return safe or fallback
+    return carpeta_segura(resolve_genre(genre, tag_list, title), fallback)

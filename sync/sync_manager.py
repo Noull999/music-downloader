@@ -12,7 +12,7 @@ from typing import Callable, Optional
 
 from .soundcloud_api import SoundCloudAPIClient, SoundCloudTrack
 from .duplicate_checker import DuplicateChecker
-from . import genre_utils, match_utils
+from . import artist_genre, genre_utils, match_utils
 from analysis import fingerprint as audio_fingerprint
 from db.history import DownloadHistory
 from notifications.notifier import Notifier
@@ -113,6 +113,11 @@ class SyncManager:
         self.post_options = dict(post_options or {})
         self.subfolder_by_genre = subfolder_by_genre
         self.library_folders = list(library_folders or [])
+        # Último recurso cuando el track viene sin genre ni tags: preguntar
+        # por el artista real. Se resuelve una vez por track y se recuerda,
+        # porque carpeta y tag de género lo piden por separado.
+        self._artist_genre = artist_genre.ArtistGenreResolver(self._buscar_tracks_de)
+        self._genero_cache: dict[str, Optional[str]] = {}
         # Raíz de las carpetas de género: la biblioteca configurada si la
         # hay (así caen junto a la música ya ordenada), y si no la carpeta
         # de descarga misma. Antes se usaba la carpeta PADRE del destino,
@@ -270,6 +275,38 @@ class SyncManager:
             pass
         return nombre
 
+    def _buscar_tracks_de(self, artista: str) -> list[dict]:
+        """Tracks de un artista en SoundCloud (para el género por artista)."""
+        r = self.api.session.get(
+            f"{self.api.BASE_URL}/search/tracks",
+            params={"q": artista, "client_id": self.api.client_id, "limit": 20},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return []
+        return r.json().get("collection", [])
+
+    def _genero_de(self, track) -> Optional[str]:
+        """
+        Género del track: primero tags/título (offline), y si no hay nada,
+        el artista real en SoundCloud. Cacheado por track porque la carpeta
+        de destino y el tag que se embebe lo piden por separado.
+        """
+        clave = getattr(track, "url", None) or getattr(track, "title", "") or ""
+        if clave in self._genero_cache:
+            return self._genero_cache[clave]
+
+        genero = genre_utils.resolve_genre(
+            getattr(track, "genre", None),
+            getattr(track, "tags", None),
+            getattr(track, "title", None),
+        )
+        if not genero:
+            genero = self._artist_genre.resolver(getattr(track, "title", None))
+
+        self._genero_cache[clave] = genero
+        return genero
+
     def _build_output_path(self, artist: str, title: str, track=None) -> str:
         """
         Construye el output_path con patrón de nombre, artista y género.
@@ -284,11 +321,7 @@ class SyncManager:
 
         folder = self.download_folder
         if self.subfolder_by_genre and track is not None:
-            nombre = genre_utils.genre_folder(
-                getattr(track, "genre", None),
-                getattr(track, "tags", None),
-                getattr(track, "title", None),
-            )
+            nombre = genre_utils.carpeta_segura(self._genero_de(track))
             folder = os.path.join(self.genre_root or self.download_folder,
                                   self._carpeta_existente(nombre))
         elif self.subfolder_by_artist:
@@ -318,11 +351,7 @@ class SyncManager:
             })
             # El género que se escribe es el RESUELTO (Schranz), no el crudo
             # de SoundCloud (Techno): ver sync/genre_utils.py.
-            genero = genre_utils.resolve_genre(
-                getattr(track, "genre", None),
-                getattr(track, "tags", None),
-                getattr(track, "title", None),
-            )
+            genero = self._genero_de(track)
             pp.process(file_path, {"title": track.title, "artist": track.artist,
                                    "album": "", "year": "", "genre": genero or ""},
                        track.artwork_url or "")
