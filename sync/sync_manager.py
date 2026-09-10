@@ -645,7 +645,12 @@ class SyncManager:
                         # cual en local_path). Pasar `reason` acá rompía esa
                         # convención: el panel de descargas terminaba
                         # mostrando la frase entera donde debía ir una ruta.
-                        self._emit_track("done", track, local_path)
+                        #
+                        # Evento propio y no "done": esta canción NO se
+                        # descargó, ya estaba en la biblioteca (quizás hace
+                        # meses). Se ve igual que un "done" en la cola, pero
+                        # no entra a "Últimas descargas" con fecha de hoy.
+                        self._emit_track("already_had", track, local_path)
                         continue
 
                 self._emit_track("start", track)

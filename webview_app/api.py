@@ -619,11 +619,14 @@ class WebViewAPI:
             status = {
                 "start": STATUS_DOWNLOADING,
                 "done": STATUS_DONE,
+                # Ya la tenías: en la cola se ve igual que una terminada,
+                # pero no cuenta como descarga nueva (ver más abajo).
+                "already_had": STATUS_DONE,
                 "error": STATUS_ERROR,
                 "cancelled": STATUS_CANCELLED,
             }.get(event, STATUS_PENDING)
             info.status = status
-            if event == "done":
+            if event in ("done", "already_had"):
                 info.progress = 1.0
                 info.local_path = detail or ""
             elif event == "error":
@@ -643,6 +646,10 @@ class WebViewAPI:
         # (downloads, vía record_download). Sin esto, lo que baja la sync
         # -la mayoría de las canciones- nunca aparecía ahí: medido en la
         # base real, 1367 de 1778 descargas de sync no estaban registradas.
+        #
+        # Solo "done", nunca "already_had": esa segunda es una canción que
+        # ya estaba en la biblioteca y la sync se saltó, así que meterla acá
+        # llenaría "Últimas descargas" de temas viejos con fecha de hoy.
         if event == "done" and detail:
             try:
                 self.controller.record_download(info)

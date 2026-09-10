@@ -48,6 +48,20 @@ class TestOnSyncTrackEvent(unittest.TestCase):
         assert registrado.local_path == "D:/Musik/Techno/Tema.mp3"
         assert registrado.duration == 185  # duration_ms -> segundos
 
+    def test_duplicado_ya_en_biblioteca_no_cuenta_como_descarga(self):
+        # La sync encontró el tema por huella de audio y NO lo descargó: el
+        # archivo ya estaba (quizás de hace meses). Debe verse terminado en
+        # la cola, pero no entrar a "Últimas descargas" con fecha de hoy.
+        api = _api_sin_init()
+        track = _track_de_sync()
+
+        api._on_sync_track_event("already_had", track, "D:/Musik/Techno/Viejo.mp3")
+
+        api.controller.record_download.assert_not_called()
+        info = api._tracks[track.url]
+        assert info.status == "done", "en la cola se ve igual que una terminada"
+        assert info.local_path == "D:/Musik/Techno/Viejo.mp3"
+
     def test_error_no_registra_nada(self):
         api = _api_sin_init()
         api._on_sync_track_event("start", _track_de_sync())
