@@ -8,9 +8,11 @@ CustomTkinter, misma lógica de negocio (UIController, DownloadManager).
 Requiere: pip install pywebview
 """
 import io
+import logging
 import os
 import shutil
 import sys
+import threading
 from pathlib import Path
 
 # Empaquetado con console=False, stdout/stderr pueden ser None o tener
@@ -74,6 +76,27 @@ def validate_startup() -> bool:
         return False
 
 
+def _limpiar_cache_de_imagenes() -> None:
+    """
+    Borra las carátulas cacheadas ya vencidas, en background.
+
+    ImageCacheManager tenía el método pero nadie lo llamaba nunca: las
+    entradas vencidas dejaban de leerse pero seguían ocupando lugar para
+    siempre (los bytes de la imagen viven en la misma tabla). Va en un
+    hilo aparte para no demorar el arranque de la ventana.
+    """
+    def tarea():
+        try:
+            from utils.image_cache import ImageCacheManager
+            ImageCacheManager().cleanup_expired()
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "No se pudo limpiar el caché de imágenes (no es crítico)"
+            )
+
+    threading.Thread(target=tarea, daemon=True).start()
+
+
 def main():
     # Modo sin interfaz para la tarea programada. Permite que el .exe corra
     # la sincronización por sí mismo, sin depender de la carpeta del
@@ -111,6 +134,7 @@ def main():
     from webview_app.api import WebViewAPI
 
     api = WebViewAPI(base_dir=_BASE, config_path=_CONFIG_PATH)
+    _limpiar_cache_de_imagenes()
 
     window = webview.create_window(
         "Music Downloader",
