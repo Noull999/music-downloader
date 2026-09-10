@@ -267,10 +267,12 @@ class YouTubeHandler(BaseHandler):
                 "preferredcodec": convert_to,
                 "preferredquality": quality_preset.get("bitrate", "0"),
             })
-        postprocessors += [
-            {"key": "FFmpegMetadata", "add_metadata": True},
-            {"key": "EmbedThumbnail"},
-        ]
+        # La carátula se embebe por PostProcessor (mutagen) para mayor
+        # confiabilidad, igual que SoundCloud: EmbedThumbnail de yt-dlp deja
+        # archivos .jpg sueltos cuando falla, y de paso duplicaba trabajo
+        # (se bajaba y embebía acá, y post_processor.py la vuelve a bajar y
+        # embeber después).
+        postprocessors.append({"key": "FFmpegMetadata", "add_metadata": True})
 
         ydl_opts: dict = {
             "format": yt_format,

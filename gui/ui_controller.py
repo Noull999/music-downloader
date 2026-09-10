@@ -85,8 +85,12 @@ class UIController:
                 url=track.url,
                 title=track.title,
                 artist=track.artist,
-                album=track.album,
-                platform=track.platform,
+                # getattr en todos los campos que no sean url/title/artist:
+                # el track de la sync (SoundCloudTrack) no tiene album ni
+                # platform, y un AttributeError acá tira abajo el registro
+                # de la descarga (silenciosamente, por el except de abajo).
+                album=getattr(track, 'album', '') or '',
+                platform=getattr(track, 'platform', '') or '',
                 local_path=local_path,
                 file_size=file_size,
                 duration=getattr(track, 'duration', 0),

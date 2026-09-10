@@ -13,7 +13,6 @@ from typing import Callable, Optional
 from handlers.base_handler import BaseHandler
 from models import TrackInfo, STATUS_DOWNLOADING, STATUS_DONE, STATUS_ERROR, STATUS_SKIP, STATUS_CANCELLED
 from quality.post_processor import PostProcessor
-from utils.parallel_downloader import ParallelImageDownloader
 
 logger = logging.getLogger(__name__)
 
@@ -222,24 +221,6 @@ class DownloadManager:
                 on_status(STATUS_DOWNLOADING, "")
             except Exception:
                 pass
-
-            # 🔄 Iniciar descarga de imagen en PARALELO (no bloquea descarga de audio)
-            image_downloader: Optional[ParallelImageDownloader] = None
-            if track.thumbnail_url and post_config.get("embed_artwork", False):
-                try:
-                    image_downloader = ParallelImageDownloader(timeout=3.0, max_retries=1)
-                    image_downloader.download_async(track.thumbnail_url)
-                    logger.debug("📸 Descarga de imagen iniciada en paralelo")
-                except Exception as img_exc:
-                    logger.debug(f"No se pudo iniciar descarga de imagen: {img_exc}")
-                    image_downloader = None
-
-            # 🔄 Iniciar descarga de imagen en PARALELO (no bloquea descarga de audio)
-            image_downloader: Optional[ParallelImageDownloader] = None
-            if track.thumbnail_url and post_config.get("embed_artwork", True):
-                image_downloader = ParallelImageDownloader(timeout=5.0)
-                image_downloader.download_async(track.thumbnail_url)
-                logger.debug("📸 Descarga de imagen iniciada en paralelo")
 
             def cancel_check() -> bool:
                 return cancel_event.is_set()

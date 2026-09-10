@@ -602,10 +602,12 @@ class WebViewAPI:
         with self._lock:
             info = self._tracks.get(url)
             if info is None:
+                duration_ms = getattr(track, "duration_ms", 0) or 0
                 info = TrackInfo(
                     url=url,
                     title=getattr(track, "title", "") or url,
                     artist=getattr(track, "artist", "") or "",
+                    duration=duration_ms // 1000,
                     platform="soundcloud",
                     thumbnail_url=getattr(track, "artwork_url", "") or "",
                 )
@@ -635,6 +637,17 @@ class WebViewAPI:
             "error_msg": detail if event == "error" else "",
             "emoji": _STATUS_EMOJI.get(status, "•"),
         })
+
+        # La sync tiene su PROPIO historial (sync_downloads, solo para no
+        # re-descargar) separado del que lee "Últimas descargas"
+        # (downloads, vía record_download). Sin esto, lo que baja la sync
+        # -la mayoría de las canciones- nunca aparecía ahí: medido en la
+        # base real, 1367 de 1778 descargas de sync no estaban registradas.
+        if event == "done" and detail:
+            try:
+                self.controller.record_download(info)
+            except Exception:
+                logger.exception("Error registrando descarga de sync en el historial: %s", url)
 
     def start_sync(self, mode: str = "full", count: int = 10) -> dict:
         """
