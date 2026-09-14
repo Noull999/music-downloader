@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Music Downloader</title>
+<meta name="description" content="Descargador de música de SoundCloud y YouTube con sincronización automática de likes, detección de duplicados por audio real y análisis de BPM/tonalidad para DJs." />
+<meta name="google-site-verification" content="dA4qMejWY-fvafVIw66flPyEiS4qkPz8gEJav4LxnjI" />
+
+<meta property="og:title" content="Music Downloader" />
+<meta property="og:description" content="Descargador de música de SoundCloud y YouTube con sync de likes, detección de duplicados por audio real y BPM/tonalidad para DJs." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://noull999.github.io/music-downloader/" />
+<meta property="og:image" content="https://noull999.github.io/music-downloader/screenshot.png" />
+<meta name="twitter:card" content="summary_large_image" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=Silkscreen:wght@400;700&family=JetBrains+Mono:wght@400;500;700&display=swap" />
+
+<style>
+  :root {
+    --void:     #060507;
+    --ash:      #121016;
+    --iron:     #1e1b24;
+    --iron-hi:  #2a2531;
+    --bone:     #cfc6bd;
+    --bone-dim: #8d8580;
+    --smoke:    #6e6672;
+    --blood:    #a51218;
+    --blood-lo: #5e0b0f;
+    --ember:    #e8452c;
+    --amber:    #c9922e;
+    --venom:    #4f7a52;
+
+    --f-display: "Pixelify Sans", "Courier New", monospace;
+    --f-label:   "Silkscreen", "Courier New", monospace;
+    --f-mono:    "JetBrains Mono", ui-monospace, "Courier New", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--void);
+    color: var(--bone);
+    font-family: var(--f-mono);
+    font-size: 15px;
+    line-height: 1.6;
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(165,18,24,0.16), transparent 40%),
+      radial-gradient(circle at 88% 92%, rgba(232,69,44,0.10), transparent 45%);
+  }
+  a { color: var(--ember); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  img { max-width: 100%; display: block; }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    border-bottom: 1px solid var(--iron-hi);
+    padding: 18px 0;
+  }
+  .topbar .wrap { display: flex; align-items: center; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-dot { width: 9px; height: 9px; background: var(--ember); border-radius: 1px; box-shadow: 0 0 8px var(--ember); }
+  .brand-name { font-family: var(--f-label); font-size: 13px; letter-spacing: 0.08em; color: var(--bone); }
+  .topbar nav a {
+    font-family: var(--f-label); font-size: 11px; letter-spacing: 0.05em; color: var(--bone-dim);
+    margin-left: 22px;
+  }
+  .topbar nav a:hover { color: var(--ember); text-decoration: none; }
+
+  /* ---------- Hero ---------- */
+  .hero { padding: 76px 0 40px; text-align: center; }
+  .hero-tag {
+    font-family: var(--f-label); font-size: 11px; letter-spacing: 0.18em; color: var(--bone-dim);
+    border: 1px solid var(--iron-hi); border-left: 3px solid var(--blood);
+    display: inline-block; padding: 6px 14px; margin-bottom: 26px;
+  }
+  .hero-tag b { color: var(--venom); }
+  h1.title {
+    font-family: var(--f-display); font-weight: 700; font-size: clamp(38px, 7vw, 68px);
+    letter-spacing: 0.02em; margin: 0 0 14px; color: var(--bone); line-height: 1.05;
+    text-shadow: 0 0 24px rgba(232,69,44,0.25);
+  }
+  h1.title span { color: var(--ember); }
+  .subtitle { font-size: 17px; color: var(--bone-dim); max-width: 620px; margin: 0 auto 32px; }
+  .cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    font-family: var(--f-label); font-size: 12px; letter-spacing: 0.05em; padding: 13px 24px;
+    border: 2px solid var(--iron-hi); background: transparent; color: var(--bone); cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  .btn:hover { text-decoration: none; }
+  .btn-primary { border-color: var(--blood); color: var(--bone); }
+  .btn-primary:hover { border-color: var(--ember); background: rgba(232,69,44,0.08); color: var(--ember); }
+  .btn-ghost:hover { border-color: var(--smoke); color: var(--bone); }
+
+  .badges { display: flex; gap: 8px; justify-content: center; margin-top: 22px; flex-wrap: wrap; }
+  .badges img { height: 20px; }
+
+  /* ---------- Screenshot ---------- */
+  .shot-frame {
+    margin: 52px auto 0; max-width: 900px;
+    border: 2px solid var(--iron-hi); border-top: 4px solid var(--blood);
+    box-shadow: 0 30px 60px -20px rgba(0,0,0,0.6);
+  }
+  .shot-frame img { width: 100%; }
+
+  /* ---------- Section heading ---------- */
+  .sec { padding: 80px 0; border-top: 1px solid var(--iron); }
+  .sec-label {
+    font-family: var(--f-label); font-size: 11px; letter-spacing: 0.15em; color: var(--blood);
+    margin-bottom: 10px;
+  }
+  .sec h2 { font-family: var(--f-display); font-size: clamp(26px, 4vw, 36px); margin: 0 0 40px; color: var(--bone); }
+
+  /* ---------- Features grid ---------- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1px; background: var(--iron); }
+  .card { background: var(--ash); padding: 28px 24px; min-width: 0; }
+  .card-dot { width: 8px; height: 8px; margin-bottom: 16px; }
+  .card.c1 .card-dot { background: var(--blood); }
+  .card.c2 .card-dot { background: var(--ember); }
+  .card.c3 .card-dot { background: var(--amber); }
+  .card.c4 .card-dot { background: var(--venom); }
+  .card.c5 .card-dot { background: var(--smoke); }
+  .card.c6 .card-dot { background: var(--bone-dim); }
+  .card h3 { font-family: var(--f-label); font-size: 13px; letter-spacing: 0.03em; color: var(--bone); margin: 0 0 10px; }
+  .card p { font-size: 13.5px; color: var(--bone-dim); margin: 0; line-height: 1.6; }
+
+  /* ---------- Install ---------- */
+  .install-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+  @media (max-width: 760px) { .install-grid { grid-template-columns: 1fr; } }
+  .install-col { min-width: 0; }
+  .install-col h3 { font-family: var(--f-label); font-size: 13px; color: var(--amber); margin: 0 0 12px; }
+  .install-col p { font-size: 13.5px; color: var(--bone-dim); margin: 0 0 14px; }
+  pre.code {
+    background: var(--void); border: 1px solid var(--iron-hi); border-left: 3px solid var(--ember);
+    padding: 16px 18px; font-size: 12.5px; overflow-x: auto; color: var(--bone); margin: 0;
+  }
+  pre.code .cm { color: var(--smoke); }
+
+  /* ---------- Footer ---------- */
+  footer { border-top: 1px solid var(--iron-hi); padding: 40px 0; }
+  footer .wrap { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+  footer p { font-size: 12px; color: var(--smoke); margin: 0; }
+  footer .links a { font-family: var(--f-label); font-size: 11px; margin-left: 18px; color: var(--bone-dim); }
+  footer .links a:hover { color: var(--ember); }
+
+  .disclaimer {
+    font-size: 12px; color: var(--bone-dim); border: 1px solid var(--iron-hi); border-left: 3px solid var(--amber);
+    padding: 14px 18px; margin-top: 40px;
+  }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="wrap">
+      <div class="brand">
+        <div class="brand-dot"></div>
+        <div class="brand-name">MUSIC DOWNLOADER</div>
+      </div>
+      <nav>
+        <a href="#features">Características</a>
+        <a href="#install">Instalación</a>
+        <a href="https://github.com/Noull999/music-downloader">GitHub</a>
+      </nav>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <section class="hero">
+      <div class="hero-tag">SISTEMA LISTO · <b>SOUNDCLOUD</b> + <b>YOUTUBE</b></div>
+      <h1 class="title">Music<br /><span>Downloader</span></h1>
+      <p class="subtitle">
+        Sincronizá tus likes de SoundCloud, evitá duplicados con huella de audio real,
+        y descargá con BPM y tonalidad ya taggeados para mezclar. Todo local, sin Python instalado.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/Noull999/music-downloader#-instalación">Descargar</a>
+        <a class="btn btn-ghost" href="https://github.com/Noull999/music-downloader">Ver en GitHub</a>
+      </div>
+      <div class="badges">
+        <img src="https://img.shields.io/badge/Python-3.9%2B-blue" alt="Python 3.9+" />
+        <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License" />
+        <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Windows, macOS, Linux" />
+      </div>
+
+      <div class="shot-frame">
+        <img src="screenshot.png" alt="Interfaz de Music Downloader — cola de descargas y sincronización de SoundCloud" />
+      </div>
+    </section>
+  </div>
+
+  <section class="sec" id="features">
+    <div class="wrap">
+      <div class="sec-label">CARACTERÍSTICAS</div>
+      <h2>No es solo un descargador</h2>
+      <div class="grid">
+        <div class="card c1">
+          <div class="card-dot"></div>
+          <h3>SYNC DE SOUNDCLOUD</h3>
+          <p>Conectá tu cuenta y sincronizá tus likes automáticamente, con historial de qué ya bajaste y qué es nuevo — programable con el Task Scheduler de Windows.</p>
+        </div>
+        <div class="card c2">
+          <div class="card-dot"></div>
+          <h3>DUPLICADOS, DE VERDAD</h3>
+          <p>Matching difuso de nombre contra toda tu biblioteca, y huella de audio (Chromaprint) como red de seguridad — atrapa el mismo tema con nombre distinto sin confundir remixes.</p>
+        </div>
+        <div class="card c3">
+          <div class="card-dot"></div>
+          <h3>BPM Y TONALIDAD</h3>
+          <p>Cada descarga se analiza con librosa y queda taggeada con BPM y tonalidad (Camelot o musical) — Serato y Rekordbox la leen directo, sin reanalizar.</p>
+        </div>
+        <div class="card c4">
+          <div class="card-dot"></div>
+          <h3>MULTI-FORMATO</h3>
+          <p>MP3 128/256/320 kbps o FLAC cuando está disponible, desde SoundCloud y YouTube, con metadata y carátula incrustadas automáticamente.</p>
+        </div>
+        <div class="card c5">
+          <div class="card-dot"></div>
+          <h3>POST-PROCESAMIENTO</h3>
+          <p>Normalización de volumen y eliminación de silencios sin tocar nada a mano — queda listo para tu biblioteca o para mezclar.</p>
+        </div>
+        <div class="card c6">
+          <div class="card-dot"></div>
+          <h3>.EXE STANDALONE</h3>
+          <p>Empaquetada para Windows sin requerir Python instalado — ffmpeg y fpcalc van embebidos. Cola en tiempo real, pausa y cancelación.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="install">
+    <div class="wrap">
+      <div class="sec-label">INSTALACIÓN</div>
+      <h2>Arrancá en un par de minutos</h2>
+      <div class="install-grid">
+        <div class="install-col">
+          <h3>OPCIÓN 1 — .EXE (WINDOWS)</h3>
+          <p>Compilá tu propio ejecutable firmado localmente. No requiere Python instalado.</p>
+          <pre class="code"><span class="cm"># clona el repo</span>
+git clone https://github.com/Noull999/music-downloader.git
+cd music-downloader
+pip install -r requirements.txt
+python scripts/build.py
+<span class="cm"># genera dist/MusicDownloader.exe</span></pre>
+        </div>
+        <div class="install-col">
+          <h3>OPCIÓN 2 — DESDE CÓDIGO FUENTE</h3>
+          <p>Para Windows, macOS o Linux, corriendo directo con Python 3.9+ (3.12 recomendado).</p>
+          <pre class="code"><span class="cm"># requiere Python 3.9+ y FFmpeg</span>
+git clone https://github.com/Noull999/music-downloader.git
+cd music-downloader
+pip install -r requirements.txt
+python main_webview.py</pre>
+        </div>
+      </div>
+      <div class="disclaimer">
+        Esta herramienta es solo para uso personal. Respetá los términos de servicio de SoundCloud y YouTube.
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <p>© 2026 José Esteban Asencio — MIT License</p>
+      <div class="links">
+        <a href="https://github.com/Noull999/music-downloader">GitHub</a>
+        <a href="https://github.com/Noull999/music-downloader/blob/master/SETUP.md">Setup detallado</a>
+        <a href="mailto:joseestebanasencio@gmail.com">Contacto</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
