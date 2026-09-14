@@ -2,6 +2,8 @@
 
 Aplicación de escritorio para descargar música de **SoundCloud y YouTube**, con sincronización automática de tus likes, detección de duplicados (por nombre de archivo *y* por audio real), y detección de BPM/tonalidad para mezcla armónica.
 
+**Página del proyecto:** [noull999.github.io/music-downloader](https://noull999.github.io/music-downloader/)
+
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 [![Tests](https://github.com/Noull999/music-downloader/actions/workflows/test-multiplatform.yml/badge.svg)](https://github.com/Noull999/music-downloader/actions/workflows/test-multiplatform.yml)
