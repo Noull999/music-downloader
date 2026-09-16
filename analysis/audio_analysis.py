@@ -197,7 +197,10 @@ def write_tags(path: str, result: AnalysisResult, key_format: str = "camelot") -
                 tags.add(TBPM(encoding=3, text=str(int(round(result.bpm)))))
             if key_value:
                 tags.add(TKEY(encoding=3, text=key_value))
-            tags.save(path)
+            # v2.3 y no el v2.4 por defecto: si este guardado deja el archivo
+            # en v2.4, el Reproductor de Windows deja de mostrar la carátula
+            # que embebió el post-proceso. Ver quality/post_processor.py.
+            tags.save(path, v2_version=3)
         else:
             # FLAC/OGG/M4A: campos Vorbis/MP4 vía la interfaz genérica.
             audio = MutagenFile(path)

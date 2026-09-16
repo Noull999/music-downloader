@@ -92,7 +92,14 @@ def aplicar_tags(path: str, resultado: dict) -> bool:
 
         for campo, valor in cambios.items():
             audio[campo] = valor
-        audio.save()
+        try:
+            # ID3v2.3 donde aplique: guardar en el v2.4 por defecto deja al
+            # Reproductor de Windows sin ver la carátula que ya tenía el
+            # archivo. Ver quality/post_processor.py.
+            audio.save(v2_version=3)
+        except TypeError:
+            # FLAC/OGG/M4A no llevan ID3 y no aceptan ese parámetro.
+            audio.save()
         return True
     except Exception:
         logger.exception("No se pudo escribir tags en %s", path)

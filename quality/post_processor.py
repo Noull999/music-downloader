@@ -258,7 +258,13 @@ class PostProcessor:
                 except Exception as art_exc:
                     logger.warning("Error embebiendo carátula: %s", art_exc)
 
-            audio.save()
+            # ID3v2.3 y no el v2.4 que mutagen usa por defecto: el
+            # Reproductor multimedia y el Explorador de Windows no leen la
+            # carátula de un v2.4 y la canción se ve sin tapa. Medido en la
+            # biblioteca real: 993 archivos tenían carátula correcta y no se
+            # veía en ninguno de los dos. v2.3 lo entienden ambos, más Serato
+            # y Rekordbox.
+            audio.save(v2_version=3)
         except Exception as exc:
             logger.warning("Error guardando tags en %s: %s", file_path, exc)
 
