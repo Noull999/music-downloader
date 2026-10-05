@@ -304,9 +304,13 @@ class WebViewAPI:
             self._push("track_progress", {"url": url, "progress": v})
 
         def on_status(status: str, err: str):
-            self._push_status(url, status, err)
+            # Primero el historial y despues el aviso: la vista refresca
+            # "Ultimas descargas" apenas recibe "terminada", y si la fila
+            # todavia no estaba guardada la descarga no aparecia hasta el
+            # siguiente refresco.
             if status == STATUS_DONE:
                 self.controller.record_download(track)
+            self._push_status(url, status, err)
 
         self.download_manager.submit_download(
             track=track,
@@ -371,6 +375,7 @@ class WebViewAPI:
             if str(d.get("url", "")).startswith("local://"):
                 continue
             items.append({
+                "url": d.get("url"),
                 "title": d.get("title"),
                 "artist": d.get("artist"),
                 "platform": d.get("platform"),
@@ -381,6 +386,7 @@ class WebViewAPI:
         if self._sync_manager:
             for d in self._sync_manager.history.get_all_downloads():
                 items.append({
+                    "url": d.get("url"),
                     "title": d.get("title"),
                     "artist": d.get("artist"),
                     "platform": d.get("platform"),
@@ -388,6 +394,16 @@ class WebViewAPI:
                     "date": d.get("downloaded_at"),
                     "source": "sync",
                 })
+        # Una descarga de la sync queda en las DOS tablas (la propia de la
+        # sync, para no re-descargar, y la que lee este panel): sin esto
+        # cada una aparecia dos veces. Si esta en ambas, gana la de la sync.
+        por_url: dict = {}
+        for it in items:
+            clave = it.get("url") or id(it)
+            previo = por_url.get(clave)
+            if previo is None or (it["source"] == "sync" and previo["source"] != "sync"):
+                por_url[clave] = it
+        items = list(por_url.values())
         items.sort(key=lambda d: d.get("date") or "", reverse=True)
         return items[:limit]
 
@@ -633,15 +649,6 @@ class WebViewAPI:
             elif event == "error":
                 info.error_msg = detail or ""
 
-        if is_new:
-            self._push("track_added", _track_to_dict(info))
-        self._push("track_status", {
-            "url": url,
-            "status": status,
-            "error_msg": detail if event == "error" else "",
-            "emoji": _STATUS_EMOJI.get(status, "•"),
-        })
-
         # La sync tiene su PROPIO historial (sync_downloads, solo para no
         # re-descargar) separado del que lee "Últimas descargas"
         # (downloads, vía record_download). Sin esto, lo que baja la sync
@@ -656,6 +663,16 @@ class WebViewAPI:
                 self.controller.record_download(info)
             except Exception:
                 logger.exception("Error registrando descarga de sync en el historial: %s", url)
+
+        # Despues de guardar en el historial, no antes: ver _submit_one.
+        if is_new:
+            self._push("track_added", _track_to_dict(info))
+        self._push("track_status", {
+            "url": url,
+            "status": status,
+            "error_msg": detail if event == "error" else "",
+            "emoji": _STATUS_EMOJI.get(status, "•"),
+        })
 
     def start_sync(self, mode: str = "full", count: int = 10) -> dict:
         """
@@ -878,6 +895,26 @@ class WebViewAPI:
         except Exception:
             logger.exception("Error calculando candidatos de mejor calidad")
             return []
+
+    def reveal_in_folder(self, path: str) -> dict:
+        """
+        Abre el explorador del sistema con el archivo seleccionado, para
+        que "Ultimas descargas" diga DONDE quedo cada cancion y no solo el
+        nombre de la carpeta.
+        """
+        if not path or not os.path.exists(path):
+            return {"ok": False, "error": "El archivo ya no esta en esa ubicacion."}
+        try:
+            if sys.platform == "win32":
+                subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", "-R", path])
+            else:
+                subprocess.Popen(["xdg-open", os.path.dirname(path)])
+            return {"ok": True}
+        except Exception as e:
+            logger.exception("No se pudo abrir la carpeta de %s", path)
+            return {"ok": False, "error": str(e)[:150]}
 
     def open_external_url(self, url: str) -> dict:
         """Abre un link en el navegador del sistema (no en la ventana de la app)."""

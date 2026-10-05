@@ -978,6 +978,16 @@
       }
       sub.textContent = `${it.platform || "?"} · ${sourceLabel}` + (carpeta ? ` · ${carpeta}` : "");
       main.append(title, sub);
+      if (it.local_path) {
+        // La ruta completa al pasar el mouse, y un clic abre el explorador
+        // con el archivo seleccionado.
+        sub.title = it.local_path;
+        sub.style.cursor = "pointer";
+        sub.addEventListener("click", async () => {
+          const r = await api().reveal_in_folder(it.local_path);
+          if (!r.ok) setStatus(r.error || "No se pudo abrir la carpeta", "err");
+        });
+      }
       const date = document.createElement("span");
       date.className = "hrow-sub";
       date.textContent = (it.date || "").slice(0, 16);
