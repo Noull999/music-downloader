@@ -83,6 +83,9 @@ class WebViewAPI:
 
         self._tracks: dict[str, TrackInfo] = {}
         self._lock = threading.Lock()
+        # Temas de las listas que el usuario abrió para elegir (por URL de la
+        # lista), para no volver a pedirlos a YouTube al agregar la selección.
+        self._playlist_cache: dict[str, dict] = {}
 
         # SoundCloud sync (se inicializa al verificar credenciales, igual
         # que gui/sync_window.py). None hasta la primera verificación OK.
@@ -232,6 +235,69 @@ class WebViewAPI:
 
         for info in extra_added:
             self._push("track_added", _track_to_dict(info))
+
+    def get_playlist_entries(self, playlist_url: str) -> dict:
+        """
+        Los temas de una lista de YouTube (álbum, radio de parecidos...) para
+        que el usuario marque cuáles quiere. No agrega nada a la cola.
+
+        Una lista puede traer cientos de temas (una radio de 337 en la
+        prueba) y tarda unos segundos: por eso se elige en vez de agregarla
+        entera como antes con las playlists puras.
+        """
+        try:
+            handler = detect_handler(playlist_url)
+            obtener = getattr(handler, "get_playlist_tracks", None)
+            if obtener is None:
+                return {"ok": False, "error": "Esta plataforma no tiene listas."}
+            metas = obtener(playlist_url)
+        except (ValueError, RuntimeError) as exc:
+            return {"ok": False, "error": str(exc)[:200]}
+        except Exception as exc:
+            logger.exception("Error leyendo la lista %s", playlist_url)
+            return {"ok": False, "error": str(exc)[:200]}
+
+        if not metas:
+            return {"ok": False, "error": "La lista está vacía."}
+
+        with self._lock:
+            self._playlist_cache[playlist_url] = {m.url: m for m in metas}
+            en_cola = set(self._tracks)
+
+        entradas = []
+        for m in metas:
+            info = TrackInfo.from_metadata(m)
+            entradas.append({
+                "url": m.url,
+                "title": m.title,
+                "artist": m.artist,
+                "duration_str": info.duration_str(),
+                "en_cola": m.url in en_cola,
+                "ya_descargada": self.controller.is_track_downloaded(m.url),
+            })
+        return {"ok": True, "entradas": entradas}
+
+    def add_playlist_selection(self, playlist_url: str, urls: list) -> dict:
+        """Agrega a la cola solo los temas marcados de una lista ya abierta."""
+        cache = self._playlist_cache.get(playlist_url)
+        if not cache:
+            return {"ok": False, "error": "Abrí la lista de nuevo: ya no está cargada."}
+
+        nuevas = []
+        with self._lock:
+            for url in urls or []:
+                meta = cache.get(url)
+                if meta is None or url in self._tracks:
+                    continue
+                info = TrackInfo.from_metadata(meta)
+                if self.controller.is_track_downloaded(url):
+                    info.status = STATUS_SKIP
+                self._tracks[url] = info
+                nuevas.append(info)
+
+        for info in nuevas:
+            self._push("track_added", _track_to_dict(info))
+        return {"ok": True, "agregadas": len(nuevas)}
 
     def _mark_fetch_error(self, url: str, message: str) -> None:
         with self._lock:

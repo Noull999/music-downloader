@@ -567,6 +567,32 @@
   </div>
 </div>
 
+<!-- ============ Modal: Elegir temas de una lista ============ -->
+<div class="modal-overlay" id="modalPlaylist">
+  <div class="modal pixel-corners-lg" style="max-width: 640px;">
+    <div class="modal-head">
+      <span class="modal-title">Elegir temas de la lista</span>
+      <button class="modal-close" data-close="modalPlaylist">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="hint" id="playlistIntro">Cargando la lista…</div>
+      <div class="form-row" id="playlistFilterRow" style="display:none">
+        <input type="text" id="playlistFilter" placeholder="Filtrar por título o artista…">
+      </div>
+      <div class="form-row-inline" id="playlistTools" style="display:none">
+        <button class="mini-btn" id="playlistAll">Marcar los visibles</button>
+        <button class="mini-btn" id="playlistNone">Ninguno</button>
+        <span class="hint" id="playlistCount" style="margin-left:auto">0 marcados</span>
+      </div>
+      <div class="log" id="playlistList" style="max-height:300px"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close="modalPlaylist">Cancelar</button>
+      <button class="btn btn-blood" id="playlistAdd" disabled>Agregar 0 a la cola</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ Modal: Ordenar por género ============ -->
 <div class="modal-overlay" id="modalOrganize">
   <div class="modal pixel-corners-lg" style="max-width: 560px;">
@@ -900,6 +926,7 @@
         <div class="task-foot">
           <span class="task-sub"></span>
           <div class="task-actions">
+            <button class="mini-btn" data-action="playlist" hidden title="Este video viene de una lista (álbum o temas parecidos): elegí cuáles agregar">Ver lista…</button>
             <button class="mini-btn dl" data-action="download">Descargar</button>
             <button class="mini-btn" data-action="cancel">Cancelar</button>
           </div>
@@ -909,6 +936,9 @@
       });
       el.querySelector('[data-action="cancel"]').addEventListener("click", () => {
         api().cancel_download(url);
+      });
+      el.querySelector('[data-action="playlist"]').addEventListener("click", () => {
+        abrirLista(tracks.get(url)?.playlist_url);
       });
       document.getElementById("queueList").appendChild(el);
       rows.set(url, el);
@@ -922,6 +952,7 @@
 
     const dlBtn = el.querySelector('[data-action="download"]');
     dlBtn.disabled = ["downloading", "fetching", "done", "skip"].includes(t.status);
+    el.querySelector('[data-action="playlist"]').hidden = !t.playlist_url;
 
     updateProgress(url, t.progress || 0);
   }
@@ -1012,6 +1043,113 @@
     document.getElementById("statTotal").textContent = stats.total_downloads ?? 0;
     document.getElementById("statSize").textContent = fmtBytes(stats.total_size_bytes || 0);
   }
+
+  // ---- Elegir temas de una lista (álbum / radio de parecidos) ----
+  let listaActual = { url: "", entradas: [] };
+  // Lo marcado vive aca y no en las casillas: dibujarLista() reconstruye las
+  // filas al filtrar, y si el estado estuviera solo en el DOM se perderia lo
+  // ya elegido al cambiar el filtro.
+  const marcadasLista = new Set();
+
+  function actualizarContadorLista() {
+    const marcadas = marcadasLista.size;
+    document.getElementById("playlistCount").textContent = `${marcadas} marcados`;
+    const btn = document.getElementById("playlistAdd");
+    btn.textContent = `Agregar ${marcadas} a la cola`;
+    btn.disabled = marcadas === 0;
+  }
+
+  function dibujarLista() {
+    const filtro = document.getElementById("playlistFilter").value.trim().toLowerCase();
+    const cont = document.getElementById("playlistList");
+    cont.innerHTML = "";
+    for (const e of listaActual.entradas) {
+      const texto = `${e.artist} ${e.title}`.toLowerCase();
+      if (filtro && !texto.includes(filtro)) continue;
+      const row = document.createElement("label");
+      row.className = "hrow";
+      row.style.cursor = e.en_cola || e.ya_descargada ? "default" : "pointer";
+      // La casilla va en la primera columna de .hrow (18px 1fr auto): sin
+      // algo ahí el titulo cae en la columna angosta y se corta.
+      const caja = document.createElement("input");
+      caja.type = "checkbox";
+      caja.dataset.url = e.url;
+      caja.disabled = e.en_cola || e.ya_descargada;
+      caja.checked = marcadasLista.has(e.url);
+      caja.addEventListener("change", () => {
+        if (caja.checked) marcadasLista.add(e.url); else marcadasLista.delete(e.url);
+        actualizarContadorLista();
+      });
+      const main = document.createElement("div");
+      main.className = "hrow-main";
+      const t = document.createElement("span");
+      t.className = "hrow-title";
+      t.textContent = e.artist ? `${e.artist} — ${e.title}` : e.title;
+      const s = document.createElement("span");
+      s.className = "hrow-sub";
+      s.textContent = e.ya_descargada ? "ya la tenés" : (e.en_cola ? "ya está en la cola" : "");
+      main.append(t, s);
+      const dur = document.createElement("span");
+      dur.className = "hrow-sub";
+      dur.textContent = e.duration_str;
+      row.append(caja, main, dur);
+      cont.appendChild(row);
+    }
+    actualizarContadorLista();
+  }
+
+  async function abrirLista(playlistUrl) {
+    if (!playlistUrl) return;
+    openModal("modalPlaylist");
+    const intro = document.getElementById("playlistIntro");
+    document.getElementById("playlistFilterRow").style.display = "none";
+    document.getElementById("playlistTools").style.display = "none";
+    document.getElementById("playlistList").innerHTML = "";
+    document.getElementById("playlistFilter").value = "";
+    marcadasLista.clear();
+    intro.textContent = "Cargando la lista… (puede tardar unos segundos si es larga)";
+    actualizarContadorLista();
+
+    const r = await api().get_playlist_entries(playlistUrl);
+    if (!r.ok) {
+      intro.textContent = r.error || "No se pudo cargar la lista";
+      return;
+    }
+    listaActual = { url: playlistUrl, entradas: r.entradas };
+    const nuevas = r.entradas.filter(e => !e.en_cola && !e.ya_descargada).length;
+    intro.textContent = `${r.entradas.length} temas en la lista (${nuevas} disponibles). Marcá los que quieras.`;
+    document.getElementById("playlistFilterRow").style.display = "";
+    document.getElementById("playlistTools").style.display = "flex";
+    dibujarLista();
+  }
+
+  document.getElementById("playlistFilter").addEventListener("input", dibujarLista);
+  document.getElementById("playlistAll").addEventListener("click", () => {
+    document.querySelectorAll("#playlistList input:not(:disabled)").forEach(c => {
+      c.checked = true;
+      marcadasLista.add(c.dataset.url);
+    });
+    actualizarContadorLista();
+  });
+  document.getElementById("playlistNone").addEventListener("click", () => {
+    marcadasLista.clear();
+    document.querySelectorAll("#playlistList input").forEach(c => { c.checked = false; });
+    actualizarContadorLista();
+  });
+  document.getElementById("playlistAdd").addEventListener("click", async () => {
+    const urls = [...marcadasLista];
+    if (!urls.length) return;
+    const btn = document.getElementById("playlistAdd");
+    btn.disabled = true;
+    const r = await api().add_playlist_selection(listaActual.url, urls);
+    if (!r.ok) {
+      document.getElementById("playlistIntro").textContent = r.error || "No se pudo agregar";
+      btn.disabled = false;
+      return;
+    }
+    closeModal("modalPlaylist");
+    setStatus(`${r.agregadas} temas agregados a la cola`, "ok");
+  });
 
   async function refreshFailed() {
     const items = await api().get_failed_downloads();

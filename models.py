@@ -40,6 +40,9 @@ class TrackInfo:
     track_id: str = ""
     genre: str = ""                   # género declarado por la plataforma
     tags: str = ""                    # tags libres; ver sync/genre_utils.py
+    # Lista (álbum, radio de temas parecidos) a la que pertenece este video,
+    # si se pegó un link de "video + list=". La vista ofrece elegir temas de ahí.
+    playlist_url: str = ""
 
     # ── Estado de descarga (mutable) ─────────────────────────────────── #
     status: str = STATUS_PENDING
@@ -76,6 +79,7 @@ class TrackInfo:
             track_id=meta.track_id,
             genre=getattr(meta, "genre", "") or "",
             tags=getattr(meta, "tags", "") or "",
+            playlist_url=getattr(meta, "_playlist_url", "") or "",
         )
 
     def update_from_metadata(self, meta: TrackMetadata) -> None:
