@@ -106,6 +106,20 @@ class HistoryManager:
                 return False
         return any(ruta and os.path.exists(ruta) for (ruta,) in filas)
 
+    def get_downloaded_urls(self) -> Set[str]:
+        """URLs descargadas de verdad: con archivo que existe (sin las filas local:// ni las sin ruta)."""
+        with self._lock:
+            try:
+                with sqlite3.connect(self.db_path) as conn:
+                    filas = conn.execute(
+                        "SELECT url, local_path FROM downloads "
+                        "WHERE url NOT LIKE 'local://%' AND local_path != '' AND local_path IS NOT NULL"
+                    ).fetchall()
+            except sqlite3.Error as e:
+                logger.error(f"Error leyendo descargas: {e}")
+                return set()
+        return {url for url, ruta in filas if os.path.exists(ruta)}
+
     def get_all_urls(self) -> Set[str]:
         """Retorna SET de todas las URLs descargadas (O(1) lookup)."""
         with self._lock:
