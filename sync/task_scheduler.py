@@ -64,10 +64,10 @@ def build_command(config_path: str = None) -> str:
 
 
 def _allow_battery(task_name: str = TASK_NAME) -> bool:
-    """Permite que la tarea corra con batería (schtasks no expone estos flags)."""
+    """Batería y hora perdida (schtasks no expone estos flags): si el PC estaba apagado a la hora, corre al encender."""
     ps = (
         f"$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries "
-        f"-DontStopIfGoingOnBatteries; "
+        f"-DontStopIfGoingOnBatteries -StartWhenAvailable; "
         f"Set-ScheduledTask -TaskName '{task_name}' -Settings $s"
     )
     result = subprocess.run(
