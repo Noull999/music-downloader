@@ -2,4 +2,4 @@
 -r requirements.txt
 pyinstaller>=6.0
 # macOS: trae un ffmpeg estático (el de Homebrew no se puede copiar a otro Mac)
-imageio-ffmpeg>=0.5.1; sys_platform == "darwin"
+imageio-ffmpeg; sys_platform == "darwin"
