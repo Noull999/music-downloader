@@ -10,6 +10,9 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: write   # para publicar en Releases
+
 jobs:
   build:
     strategy:
