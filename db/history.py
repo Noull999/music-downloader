@@ -114,6 +114,12 @@ class DownloadHistory:
             if "downloadable" not in cols:
                 self.conn.execute("ALTER TABLE soundcloud_likes ADD COLUMN downloadable INTEGER DEFAULT 0")
                 logger.info("Migración: columna 'downloadable' agregada a soundcloud_likes")
+            cols_fallidas = {r[1] for r in self.conn.execute(
+                "PRAGMA table_info(failed_downloads)"
+            )}
+            if "youtube_tried" not in cols_fallidas:
+                self.conn.execute("ALTER TABLE failed_downloads ADD COLUMN youtube_tried INTEGER DEFAULT 0")
+                logger.info("Migración: columna 'youtube_tried' agregada a failed_downloads")
             self.conn.commit()
             logger.info(f"✅ Base de datos inicializada en {self.db_path}")
         except sqlite3.Error as e:
@@ -293,6 +299,38 @@ class DownloadHistory:
             except sqlite3.Error as e:
                 logger.error(f"Error obteniendo fallidas: {e}")
                 return []
+
+    def get_youtube_pending(self) -> dict[str, str]:
+        """
+        Fallidas a las que todavía no se les probó el respaldo de YouTube.
+
+        Sin esto, las que ya estaban marcadas como permanentes (DRM, Go+...)
+        se omitían para siempre y el respaldo no les servía: solo habría
+        actuado en las que fallaran de ahora en más.
+
+        Returns:
+            {url: error_original}
+        """
+        with self.lock:
+            try:
+                cursor = self.conn.execute(
+                    "SELECT url, error FROM failed_downloads WHERE youtube_tried = 0"
+                )
+                return {url: error or "" for url, error in cursor.fetchall()}
+            except sqlite3.Error as e:
+                logger.error(f"Error leyendo fallidas sin respaldo: {e}")
+                return {}
+
+    def mark_youtube_tried(self, url: str) -> None:
+        """Anota que ya se buscó en YouTube, haya salido bien o no."""
+        with self.lock:
+            try:
+                self.conn.execute(
+                    "UPDATE failed_downloads SET youtube_tried = 1 WHERE url = ?", (url,)
+                )
+                self.conn.commit()
+            except sqlite3.Error as e:
+                logger.error(f"Error marcando respaldo de YouTube: {e}")
 
     def get_skippable_failures(self, max_attempts: int = 3) -> dict[str, str]:
         """

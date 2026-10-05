@@ -12,7 +12,7 @@ from typing import Callable, Optional
 
 from .soundcloud_api import SoundCloudAPIClient, SoundCloudTrack
 from .duplicate_checker import DuplicateChecker
-from . import artist_genre, genre_utils, match_utils
+from . import artist_genre, genre_utils, match_utils, youtube_fallback
 from analysis import fingerprint as audio_fingerprint
 from db.history import DownloadHistory
 from notifications.notifier import Notifier
@@ -58,6 +58,7 @@ class SyncManager:
         quality_preset: str = DEFAULT_PRESET,
         post_options: Optional[dict] = None,
         subfolder_by_genre: bool = False,
+        youtube_fallback_enabled: bool = True,
     ):
         """
         Args:
@@ -112,6 +113,7 @@ class SyncManager:
         self.quality_preset = quality_preset
         self.post_options = dict(post_options or {})
         self.subfolder_by_genre = subfolder_by_genre
+        self.youtube_fallback_enabled = youtube_fallback_enabled
         self.library_folders = list(library_folders or [])
         # Último recurso cuando el track viene sin genre ni tags: preguntar
         # por el artista real. Se resuelve una vez por track y se recuerda,
@@ -166,6 +168,156 @@ class SyncManager:
             "copyright",
         ))
 
+    @staticmethod
+    def _vale_probar_youtube(error: str) -> bool:
+        """
+        Si el fallo de SoundCloud es de los que YouTube puede resolver: la
+        cancion existe pero SoundCloud no la sirve (DRM, Go+, bloqueo de
+        pais, borrada). No cuenta lo transitorio (red), que se reintenta
+        solo, ni una cancelacion del usuario, ni lo privado o con copyright,
+        donde buscar en otro lado no es el punto.
+        """
+        e = (error or "").lower()
+        if not e or "cancel" in e:
+            return False
+        return any(s in e for s in (
+            "drm", "go+", "premium", "geo restriction",
+            "not available from your location", "not available in your country",
+            "video unavailable", "track not found", "404", "410", "removed",
+        ))
+
+    def _descargar(self, track, output_path: str) -> tuple[str, str]:
+        """
+        Baja la cancion de SoundCloud; si SoundCloud no la sirve (DRM, Go+,
+        bloqueo de pais), busca la misma en YouTube.
+
+        Si YouTube no tiene un candidato confiable, relanza el error original
+        de SoundCloud: la cancion queda como fallida igual que antes, sin
+        bajar nada dudoso.
+
+        Returns:
+            (ruta_del_archivo, plataforma) con plataforma 'soundcloud' o 'youtube'
+        """
+        preset = get_preset(self.quality_preset)
+        cancelar = lambda: self._stop_event.is_set()
+        try:
+            archivo = self.downloader.download(
+                track.url, output_path, quality_preset=preset,
+                progress_callback=lambda p: None, cancel_check=cancelar,
+            )
+            return archivo, "soundcloud"
+        except Exception as exc:
+            error_sc = exc
+
+        if not self.youtube_fallback_enabled or not self._vale_probar_youtube(str(error_sc)):
+            raise error_sc
+
+        archivo = self._respaldo_youtube(track, output_path, error_sc)
+        if archivo is None:
+            raise error_sc
+        return archivo, "youtube"
+
+    def _respaldo_youtube(self, track, output_path: str, error_sc: Exception):
+        """
+        Busca la cancion en YouTube y la baja. Devuelve la ruta del archivo,
+        o None si no hay un candidato confiable (en ese caso no se baja
+        nada). Si el candidato existe pero la descarga falla, lanza un
+        error que conserva el motivo original de SoundCloud.
+        """
+        candidato = youtube_fallback.encontrar(
+            track.artist, track.title, (track.duration_ms or 0) / 1000
+        )
+        try:
+            self.history.mark_youtube_tried(track.url)
+        except Exception:
+            logger.exception("No se pudo anotar el intento de YouTube")
+        if not candidato:
+            return None
+
+        from handlers.youtube_handler import YouTubeHandler
+        try:
+            archivo = YouTubeHandler().download(
+                candidato["url"], output_path, get_preset(self.quality_preset),
+                progress_callback=lambda p: None,
+                cancel_check=lambda: self._stop_event.is_set(),
+            )
+        except Exception as exc_yt:
+            # Se conserva el texto original para que siga clasificandose igual
+            # (p.ej. "DRM" => permanente) y se vea que el respaldo tambien fallo.
+            raise RuntimeError(
+                f"{error_sc} (el respaldo de YouTube tambien fallo: {exc_yt})"
+            ) from exc_yt
+
+        try:
+            self.history.clear_failed(track.url)
+        except Exception:
+            logger.exception("No se pudo limpiar la fallida %s", track.url)
+        msg = (f"\u21aa {track.artist} - {track.title}: SoundCloud no la sirve, "
+               f"descargada desde YouTube")
+        logger.info(msg)
+        if self.activity_log_callback:
+            self.activity_log_callback(msg)
+        return archivo
+
+    def reintentar_con_youtube(self, url: str) -> dict:
+        """
+        Prueba a mano una cancion fallida contra YouTube (boton "Probar
+        desde YouTube" del panel de fallidas). A diferencia de la sync, no
+        mira si ya se habia intentado: es el usuario pidiendolo.
+
+        Returns:
+            {"ok": True, "archivo": ruta} o {"ok": False, "error": motivo}
+        """
+        from types import SimpleNamespace
+
+        fallida = next((f for f in self.history.get_failed() if f["url"] == url), None)
+        if not fallida:
+            return {"ok": False, "error": "Esa cancion ya no figura como fallida."}
+        like = next((l for l in self.history.load_likes() if l["url"] == url), None) or {}
+
+        track = SimpleNamespace(
+            url=url,
+            title=fallida.get("title") or like.get("title") or "",
+            artist=fallida.get("artist") or like.get("artist") or "",
+            duration_ms=like.get("duration_ms") or 0,
+            artwork_url=like.get("artwork_url") or "",
+            genre=like.get("genre") or "",
+            tags=like.get("tags") or "",
+            id=like.get("id"),
+            created_at=like.get("created_at"),
+        )
+        if not track.duration_ms:
+            return {"ok": False, "error": "No tengo la duracion de esta cancion, "
+                                          "y sin ella no puedo verificar que sea la misma."}
+
+        self._emit_track("start", track)
+        try:
+            output_path = self._build_output_path(track.artist, track.title, track)
+            archivo = self._respaldo_youtube(
+                track, output_path, RuntimeError(fallida.get("error") or "")
+            )
+            if archivo is None:
+                self._emit_track("error", track, fallida.get("error") or "")
+                return {"ok": False, "error": "No encontre una version confiable en YouTube."}
+
+            self.history.mark_downloaded(
+                track.url, track.title, track.artist, archivo, platform="youtube"
+            )
+            self.history.mark_like_downloaded(
+                url=track.url, title=track.title, artist=track.artist,
+                track_id=track.id, duration_ms=track.duration_ms,
+                artwork_url=track.artwork_url, genre=track.genre,
+                created_at=track.created_at,
+            )
+            self._post_process(archivo, track)
+            self.checker.invalidate_index()
+            self._emit_track("done", track, archivo)
+            return {"ok": True, "archivo": archivo}
+        except Exception as e:
+            logger.exception("Error reintentando %s con YouTube", url)
+            self._emit_track("error", track, str(e))
+            return {"ok": False, "error": str(e)[:200]}
+
     def _record_failure(self, track, error: str) -> None:
         """Guarda el fallo para no reintentarlo indefinidamente."""
         permanent = self._is_permanent_error(error)
@@ -193,10 +345,22 @@ class SyncManager:
         if not skippable:
             return tracks, []
 
+        # Las que ya estaban marcadas como permanentes antes de existir el
+        # respaldo de YouTube se omitian para siempre: se las deja pasar una
+        # vez para probarlo (_descargar anota que ya se intento).
+        sin_probar = {}
+        if self.youtube_fallback_enabled:
+            try:
+                sin_probar = self.history.get_youtube_pending()
+            except Exception:
+                logger.exception("No se pudieron leer las fallidas sin respaldo de YouTube")
+
         pending, skipped = [], []
         for t in tracks:
             reason = skippable.get(t.url)
-            if reason:
+            if reason and self._vale_probar_youtube(sin_probar.get(t.url, "")):
+                pending.append(t)
+            elif reason:
                 skipped.append((t, reason))
             else:
                 pending.append(t)
@@ -657,13 +821,7 @@ class SyncManager:
 
                 try:
                     output_path = self._build_output_path(track.artist, track.title, track)
-                    file_path = self.downloader.download(
-                        track.url,
-                        output_path,
-                        quality_preset=get_preset(self.quality_preset),
-                        progress_callback=lambda p: None,  # No mostrar progreso individual
-                        cancel_check=lambda: self._stop_event.is_set()
-                    )
+                    file_path, plataforma = self._descargar(track, output_path)
 
                     # Registrar en historial
                     self.history.mark_downloaded(
@@ -671,7 +829,7 @@ class SyncManager:
                         track.title,
                         track.artist,
                         file_path,
-                        platform="soundcloud"
+                        platform=plataforma
                     )
                     # Also register in soundcloud_likes table
                     self.history.mark_like_downloaded(
@@ -871,20 +1029,14 @@ class SyncManager:
 
                 try:
                     output_path = self._build_output_path(track.artist, track.title, track)
-                    file_path = self.downloader.download(
-                        track.url,
-                        output_path,
-                        quality_preset=get_preset(self.quality_preset),
-                        progress_callback=lambda p: None,
-                        cancel_check=lambda: self._stop_event.is_set()
-                    )
+                    file_path, plataforma = self._descargar(track, output_path)
 
                     self.history.mark_downloaded(
                         track.url,
                         track.title,
                         track.artist,
                         file_path,
-                        platform="soundcloud"
+                        platform=plataforma
                     )
                     self._post_process(file_path, track)
 
@@ -1001,14 +1153,10 @@ class SyncManager:
 
                 try:
                     output_path = self._build_output_path(track.artist, track.title, track)
-                    file_path = self.downloader.download(
-                        track.url,
-                        output_path,
-                        quality_preset=get_preset(self.quality_preset),
-                        progress_callback=None
-                    )
+                    file_path, plataforma = self._descargar(track, output_path)
                     self.history.mark_downloaded(
-                        track.url, track.title, track.artist, file_path
+                        track.url, track.title, track.artist, file_path,
+                        platform=plataforma
                     )
                     # Also register in soundcloud_likes table
                     self.history.mark_like_downloaded(

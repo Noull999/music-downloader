@@ -560,6 +560,7 @@ class WebViewAPI:
                 "embed_genre": self.controller.get_config_value("embed_genre", False),
             },
             subfolder_by_genre=self.controller.get_config_value("subfolder_by_genre", False),
+            youtube_fallback_enabled=self.controller.get_config_value("youtube_fallback", True),
         )
         # SyncManager arma su PROPIO SoundCloudAPIClient (self._sync_manager.api),
         # un objeto distinto al que se usó arriba para el chequeo inicial.
@@ -747,6 +748,25 @@ class WebViewAPI:
         except Exception as e:
             logger.exception("Error reintentando fallidas")
             return {"ok": False, "error": str(e)}
+
+    def retry_failed_with_youtube(self, url: str) -> dict:
+        """
+        Prueba una cancion fallida contra YouTube (boton del panel de
+        fallidas). Busca, verifica titulo/duracion/version y la baja si hay
+        un candidato confiable. Bloquea hasta terminar, asi que la vista
+        deshabilita el boton mientras tanto.
+        """
+        guard = self._require_sync_manager()
+        if not guard["ok"]:
+            return guard
+        try:
+            r = self._sync_manager.reintentar_con_youtube(url)
+        except Exception as e:
+            logger.exception("Error reintentando con YouTube")
+            return {"ok": False, "error": str(e)[:200]}
+        if r.get("ok"):
+            self._disk_size_cache = None
+        return r
 
     def get_likes(self) -> list[dict]:
         """Likes guardados en DB con su estado de descarga (sin red, instantáneo)."""

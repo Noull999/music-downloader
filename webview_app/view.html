@@ -1031,7 +1031,34 @@
       sub.className = "hrow-sub";
       sub.textContent = `${it.permanent ? "permanente" : `${it.attempts} intento(s)`} · ${it.error || ""}`.slice(0, 110);
       main.append(title, sub);
-      row.append(glyph, main);
+      // Tercera columna de la grilla .hrow (18px 1fr auto): el boton.
+      const btn = document.createElement("button");
+      btn.className = "mini-btn dl";
+      btn.textContent = "Probar desde YouTube";
+      btn.title = "Busca la misma cancion en YouTube y la baja si hay una version confiable";
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        btn.textContent = "Buscando…";
+        sub.textContent = "Buscando en YouTube y verificando que sea la misma…";
+        let r;
+        try {
+          r = await api().retry_failed_with_youtube(it.url);
+        } catch (e) {
+          r = { ok: false, error: String(e) };
+        }
+        if (r && r.ok) {
+          setStatus(`Descargada desde YouTube: ${it.title}`, "ok");
+          refreshHistory();
+          refreshStats();
+          refreshFailed();
+          return;
+        }
+        btn.disabled = false;
+        btn.textContent = "Probar desde YouTube";
+        sub.textContent = (r && r.error) || "No se pudo";
+        sub.style.color = "var(--amber)";
+      });
+      row.append(glyph, main, btn);
       list.appendChild(row);
     }
   }

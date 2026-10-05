@@ -111,6 +111,7 @@ def build_manager(config: dict) -> SyncManager:
             "embed_genre": config.get("embed_genre", False),
         },
         subfolder_by_genre=config.get("subfolder_by_genre", False),
+        youtube_fallback_enabled=config.get("youtube_fallback", True),
     )
 
 
