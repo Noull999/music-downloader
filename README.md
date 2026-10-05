@@ -97,13 +97,15 @@ Para instrucciones detalladas por sistema operativo, ver [SETUP.md](SETUP.md).
 
 La primera vez que abrís la app aparece un asistente: **"Iniciar sesión en SoundCloud"** abre una ventana con la página de SoundCloud, iniciás sesión ahí (la app no ve tu contraseña) y se conecta sola, incluido el Client ID. También se abre desde "Conectar cuenta". Es opcional: descargar con links funciona sin cuenta.
 
-Si el inicio de sesión no funciona (por ejemplo, entrás con Google o Apple y la ventana no lo permite), usá el **modo manual** del mismo asistente con tu **OAuth Token** y **Client ID**:
+La ventana de inicio de sesión **no admite Google, Facebook ni Apple** (abren ventanas emergentes que la app no puede mostrar): ahí entrá con tu correo. Si tu cuenta es de esas, usá el **modo manual** del mismo asistente:
 
-1. Abrí soundcloud.com en tu navegador
-2. Abrí DevTools (F12 → Network)
-3. Buscá cualquier request a `api-v2.soundcloud.com`
-4. En el header `Authorization` copiá el valor (formato: `OAuth 2-XXXXX...`)
-5. En los query params buscá `client_id=XXXXX` (si lo dejás vacío, la app lo busca sola)
+1. Abrí soundcloud.com en tu navegador e iniciá sesión (el asistente tiene un link para eso).
+2. Abrí la consola: **Ctrl + Shift + J** (Shift es la flecha ⇧, no Bloq Mayús; en Mac **Cmd + Opción + J**), o F12 → pestaña *Console*.
+3. Pegá la línea que muestra el asistente (botón *Copiar línea*) y Enter. Si Chrome lo pide, escribí antes `allow pasting` + Enter. La consola solo responde `undefined`: es normal, el token ya quedó copiado en tu portapapeles.
+4. Volvé a la app, hacé clic en **OAuth Token** y pegá con Ctrl+V (empieza con `2-`; el prefijo `OAuth` lo agrega la app). El Client ID se completa solo.
+5. **Verificar y conectar**: debe aparecer `✅ ¡Conectado!` con tu usuario.
+
+Si la consola responde `no encontrado`, usá DevTools → *Network* → cualquier request a `api-v2.soundcloud.com` → header `Authorization`.
 
 ## 🎯 Uso
 
@@ -112,6 +114,10 @@ Si el inicio de sesión no funciona (por ejemplo, entrás con Google o Apple y l
 3. **Mis Likes** — explorá tus likes guardados, con estado de descarga y fecha, y bajá selecciones puntuales.
 4. **Sincronización automática** — desde Configuración podés registrar una tarea programada de Windows para que sincronice sola cada X horas, incluso con la app cerrada.
 5. **Ordenar por género** — activá "Ordenar por género en carpetas" y cada descarga nueva cae sola donde corresponde. Si ya tenés música suelta, el botón "Ordenar la música que ya tengo" la acomoda: primero te muestra la simulación, y solo mueve si confirmás.
+
+### Sincronización automática
+
+Se programa desde la app (Windows: Programador de tareas; macOS: `launchd`). Si el equipo estaba apagado o dormido a la hora programada, sincroniza al encenderse o despertar.
 
 ## 📁 Estructura del Proyecto
 

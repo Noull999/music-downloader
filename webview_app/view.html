@@ -660,7 +660,10 @@
         solo copia tu token a tu portapapeles, no envía nada):
         <button class="btn btn-ghost" id="btnCopiarSnippet" style="padding:4px 8px;margin:4px 0;">Copiar línea</button><br>
         <code id="scSnippet" style="user-select:all">copy(document.cookie.match(/oauth_token=([^;]+)/)?.[1] || "no encontrado")</code><br>
-        <b>3)</b> Pegá el resultado abajo en OAuth Token. El Client ID se completa solo.
+        <b>3)</b> Tu token ya quedó copiado solo (la consola solo muestra
+        "undefined", es normal): volvé acá, hacé clic en OAuth Token y apretá
+        <b>Ctrl+V</b> (o Cmd+V en Mac). Debería empezar con <code>2-</code>; la app
+        agrega el "OAuth" sola. El Client ID se completa solo.
         Si la consola dice "no encontrado": pestaña <b>Network</b> → recargá →
         cualquier request a <i>api-v2</i> → header <b>Authorization</b>.
       </div>
