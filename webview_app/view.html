@@ -1935,9 +1935,26 @@
         sub.className = "like-sub";
         if (like.downloaded) {
           const when = (like.downloaded_at || "").slice(0, 16);
-          sub.textContent = when
-            ? `descargada ${when}`
-            : "descargada";
+          // DONDE quedo: antes solo decia "descargada" y no habia forma de
+          // saber si el archivo estaba o a que carpeta habia ido.
+          let donde = "";
+          if (like.file_path) {
+            const partes = like.file_path.replace(/\\/g, "/").split("/");
+            donde = partes.length > 1 ? partes[partes.length - 2] : "";
+          }
+          sub.textContent = (when ? `descargada ${when}` : "descargada") + (donde ? ` · ${donde}` : "");
+          if (like.archivo_distinto && like.file_path) {
+            const nombre = like.file_path.replace(/\\/g, "/").split("/").pop();
+            sub.textContent = `⚠ enlazada a otro archivo: ${nombre}`;
+            sub.style.color = "var(--amber)";
+          }
+          if (like.file_path) {
+            sub.style.cursor = "pointer";
+            sub.addEventListener("click", async () => {
+              const r = await api().reveal_in_folder(like.file_path);
+              if (!r.ok) setStatus(r.error || "No se pudo abrir la carpeta", "err");
+            });
+          }
         } else {
           sub.textContent = like.genre || "soundcloud";
         }

@@ -1303,6 +1303,23 @@ class SyncManager:
             'total_found': total
         }
 
+    @staticmethod
+    def _archivo_no_se_parece(like: dict, archivo: Optional[str]) -> bool:
+        """
+        True si el archivo registrado para un like tiene un nombre que casi no
+        se le parece. Umbral bajo a proposito (60): un archivo renombrado de
+        verdad (sin el sello, con guiones bajos) puntua 80-90 y no debe
+        marcarse; un tema equivocado ("Loreen - Tattoo" para uno de O.B.I.)
+        puntua 30-40.
+        """
+        if not archivo or str(archivo).startswith("local://"):
+            return False
+        candidatos = match_utils.like_candidates(like.get("artist") or "", like.get("title") or "")
+        archivo_cands = match_utils.file_candidates(Path(str(archivo)).stem)
+        if not candidatos or not archivo_cands:
+            return False
+        return match_utils.best_score(candidatos, archivo_cands) < 60
+
     def get_likes_with_status(self) -> list[dict]:
         """
         Obtiene todos los likes guardados con su estado de descarga.
@@ -1326,13 +1343,18 @@ class SyncManager:
         result = []
         for like in likes:
             download_info = downloads.get(like['url'])
+            archivo = download_info['file_path'] if download_info else None
             result.append({
                 'id': like['id'],
                 'url': like['url'],
                 'title': like['title'],
                 'artist': like['artist'],
                 'downloaded': download_info is not None,
-                'file_path': download_info['file_path'] if download_info else None,
+                'file_path': archivo,
+                # Un like puede quedar "descargado" apuntando a un archivo que
+                # no se le parece (la sync lo daba por duplicado de otro tema):
+                # se avisa para que se vea en vez de quedar oculto.
+                'archivo_distinto': self._archivo_no_se_parece(like, archivo),
                 'downloaded_at': download_info['downloaded_at'] if download_info else None,
                 'created_at': like['created_at'],
                 'genre': like['genre'],
