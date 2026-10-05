@@ -651,12 +651,15 @@
       <details id="scManual">
       <summary class="hint" style="cursor:pointer;margin:8px 0;">Modo manual (Google/Facebook/Apple o si falla)</summary>
       <div class="hint" style="margin-bottom:8px;">
-        1) <a href="#" id="scAbrirWeb" style="color:var(--amber)">Abrí soundcloud.com en tu navegador</a>
-        e iniciá sesión como siempre. 2) Apretá F12, andá a <b>Console</b>, pegá
-        esta línea y Enter; copia tu token: <br>
-        <code id="scSnippet" style="user-select:all">copy(document.cookie.match(/oauth_token=([^;]+)/)?.[1] || "no encontrado")</code>
-        <br>3) Pegalo abajo en OAuth Token (si dice "no encontrado", usá el
-        método de Network que explica el final). El Client ID se completa solo.
+        <b>1)</b> <a href="#" id="scAbrirWeb" style="color:var(--amber)">Abrir soundcloud.com en mi navegador</a>
+        e iniciá sesión como siempre.<br>
+        <b>2)</b> Con esa pestaña abierta apretá <b id="scAtajo">Ctrl+Mayús+J</b>
+        (abre la consola directo) y pegá esta línea con Enter:
+        <button class="btn btn-ghost" id="btnCopiarSnippet" style="padding:4px 8px;margin:4px 0;">Copiar línea</button><br>
+        <code id="scSnippet" style="user-select:all">copy(document.cookie.match(/oauth_token=([^;]+)/)?.[1] || "no encontrado")</code><br>
+        <b>3)</b> Pegá el resultado abajo en OAuth Token. El Client ID se completa solo.
+        Si la consola dice "no encontrado": pestaña <b>Network</b> → recargá →
+        cualquier request a <i>api-v2</i> → header <b>Authorization</b>.
       </div>
       <div class="form-row">
         <label>OAuth Token</label>
@@ -1498,6 +1501,21 @@
           if (r.ok && !inp.value) inp.value = r.client_id;
         });
       }
+    });
+
+    if (/Mac/i.test(navigator.platform || navigator.userAgent)) {
+      document.getElementById("scAtajo").textContent = "Cmd+Opción+J";
+    }
+    document.getElementById("btnCopiarSnippet").addEventListener("click", async () => {
+      const txt = document.getElementById("scSnippet").textContent;
+      const btn = document.getElementById("btnCopiarSnippet");
+      try { await navigator.clipboard.writeText(txt); btn.textContent = "¡Copiada!"; }
+      catch (e) {
+        const r = document.createRange(); r.selectNode(document.getElementById("scSnippet"));
+        getSelection().removeAllRanges(); getSelection().addRange(r);
+        btn.textContent = "Seleccionada: Ctrl+C";
+      }
+      setTimeout(() => { btn.textContent = "Copiar línea"; }, 2500);
     });
 
     document.getElementById("scAbrirWeb").addEventListener("click", (e) => {
