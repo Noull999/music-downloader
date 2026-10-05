@@ -68,8 +68,25 @@ def ensure_ffmpeg() -> Path | None:
         print("⚠️  No se pudo extraer ffmpeg.exe del zip descargado")
         return None
 
+    elif SYSTEM == "Darwin":
+        # El ffmpeg de Homebrew depende de decenas de .dylib del Mac donde se
+        # compila y no funcionaria en otro. imageio-ffmpeg trae un binario
+        # estatico (arm64 e Intel), asi que se copia ese.
+        target = target_dir / "ffmpeg"
+        if target.exists() and target.stat().st_size > 1_000_000:
+            return target
+        try:
+            import imageio_ffmpeg
+            shutil.copy(imageio_ffmpeg.get_ffmpeg_exe(), target)
+            target.chmod(0o755)
+            print(f"✓ ffmpeg estático copiado a {target}")
+            return target
+        except Exception as e:
+            print(f"⚠️  No se pudo obtener un ffmpeg estático ({e}); pip install imageio-ffmpeg")
+            return None
+
     else:
-        # Linux / macOS: usa el del sistema
+        # Linux: usa el del sistema
         path = shutil.which("ffmpeg")
         if path:
             print(f"✓ ffmpeg del sistema: {path}")
@@ -87,6 +104,32 @@ def ensure_fpcalc() -> Path | None:
     """
     target_dir = BASE / "build" / "fpcalc"
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    if SYSTEM == "Darwin":
+        target = target_dir / "fpcalc"
+        if target.exists() and target.stat().st_size > 100_000:
+            return target
+        url = ("https://github.com/acoustid/chromaprint/releases/download/"
+               "v1.6.0/chromaprint-fpcalc-1.6.0-macos-universal.tar.gz")
+        try:
+            import tarfile
+            import urllib.request
+            tar_path = target_dir / "fpcalc.tar.gz"
+            urllib.request.urlretrieve(url, tar_path)
+            with tarfile.open(tar_path) as tf:
+                tf.extractall(target_dir)
+            for root, _, files in os.walk(target_dir):
+                if "fpcalc" in files and Path(root) != target_dir:
+                    shutil.move(str(Path(root) / "fpcalc"), str(target))
+                    break
+            tar_path.unlink(missing_ok=True)
+            if target.exists():
+                target.chmod(0o755)
+                print(f"✓ fpcalc listo en {target}")
+                return target
+        except Exception as e:
+            print(f"⚠️  No se pudo descargar fpcalc ({e}); la huella de audio quedará desactivada")
+        return None
 
     if SYSTEM != "Windows":
         path = shutil.which("fpcalc")
@@ -178,7 +221,10 @@ def build(console: bool, no_ffmpeg: bool, clean: bool):
         print(f"✅ fpcalc embebido en el .exe (bundle onefile): {fpcalc_path}")
 
     bundle_root = BASE / "dist"
-    exe_path = bundle_root / ("MusicDownloader.exe" if SYSTEM == "Windows" else "MusicDownloader")
+    if SYSTEM == "Darwin":
+        exe_path = bundle_root / "MusicDownloader.app"
+    else:
+        exe_path = bundle_root / ("MusicDownloader.exe" if SYSTEM == "Windows" else "MusicDownloader")
 
     # 4️⃣ Firma (solo Windows): sin firma, Smart App Control (activado por
     # defecto en instalaciones nuevas de Windows 11 tras su período de
@@ -190,8 +236,25 @@ def build(console: bool, no_ffmpeg: bool, clean: bool):
     if SYSTEM == "Windows" and exe_path.exists():
         sign_windows(exe_path)
 
+    if SYSTEM == "Darwin" and exe_path.exists():
+        zip_mac(exe_path)
+
     print("\n✅ Build finalizado:")
     print(f"   {exe_path}")
+
+
+def zip_mac(app_path: Path) -> None:
+    """
+    Firma "ad hoc" (gratis) y comprime la .app con ditto, que conserva los
+    permisos y atributos que un zip comun pierde. La firma ad hoc evita el
+    mensaje de "app dañada" en Apple Silicon; el aviso de "desarrollador no
+    identificado" solo se quita pagando la cuenta de Apple.
+    """
+    run(["codesign", "--force", "--deep", "--sign", "-", str(app_path)])
+    destino = app_path.parent / "MusicDownloader-mac.zip"
+    destino.unlink(missing_ok=True)
+    run(["ditto", "-c", "-k", "--keepParent", str(app_path), str(destino)])
+    print(f"✅ Listo para compartir: {destino}")
 
 
 def sign_windows(exe_path: Path) -> None:

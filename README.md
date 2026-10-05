@@ -68,7 +68,19 @@ python scripts/build.py
 
 Esto genera `dist/MusicDownloader.exe` (descarga e incrusta ffmpeg y fpcalc automáticamente, y lo firma con un certificado autofirmado para que Windows Smart App Control no lo bloquee en tu PC).
 
-### Opción 2: Desde código fuente
+### Opción 2: App para macOS (.app)
+
+No hace falta un Mac para armarla: en GitHub → pestaña **Actions** → **Build macOS** → **Run workflow**. Al terminar (unos 10 minutos) aparece como descarga `MusicDownloader-mac-apple-silicon.zip` (Macs M1/M2/M3...) y `MusicDownloader-mac-intel.zip`. Si subís una etiqueta (`git tag v1.0.0 && git push --tags`) también queda en **Releases**, con un link directo para mandárselo a alguien.
+
+Quien la reciba:
+
+1. Descomprime el `.zip` y arrastra `MusicDownloader.app` a *Aplicaciones*.
+2. La primera vez: **clic derecho → Abrir → Abrir** (Mac avisa de "desarrollador no identificado" porque la app no está firmada con una cuenta de Apple de pago; solo pasa la primera vez).
+3. La app abre sola un asistente para conectar SoundCloud: inicia sesión ahí y listo. Es opcional; descargar con links funciona sin eso.
+
+Incluye ffmpeg y fpcalc; no hay que instalar nada más.
+
+### Opción 3: Desde código fuente
 
 ```bash
 git clone https://github.com/Noull999/music-downloader.git
@@ -83,15 +95,15 @@ Para instrucciones detalladas por sistema operativo, ver [SETUP.md](SETUP.md).
 
 ## ⚙️ Configuración de SoundCloud
 
-Para sincronizar tus likes necesitás tu **OAuth Token** y **Client ID**:
+La primera vez que abrís la app aparece un asistente: **"Iniciar sesión en SoundCloud"** abre una ventana con la página de SoundCloud, iniciás sesión ahí (la app no ve tu contraseña) y se conecta sola, incluido el Client ID. También se abre desde "Conectar cuenta". Es opcional: descargar con links funciona sin cuenta.
+
+Si el inicio de sesión no funciona (por ejemplo, entrás con Google o Apple y la ventana no lo permite), usá el **modo manual** del mismo asistente con tu **OAuth Token** y **Client ID**:
 
 1. Abrí soundcloud.com en tu navegador
 2. Abrí DevTools (F12 → Network)
 3. Buscá cualquier request a `api-v2.soundcloud.com`
 4. En el header `Authorization` copiá el valor (formato: `OAuth 2-XXXXX...`)
-5. En los query params buscá `client_id=XXXXX` y copialo
-
-Ingresá estos valores desde "Conectar cuenta" en la app.
+5. En los query params buscá `client_id=XXXXX` (si lo dejás vacío, la app lo busca sola)
 
 ## 🎯 Uso
 

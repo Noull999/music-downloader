@@ -19,6 +19,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
@@ -728,6 +729,69 @@ class WebViewAPI:
         if not oauth_token or not client_id:
             return {"ok": False, "error": "No hay credenciales guardadas"}
         return self.verify_soundcloud_credentials(oauth_token, client_id)
+
+    def detect_soundcloud_client_id(self) -> dict:
+        """Client ID publico leido de la web de SoundCloud (nadie tiene que buscarlo)."""
+        from sync import soundcloud_setup
+        cid = soundcloud_setup.detectar_client_id()
+        return {"ok": bool(cid), "client_id": cid or ""}
+
+    def login_soundcloud(self) -> dict:
+        """
+        Abre una ventana con el login de SoundCloud; al iniciar sesion lee la
+        cookie `oauth_token`, completa el Client ID solo, valida y conecta.
+        La app nunca ve la contrasena. El resultado llega como evento
+        `soundcloud_login` ({ok, user_info | error}); si algo falla, la
+        persona todavia puede pegar los datos a mano.
+        """
+        if getattr(self, "_login_activo", False):
+            return {"ok": False, "error": "Ya hay una ventana de inicio de sesión abierta"}
+        self._login_activo = True
+
+        def trabajar():
+            import webview
+            from sync import soundcloud_setup
+            ventana = None
+            try:
+                ventana = webview.create_window(
+                    "Iniciar sesión en SoundCloud", "https://soundcloud.com/signin",
+                    width=520, height=760,
+                )
+                cerrada = threading.Event()
+                ventana.events.closed += cerrada.set
+                limite = time.time() + 600
+                token = None
+                while not cerrada.is_set() and time.time() < limite and not token:
+                    time.sleep(1.5)
+                    try:
+                        token = soundcloud_setup.token_de_cookies(ventana.get_cookies())
+                    except Exception:
+                        logger.debug("Todavía sin cookies legibles", exc_info=True)
+                if not token:
+                    self._push("soundcloud_login", {
+                        "ok": False,
+                        "error": "No se detectó el inicio de sesión. Probá de nuevo o pegá los datos a mano."})
+                    return
+                cid = soundcloud_setup.detectar_client_id()
+                if not cid:
+                    self._push("soundcloud_login", {
+                        "ok": False, "error": "Se inició sesión, pero no se pudo leer el Client ID. Pegalo a mano."})
+                    return
+                r = self.verify_soundcloud_credentials(token, cid)
+                self._push("soundcloud_login", r)
+            except Exception as e:
+                logger.exception("Falló el inicio de sesión de SoundCloud")
+                self._push("soundcloud_login", {"ok": False, "error": str(e)[:150]})
+            finally:
+                self._login_activo = False
+                try:
+                    if ventana is not None:
+                        ventana.destroy()
+                except Exception:
+                    pass
+
+        threading.Thread(target=trabajar, daemon=True, name="sc-login").start()
+        return {"ok": True}
 
     def verify_soundcloud_credentials(self, oauth_token: str, client_id: str) -> dict:
         """

@@ -635,6 +635,18 @@
       <button class="modal-close" data-close="modalConnect">✕</button>
     </div>
     <div class="modal-body">
+      <div class="hint" id="scWizardIntro">
+        Para sincronizar tus likes de SoundCloud la app necesita conectarse a tu
+        cuenta. <b>Es opcional</b>: pegar links y descargar funciona sin esto.
+      </div>
+      <button class="btn btn-blood btn-block" id="btnScLogin">1 · Iniciar sesión en SoundCloud</button>
+      <div class="hint">
+        Se abre una ventana con la página de SoundCloud. Iniciá sesión ahí
+        (la app no ve tu contraseña) y se conecta sola al terminar. Si entrás
+        con Google/Apple y no te deja, usá el modo manual de abajo.
+      </div>
+      <details id="scManual">
+      <summary class="hint" style="cursor:pointer;margin:8px 0;">Modo manual (si el inicio de sesión no funciona)</summary>
       <div class="form-row">
         <label>OAuth Token</label>
         <div class="form-row-inline">
@@ -650,12 +662,13 @@
       <div class="hint">
         F12 en soundcloud.com → pestaña Network → filtrá "api-v2" → recargá →
         abrí cualquier request: el header <b>Authorization</b> es el OAuth Token,
-        y <b>client_id</b> en la URL del request es el Client ID. Son como una
-        contraseña, no los compartas.
+        y <b>client_id</b> en la URL del request es el Client ID (si lo dejás
+        vacío la app lo busca sola). Son como una contraseña, no los compartas.
       </div>
+      </details>
     </div>
     <div class="modal-foot">
-      <button class="btn btn-ghost" data-close="modalConnect">Cerrar</button>
+      <button class="btn btn-ghost" data-close="modalConnect">Ahora no</button>
       <button class="btn btn-blood" id="btnScVerify">Verificar y conectar</button>
     </div>
   </div>
@@ -861,6 +874,21 @@
         upsertTrack(payload);
         renderQueueRow(payload.url, true);
         break;
+      case "soundcloud_login": {
+        const st = document.getElementById("scVerifyStatus");
+        if (payload.ok) {
+          st.textContent = `✓ ${payload.user_info.username} · ${payload.user_info.likes_count} likes`;
+          st.className = "sc-status-line on";
+          renderScStatus(true, payload.user_info);
+          setStatus("SoundCloud conectado", "ok");
+          setTimeout(() => closeModal("modalConnect"), 1200);
+        } else {
+          st.textContent = `✗ ${payload.error}`;
+          st.className = "sc-status-line off";
+          document.getElementById("scManual").open = true;
+        }
+        break;
+      }
       case "abrir_lista":
         // Un link de lista (playlist, perfil, set): en vez de llenar la cola,
         // se abre la ventana para elegir cuales temas agregar.
@@ -1450,6 +1478,23 @@
       document.getElementById("scClientInput").value = sc.client_id || "";
       document.getElementById("scVerifyStatus").textContent = "";
       openModal("modalConnect");
+      if (!document.getElementById("scClientInput").value) {
+        api().detect_soundcloud_client_id().then(r => {
+          const inp = document.getElementById("scClientInput");
+          if (r.ok && !inp.value) inp.value = r.client_id;
+        });
+      }
+    });
+
+    document.getElementById("btnScLogin").addEventListener("click", async () => {
+      const statusEl = document.getElementById("scVerifyStatus");
+      statusEl.textContent = "Esperando que inicies sesión en la ventana que se abrió…";
+      statusEl.className = "sc-status-line";
+      const r = await api().login_soundcloud();
+      if (!r.ok) {
+        statusEl.textContent = `✗ ${r.error}`;
+        statusEl.className = "sc-status-line off";
+      }
     });
 
     document.getElementById("btnScToggleOauth").addEventListener("click", () => {
@@ -1853,6 +1898,14 @@
     }
     renderScStatus(status.connected, status.user_info);
     renderLastSync(status.last_sync);
+    if (!status.connected && !status.has_credentials) {
+      // Primera vez: se ofrece conectar SoundCloud una sola vez.
+      const cfg = await api().get_config();
+      if (!cfg.setup_seen) {
+        await api().save_settings({ setup_seen: true });
+        document.getElementById("btnScConnect").click();
+      }
+    }
     if (status.sync_interval_minutes) {
       const field = document.getElementById("cfgSyncInterval");
       if (field && !field.value) field.value = status.sync_interval_minutes;

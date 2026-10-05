@@ -1,0 +1,57 @@
+name: Build macOS
+
+# Arma MusicDownloader.app (en un .zip) en un Mac de GitHub: no hace falta
+# tener un Mac. Se corre a mano desde la pestaña Actions ("Run workflow") o
+# al subir una etiqueta v* (por ejemplo v1.0.0), que además la publica en
+# Releases para que se pueda descargar con un link.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest      # Apple Silicon (M1/M2/M3...)
+            nombre: apple-silicon
+          - os: macos-15-intel    # Mac con procesador Intel
+            nombre: intel
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-build.txt
+
+      - name: Tests
+        run: |
+          pip install pytest
+          pytest tests -q -x --ignore=tests/test_id3_version.py
+
+      - name: Construir la app
+        run: python scripts/build.py --clean
+
+      - name: Renombrar
+        run: mv dist/MusicDownloader-mac.zip dist/MusicDownloader-mac-${{ matrix.nombre }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicDownloader-mac-${{ matrix.nombre }}
+          path: dist/MusicDownloader-mac-${{ matrix.nombre }}.zip
+
+      - name: Publicar en Releases (solo con etiqueta)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/MusicDownloader-mac-${{ matrix.nombre }}.zip

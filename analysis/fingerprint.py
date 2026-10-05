@@ -40,12 +40,13 @@ AUDIO_EXTENSIONS = match_utils.AUDIO_EXTENSIONS
 
 def _fpcalc_path() -> str:
     """Ubica fpcalc.exe: empaquetado junto al .exe, en dev bajo build/, o en PATH."""
+    nombre = "fpcalc.exe" if sys.platform == "win32" else "fpcalc"
     candidates = []
     if getattr(sys, "frozen", False):
-        candidates.append(Path(sys._MEIPASS) / "fpcalc" / "fpcalc.exe")
+        candidates.append(Path(sys._MEIPASS) / "fpcalc" / nombre)
     else:
         base = Path(__file__).resolve().parents[1]
-        candidates.append(base / "build" / "fpcalc" / "fpcalc.exe")
+        candidates.append(base / "build" / "fpcalc" / nombre)
     for c in candidates:
         if c.exists():
             return str(c)
