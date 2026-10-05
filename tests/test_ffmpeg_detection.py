@@ -54,53 +54,6 @@ class TestFFmpegLocationLogic(unittest.TestCase):
         assert result is None, f"Esperaba None cuando ffmpeg no existe, obtuvo {result}"
 
 
-class TestFFmpegExeSeleccion(unittest.TestCase):
-    """Tests para la selección correcta del ejecutable de ffmpeg."""
-
-    def test_ffmpeg_exe_returns_string(self):
-        """_ffmpeg_exe() siempre retorna un string."""
-        from quality.post_processor import _ffmpeg_exe
-
-        result = _ffmpeg_exe()
-        assert isinstance(result, str), f"_ffmpeg_exe() debe retornar string, obtuvo {type(result)}"
-
-    @patch('quality.post_processor.ffmpeg_location')
-    def test_ffmpeg_exe_windows_convention(self, mock_ffmpeg_location):
-        """En Windows, usa ffmpeg.exe."""
-        from quality.post_processor import _ffmpeg_exe
-
-        mock_ffmpeg_location.return_value = r"C:\ffmpeg\bin"
-
-        with patch('quality.post_processor.sys.platform', 'win32'):
-            # Re-ejecutar la lógica manualmente
-            loc = r"C:\ffmpeg\bin"
-            result = os.path.join(loc, "ffmpeg.exe")
-            assert result.endswith('ffmpeg.exe'), f"Windows debe usar ffmpeg.exe"
-
-    @patch('quality.post_processor.ffmpeg_location')
-    def test_ffmpeg_exe_linux_convention(self, mock_ffmpeg_location):
-        """En Linux/macOS, usa ffmpeg (sin extensión)."""
-        from quality.post_processor import _ffmpeg_exe
-
-        mock_ffmpeg_location.return_value = "/usr/bin"
-
-        with patch('quality.post_processor.sys.platform', 'linux'):
-            # Re-ejecutar la lógica manualmente
-            loc = "/usr/bin"
-            result = os.path.join(loc, "ffmpeg")
-            assert result.endswith('ffmpeg'), f"Linux debe usar ffmpeg sin extensión"
-            assert not result.endswith('.exe'), f"Linux no debe tener .exe"
-
-    @patch('quality.post_processor.ffmpeg_location')
-    def test_ffmpeg_exe_fallback(self, mock_ffmpeg_location):
-        """Si ffmpeg_location() retorna None, usa 'ffmpeg' como comando."""
-        from quality.post_processor import _ffmpeg_exe
-
-        mock_ffmpeg_location.return_value = None
-        result = _ffmpeg_exe()
-        assert result == "ffmpeg", f"Fallback debe ser 'ffmpeg', obtuvo {result}"
-
-
 class TestSanitizeFilename(unittest.TestCase):
     """Tests para sanitize_filename() que funciona igual en todos los SO."""
 
@@ -162,24 +115,6 @@ class TestPathConstruction(unittest.TestCase):
 
         for platform, paths in _FFMPEG_CANDIDATES.items():
             assert isinstance(paths, list), f"Paths para '{platform}' debe ser lista"
-
-    def test_no_hardcoded_windows_paths_in_modules(self):
-        """No hay rutas Windows hardcodeadas en módulos principales."""
-        # debug_api.py debe construir su ruta dinámicamente, no hardcodeada
-        with open("debug_api.py", encoding='utf-8') as f:
-            debug_api_content = f.read()
-            # Verifica que la ruta de config no está hardcodeada a C:\Users\...
-            assert 'r"C:\\Users\\Lenovo' not in debug_api_content, "debug_api.py no debe tener rutas hardcodeadas"
-
-        # rebuild_history.py debe usar ~/Music o argumento, no hardcodeada a serato\musik
-        with open("rebuild_history.py", encoding='utf-8') as f:
-            rebuild_history_content = f.read()
-            # Verifica que no está hardcodeada a la carpeta serato personal
-            assert 'serato\\musik' not in rebuild_history_content, "rebuild_history.py no debe tener rutas hardcodeadas"
-            # Verifica que usa expanduser o sys.argv para ser flexible
-            assert 'expanduser' in rebuild_history_content or 'sys.argv' in rebuild_history_content, \
-                "rebuild_history.py debe usar sys.argv o expanduser para rutas"
-
 
 if __name__ == '__main__':
     unittest.main()

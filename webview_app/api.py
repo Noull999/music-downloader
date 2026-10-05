@@ -19,10 +19,13 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
+from analysis import acoustid_lookup
+from analysis import fingerprint as audio_fingerprint
 from download_manager import DownloadManager
 from gui.ui_controller import UIController
 from handlers.soundcloud_handler import SoundCloudHandler
@@ -31,13 +34,18 @@ from models import (
     STATUS_DONE, STATUS_ERROR, STATUS_SKIP, STATUS_CANCELLED,
 )
 from quality.presets import get_preset
-from sync import match_utils, task_scheduler
+from sync import genre_utils, match_utils, playlist_export, soundcloud_lists, task_scheduler, upgrade_links
+from sync.genre_chain import ResolutorDeGenero
 from sync.soundcloud_api import SoundCloudAPIClient
 from sync.sync_manager import SyncManager
 from url_detector import detect_handler, detect_platform_name
+from utils import disk_usage
 from utils.validators import parse_urls_from_text
 
 _AUDIO_EXTENSIONS = match_utils.AUDIO_EXTENSIONS
+
+# Cuántos temas parecidos se muestran al elegir de una "radio" de YouTube.
+LIMITE_RADIO = 50
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +59,25 @@ _STATUS_EMOJI = {
 }
 
 
+def _motivo_sin_vista_previa(error: str) -> str:
+    """Mensaje corto y legible para un tema que no se puede escuchar."""
+    e = error.lower()
+    if "drm" in e:
+        return "Este tema está protegido (DRM): no hay vista previa."
+    if "geo" in e or "location" in e or "country" in e:
+        return "Este tema está bloqueado en tu país."
+    if "age" in e or "sign in" in e:
+        return "Este tema pide iniciar sesión (restricción de edad)."
+    if "private" in e or "unavailable" in e or "404" in e or "not found" in e:
+        return "Este tema ya no está disponible."
+    return "No se pudo obtener el audio."
+
+
 def _track_to_dict(track: TrackInfo) -> dict:
     d = asdict(track)
+    # La descripcion solo sirve para sacar hashtags de genero: no hace falta
+    # mandarla a la vista en cada evento.
+    d.pop("description", None)
     d["duration_str"] = track.duration_str()
     return d
 
@@ -80,11 +105,27 @@ class WebViewAPI:
 
         self._tracks: dict[str, TrackInfo] = {}
         self._lock = threading.Lock()
+        # Temas de las listas que el usuario abrió para elegir (por URL de la
+        # lista), para no volver a pedirlos a YouTube al agregar la selección.
+        self._playlist_cache: dict[str, dict] = {}
+
+        # Genero de lo que se baja por link (YouTube casi nunca lo trae): se
+        # completa en segundo plano al llegar a la cola, y si el usuario baja
+        # antes de que termine, la descarga espera ese resultado.
+        self._genre_chain = ResolutorDeGenero(self._buscar_tracks_sc, self._genero_aceptable)
+        self._genero_eventos: dict[str, threading.Event] = {}
+        self._sc_client_cache = None
 
         # SoundCloud sync (se inicializa al verificar credenciales, igual
         # que gui/sync_window.py). None hasta la primera verificación OK.
         self._sync_manager: Optional[SyncManager] = None
         self._sc_user_info: Optional[dict] = None
+
+        # Cache del tamaño en disco (ver get_stats): recorrer la carpeta
+        # de biblioteca en cada refresh sería barato una vez, pero se
+        # llama tras cada descarga terminada y durante una sync eso es
+        # muchas veces seguidas.
+        self._disk_size_cache: Optional[tuple[float, int]] = None
 
     def attach_window(self, window) -> None:
         self._window = window
@@ -178,7 +219,28 @@ class WebViewAPI:
 
         return {"ok": True, "queued": len(new_urls), "skipped": len(urls) - len(new_urls)}
 
+    def _es_link_de_lista(self, url: str) -> bool:
+        """
+        Un link que es una lista y no un tema: playlist de YouTube (sin un video
+        puntual), o un perfil / set de SoundCloud. Antes agregaban todos sus
+        temas a la cola; ahora se elige cuales.
+        """
+        try:
+            handler = detect_handler(url)
+        except ValueError:
+            return False
+        if isinstance(handler, SoundCloudHandler):
+            return soundcloud_lists.es_url_de_lista(url)
+        es_lista_yt = getattr(handler, "url_has_playlist", None)
+        es_video_yt = getattr(handler, "url_has_video", None)
+        return bool(es_lista_yt and es_video_yt and es_lista_yt(url) and not es_video_yt(url))
+
     def _fetch_worker(self, original_url: str) -> None:
+        if self._es_link_de_lista(original_url):
+            with self._lock:
+                self._tracks.pop(original_url, None)
+            self._push("abrir_lista", {"url": original_url})
+            return
         try:
             handler = detect_handler(original_url)
             metas = handler.get_metadata(original_url)
@@ -223,6 +285,151 @@ class WebViewAPI:
 
         for info in extra_added:
             self._push("track_added", _track_to_dict(info))
+
+        self._asegurar_generos_en_segundo_plano([first] + extra_added)
+
+    def get_playlist_entries(self, playlist_url: str) -> dict:
+        """
+        Los temas de una lista de YouTube (álbum, radio de parecidos...) para
+        que el usuario marque cuáles quiere. No agrega nada a la cola.
+
+        Una lista puede traer cientos de temas (una radio de 337 en la
+        prueba) y tarda unos segundos: por eso se elige en vez de agregarla
+        entera como antes con las playlists puras.
+        """
+        try:
+            if (soundcloud_lists.es_parecidos(playlist_url) or "soundcloud.com" in playlist_url
+                    or playlist_url == soundcloud_lists.REF_DESCUBRIR):
+                plataforma = "SoundCloud"
+                cli = self._sc_client()
+                if cli is None:
+                    return {"ok": False, "error": "Conectá tu cuenta de SoundCloud (botón "
+                                                  "«Conectar cuenta») para ver listas y parecidos."}
+                if playlist_url == soundcloud_lists.REF_DESCUBRIR:
+                    descubiertos = self._descubrir(cli)
+                    metas = [m for m, _ in descubiertos]
+                    coincidencias = {m.url: n for m, n in descubiertos}
+                    es_radio = False
+                else:
+                    es_radio = soundcloud_lists.es_parecidos(playlist_url)
+                    metas = soundcloud_lists.obtener(cli, playlist_url)
+            else:
+                plataforma = "YouTube"
+                handler = detect_handler(playlist_url)
+                obtener = getattr(handler, "get_playlist_tracks", None)
+                if obtener is None:
+                    return {"ok": False, "error": "Esta plataforma no tiene listas."}
+                # Una radio de parecidos (list=RD...) es casi interminable: se
+                # piden solo los más cercanos.
+                es_radio = "list=RD" in playlist_url
+                metas = obtener(playlist_url, limite=LIMITE_RADIO) if es_radio else obtener(playlist_url)
+        except (ValueError, RuntimeError) as exc:
+            return {"ok": False, "error": str(exc)[:200]}
+        except Exception as exc:
+            logger.exception("Error leyendo la lista %s", playlist_url)
+            return {"ok": False, "error": str(exc)[:200]}
+
+        if not metas:
+            return {"ok": False, "error": "La lista está vacía."}
+
+        with self._lock:
+            self._playlist_cache[playlist_url] = {m.url: m for m in metas}
+            en_cola = set(self._tracks)
+        es_descubrir = playlist_url == soundcloud_lists.REF_DESCUBRIR
+
+        entradas = []
+        for m in metas:
+            info = TrackInfo.from_metadata(m)
+            entradas.append({
+                "url": m.url,
+                "title": m.title,
+                "artist": m.artist,
+                "duration_str": info.duration_str(),
+                "en_cola": m.url in en_cola,
+                "ya_descargada": self.controller.is_track_downloaded(m.url),
+                # SoundCloud trae el genero de cada tema (YouTube no): se ve
+                # antes de decidir si bajarlo.
+                "genero": genre_utils.resolve_genre(m.genre, m.tags, None) or "",
+                "coincidencias": coincidencias.get(m.url, 0) if es_descubrir else 0,
+            })
+        return {"ok": True, "entradas": entradas, "es_radio": es_radio, "plataforma": plataforma,
+                "descubrir": es_descubrir}
+
+    def get_preview_url(self, url: str) -> dict:
+        """
+        Enlace directo al audio de un tema, para escuchar un fragmento en la
+        ventana de seleccion sin descargarlo (no se guarda ningun archivo).
+
+        El formato se elige para que un reproductor de pagina lo toque:
+        SoundCloud ofrece un MP3 directo (su formato principal, HLS, no se puede
+        reproducir asi) y YouTube un m4a. Los enlaces vencen a las ~6 horas.
+        """
+        import yt_dlp
+
+        es_sc = "soundcloud.com" in url
+        opts = {
+            "quiet": True, "no_warnings": True, "skip_download": True,
+            "noplaylist": True, "socket_timeout": 15,
+            "format": ("http_mp3_1_0/bestaudio[protocol^=http]/bestaudio" if es_sc
+                       else "bestaudio[ext=m4a]/bestaudio"),
+        }
+        if es_sc:
+            cfg = self.controller.get_config_value("soundcloud", {}) or {}
+            token = cfg.get("oauth_token", "") or self.controller.get_config_value("oauth_token", "")
+            if token:
+                opts["extractor_args"] = {"soundcloud": {"oauth_token": [token]}}
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+        except Exception as exc:
+            return {"ok": False, "error": _motivo_sin_vista_previa(str(exc))}
+
+        stream = (info or {}).get("url")
+        if not stream and (info or {}).get("requested_formats"):
+            stream = info["requested_formats"][0].get("url")
+        if not stream:
+            return {"ok": False, "error": "No se pudo obtener el audio."}
+        if str(info.get("protocol", "")).startswith("m3u8"):
+            return {"ok": False, "error": "Este tema solo ofrece un formato que no se puede escuchar aquí."}
+        return {"ok": True, "url": stream, "duracion": info.get("duration") or 0}
+
+    def _descubrir(self, cli) -> list:
+        """
+        Sugerencias de SoundCloud a partir de tus ultimos likes. Las
+        recomendaciones nunca se bajan solas: aca solo se listan para elegir.
+        """
+        if not self._sync_manager:
+            raise RuntimeError("Conectá tu cuenta de SoundCloud y sincronizá primero, "
+                               "así hay likes de dónde partir.")
+        likes = self._sync_manager.history.load_likes()
+        if not likes:
+            raise RuntimeError("Todavía no hay likes guardados: tocá «Sincronizar» primero.")
+        semillas = [l["id"] for l in likes[:soundcloud_lists.SEMILLAS_DESCUBRIR] if l.get("id")]
+        ya_tenes = {l["url"] for l in likes}
+        return soundcloud_lists.descubrir(cli, semillas, ya_tenes)
+
+    def add_playlist_selection(self, playlist_url: str, urls: list) -> dict:
+        """Agrega a la cola solo los temas marcados de una lista ya abierta."""
+        cache = self._playlist_cache.get(playlist_url)
+        if not cache:
+            return {"ok": False, "error": "Abrí la lista de nuevo: ya no está cargada."}
+
+        nuevas = []
+        with self._lock:
+            for url in urls or []:
+                meta = cache.get(url)
+                if meta is None or url in self._tracks:
+                    continue
+                info = TrackInfo.from_metadata(meta)
+                if self.controller.is_track_downloaded(url):
+                    info.status = STATUS_SKIP
+                self._tracks[url] = info
+                nuevas.append(info)
+
+        for info in nuevas:
+            self._push("track_added", _track_to_dict(info))
+        self._asegurar_generos_en_segundo_plano(nuevas)
+        return {"ok": True, "agregadas": len(nuevas)}
 
     def _mark_fetch_error(self, url: str, message: str) -> None:
         with self._lock:
@@ -278,6 +485,7 @@ class WebViewAPI:
             "remove_silence": self.controller.get_config_value("remove_silence", False),
             "embed_artwork": self.controller.get_config_value("embed_artwork", True),
             "embed_metadata": self.controller.get_config_value("embed_metadata", True),
+            "embed_genre": self.controller.get_config_value("embed_genre", False),
             "analyze_audio": self.controller.get_config_value("analyze_audio", False),
             "key_format": self.controller.get_config_value("key_format", "camelot"),
         }
@@ -294,14 +502,19 @@ class WebViewAPI:
             self._push("track_progress", {"url": url, "progress": v})
 
         def on_status(status: str, err: str):
-            self._push_status(url, status, err)
+            # Primero el historial y despues el aviso: la vista refresca
+            # "Ultimas descargas" apenas recibe "terminada", y si la fila
+            # todavia no estaba guardada la descarga no aparecia hasta el
+            # siguiente refresco.
             if status == STATUS_DONE:
                 self.controller.record_download(track)
+            self._push_status(url, status, err)
 
+        self._asegurar_genero(track)
         self.download_manager.submit_download(
             track=track,
             handler=handler,
-            dest_folder=dest_folder,
+            dest_folder=self._dest_for_track(track),
             filename_pattern=self.controller.get_config_value("filename_pattern", "{artist} - {title}"),
             subfolder_by_artist=self.controller.get_config_value("subfolder_by_artist", False),
             quality_preset=preset,
@@ -361,6 +574,7 @@ class WebViewAPI:
             if str(d.get("url", "")).startswith("local://"):
                 continue
             items.append({
+                "url": d.get("url"),
                 "title": d.get("title"),
                 "artist": d.get("artist"),
                 "platform": d.get("platform"),
@@ -371,6 +585,7 @@ class WebViewAPI:
         if self._sync_manager:
             for d in self._sync_manager.history.get_all_downloads():
                 items.append({
+                    "url": d.get("url"),
                     "title": d.get("title"),
                     "artist": d.get("artist"),
                     "platform": d.get("platform"),
@@ -378,11 +593,41 @@ class WebViewAPI:
                     "date": d.get("downloaded_at"),
                     "source": "sync",
                 })
+        # Una descarga de la sync queda en las DOS tablas (la propia de la
+        # sync, para no re-descargar, y la que lee este panel): sin esto
+        # cada una aparecia dos veces. Si esta en ambas, gana la de la sync.
+        por_url: dict = {}
+        for it in items:
+            clave = it.get("url") or id(it)
+            previo = por_url.get(clave)
+            if previo is None or (it["source"] == "sync" and previo["source"] != "sync"):
+                por_url[clave] = it
+        items = list(por_url.values())
         items.sort(key=lambda d: d.get("date") or "", reverse=True)
         return items[:limit]
 
     def get_stats(self) -> dict:
-        return self.controller.get_stats()
+        """
+        total_downloads sale del historial (siempre correcto). total_size_bytes
+        se recalcula recorriendo la carpeta de biblioteca en disco, en vez de
+        sumar la columna file_size del historial: esa columna queda vieja en
+        cuanto una canción se mueve o renombra (organizar por género, o el
+        historial migrado desde otra carpeta/máquina), así que sumarla
+        subestima el tamaño real. Cacheado 30s porque esto se llama después
+        de cada descarga terminada.
+        """
+        stats = self.controller.get_stats()
+        stats["total_size_bytes"] = self._disco_usado_bytes()
+        return stats
+
+    def _disco_usado_bytes(self) -> int:
+        import time
+        now = time.monotonic()
+        if self._disk_size_cache and now - self._disk_size_cache[0] < 30:
+            return self._disk_size_cache[1]
+        total = disk_usage.audio_bytes_in(self.genre_root())
+        self._disk_size_cache = (now, total)
+        return total
 
     def import_soundcloud_likes(self) -> dict:
         return self.controller.import_soundcloud_likes()
@@ -485,6 +730,69 @@ class WebViewAPI:
             return {"ok": False, "error": "No hay credenciales guardadas"}
         return self.verify_soundcloud_credentials(oauth_token, client_id)
 
+    def detect_soundcloud_client_id(self) -> dict:
+        """Client ID publico leido de la web de SoundCloud (nadie tiene que buscarlo)."""
+        from sync import soundcloud_setup
+        cid = soundcloud_setup.detectar_client_id()
+        return {"ok": bool(cid), "client_id": cid or ""}
+
+    def login_soundcloud(self) -> dict:
+        """
+        Abre una ventana con el login de SoundCloud; al iniciar sesion lee la
+        cookie `oauth_token`, completa el Client ID solo, valida y conecta.
+        La app nunca ve la contrasena. El resultado llega como evento
+        `soundcloud_login` ({ok, user_info | error}); si algo falla, la
+        persona todavia puede pegar los datos a mano.
+        """
+        if getattr(self, "_login_activo", False):
+            return {"ok": False, "error": "Ya hay una ventana de inicio de sesión abierta"}
+        self._login_activo = True
+
+        def trabajar():
+            import webview
+            from sync import soundcloud_setup
+            ventana = None
+            try:
+                ventana = webview.create_window(
+                    "Iniciar sesión en SoundCloud", "https://soundcloud.com/signin",
+                    width=520, height=760,
+                )
+                cerrada = threading.Event()
+                ventana.events.closed += cerrada.set
+                limite = time.time() + 600
+                token = None
+                while not cerrada.is_set() and time.time() < limite and not token:
+                    time.sleep(1.5)
+                    try:
+                        token = soundcloud_setup.token_de_cookies(ventana.get_cookies())
+                    except Exception:
+                        logger.debug("Todavía sin cookies legibles", exc_info=True)
+                if not token:
+                    self._push("soundcloud_login", {
+                        "ok": False,
+                        "error": "No se detectó el inicio de sesión. Probá de nuevo o pegá los datos a mano."})
+                    return
+                cid = soundcloud_setup.detectar_client_id()
+                if not cid:
+                    self._push("soundcloud_login", {
+                        "ok": False, "error": "Se inició sesión, pero no se pudo leer el Client ID. Pegalo a mano."})
+                    return
+                r = self.verify_soundcloud_credentials(token, cid)
+                self._push("soundcloud_login", r)
+            except Exception as e:
+                logger.exception("Falló el inicio de sesión de SoundCloud")
+                self._push("soundcloud_login", {"ok": False, "error": str(e)[:150]})
+            finally:
+                self._login_activo = False
+                try:
+                    if ventana is not None:
+                        ventana.destroy()
+                except Exception:
+                    pass
+
+        threading.Thread(target=trabajar, daemon=True, name="sc-login").start()
+        return {"ok": True}
+
     def verify_soundcloud_credentials(self, oauth_token: str, client_id: str) -> dict:
         """
         Valida credenciales contra la API real, las guarda si son válidas,
@@ -494,6 +802,10 @@ class WebViewAPI:
         """
         oauth_token = (oauth_token or "").strip()
         client_id = (client_id or "").strip()
+        if oauth_token and not oauth_token.lower().startswith("oauth "):
+            oauth_token = f"OAuth {oauth_token}"   # pegado sin el prefijo (p. ej. desde la cookie)
+        if oauth_token and not client_id:
+            client_id = self.detect_soundcloud_client_id().get("client_id", "")
         if not oauth_token or not client_id:
             return {"ok": False, "error": "Completa OAuth Token y Client ID"}
 
@@ -521,6 +833,16 @@ class WebViewAPI:
             analyze_audio=self.controller.get_config_value("analyze_audio", False),
             key_format=self.controller.get_config_value("key_format", "camelot"),
             fingerprint_check=self.controller.get_config_value("fingerprint_check", True),
+            quality_preset=self.controller.get_config_value("quality_preset", "mp3_320"),
+            post_options={
+                "normalize_volume": self.controller.get_config_value("normalize_volume", False),
+                "remove_silence": self.controller.get_config_value("remove_silence", False),
+                "embed_artwork": self.controller.get_config_value("embed_artwork", True),
+                "embed_metadata": self.controller.get_config_value("embed_metadata", True),
+                "embed_genre": self.controller.get_config_value("embed_genre", False),
+            },
+            subfolder_by_genre=self.controller.get_config_value("subfolder_by_genre", False),
+            youtube_fallback_enabled=self.controller.get_config_value("youtube_fallback", True),
         )
         # SyncManager arma su PROPIO SoundCloudAPIClient (self._sync_manager.api),
         # un objeto distinto al que se usó arriba para el chequeo inicial.
@@ -563,12 +885,17 @@ class WebViewAPI:
         with self._lock:
             info = self._tracks.get(url)
             if info is None:
+                duration_ms = getattr(track, "duration_ms", 0) or 0
+                track_id = getattr(track, "id", None)
                 info = TrackInfo(
                     url=url,
                     title=getattr(track, "title", "") or url,
                     artist=getattr(track, "artist", "") or "",
+                    duration=duration_ms // 1000,
                     platform="soundcloud",
                     thumbnail_url=getattr(track, "artwork_url", "") or "",
+                    # Para ofrecer "Ver parecidos" tambien en lo que baja la sync.
+                    playlist_url=f"{soundcloud_lists.PREFIJO_PARECIDOS}{track_id}" if track_id else "",
                 )
                 self._tracks[url] = info
                 is_new = True
@@ -578,16 +905,35 @@ class WebViewAPI:
             status = {
                 "start": STATUS_DOWNLOADING,
                 "done": STATUS_DONE,
+                # Ya la tenías: en la cola se ve igual que una terminada,
+                # pero no cuenta como descarga nueva (ver más abajo).
+                "already_had": STATUS_DONE,
                 "error": STATUS_ERROR,
                 "cancelled": STATUS_CANCELLED,
             }.get(event, STATUS_PENDING)
             info.status = status
-            if event == "done":
+            if event in ("done", "already_had"):
                 info.progress = 1.0
                 info.local_path = detail or ""
             elif event == "error":
                 info.error_msg = detail or ""
 
+        # La sync tiene su PROPIO historial (sync_downloads, solo para no
+        # re-descargar) separado del que lee "Últimas descargas"
+        # (downloads, vía record_download). Sin esto, lo que baja la sync
+        # -la mayoría de las canciones- nunca aparecía ahí: medido en la
+        # base real, 1367 de 1778 descargas de sync no estaban registradas.
+        #
+        # Solo "done", nunca "already_had": esa segunda es una canción que
+        # ya estaba en la biblioteca y la sync se saltó, así que meterla acá
+        # llenaría "Últimas descargas" de temas viejos con fecha de hoy.
+        if event == "done" and detail:
+            try:
+                self.controller.record_download(info)
+            except Exception:
+                logger.exception("Error registrando descarga de sync en el historial: %s", url)
+
+        # Despues de guardar en el historial, no antes: ver _submit_one.
         if is_new:
             self._push("track_added", _track_to_dict(info))
         self._push("track_status", {
@@ -689,6 +1035,25 @@ class WebViewAPI:
             logger.exception("Error reintentando fallidas")
             return {"ok": False, "error": str(e)}
 
+    def retry_failed_with_youtube(self, url: str) -> dict:
+        """
+        Prueba una cancion fallida contra YouTube (boton del panel de
+        fallidas). Busca, verifica titulo/duracion/version y la baja si hay
+        un candidato confiable. Bloquea hasta terminar, asi que la vista
+        deshabilita el boton mientras tanto.
+        """
+        guard = self._require_sync_manager()
+        if not guard["ok"]:
+            return guard
+        try:
+            r = self._sync_manager.reintentar_con_youtube(url)
+        except Exception as e:
+            logger.exception("Error reintentando con YouTube")
+            return {"ok": False, "error": str(e)[:200]}
+        if r.get("ok"):
+            self._disk_size_cache = None
+        return r
+
     def get_likes(self) -> list[dict]:
         """Likes guardados en DB con su estado de descarga (sin red, instantáneo)."""
         if not self._sync_manager:
@@ -698,6 +1063,139 @@ class WebViewAPI:
         except Exception:
             logger.exception("Error obteniendo likes")
             return []
+
+    def preview_missing_tags(self) -> dict:
+        """
+        Archivos de la biblioteca sin título o sin artista, candidatos a
+        completar con AcoustID. Solo cuenta y muestra: no consulta el
+        servicio todavía (eso es lento, una request por archivo).
+        """
+        raiz = self.genre_root()
+        api_key = self.controller.get_config_value("acoustid_api_key", "")
+        if not raiz:
+            return {"ok": False, "error": "No hay carpeta de biblioteca configurada."}
+        try:
+            faltantes = acoustid_lookup.archivos_con_tags_vacios([raiz])
+        except Exception as e:
+            logger.exception("Error buscando archivos con tags vacíos")
+            return {"ok": False, "error": str(e)}
+        return {
+            "ok": True,
+            "total": len(faltantes),
+            "tiene_api_key": bool(api_key),
+            "archivos": [str(p) for p in faltantes[:200]],
+        }
+
+    def fix_missing_tags(self) -> dict:
+        """
+        Consulta AcoustID para cada archivo sin título/artista y completa
+        SOLO los campos vacíos (nunca pisa un tag que ya existe). Corre
+        secuencial: una request HTTP por archivo, no tiene sentido
+        paralelizarlo contra un servicio gratuito compartido.
+        """
+        raiz = self.genre_root()
+        api_key = self.controller.get_config_value("acoustid_api_key", "")
+        if not api_key:
+            return {"ok": False, "error": "Falta configurar la API key de AcoustID."}
+        if not raiz:
+            return {"ok": False, "error": "No hay carpeta de biblioteca configurada."}
+
+        try:
+            faltantes = acoustid_lookup.archivos_con_tags_vacios([raiz])
+        except Exception as e:
+            logger.exception("Error buscando archivos con tags vacíos")
+            return {"ok": False, "error": str(e)}
+
+        completados, sin_match, errores = 0, 0, 0
+        for path in faltantes:
+            try:
+                resultado = acoustid_lookup.identificar(str(path), api_key)
+                if resultado and acoustid_lookup.aplicar_tags(str(path), resultado):
+                    completados += 1
+                else:
+                    sin_match += 1
+            except Exception:
+                logger.exception("Error identificando %s", path)
+                errores += 1
+
+        return {
+            "ok": True, "completados": completados,
+            "sin_match": sin_match, "errores": errores,
+            "total": len(faltantes),
+        }
+
+    def export_playlists(self) -> dict:
+        """
+        Exporta cada carpeta de género como una playlist M3U8, en una
+        carpeta "Playlists" dentro de la raíz de la biblioteca. Serato y
+        Rekordbox la importan con File > Import Playlist.
+        """
+        raiz = self.genre_root()
+        if not raiz:
+            return {"ok": False, "error": "No hay carpeta de biblioteca configurada."}
+        destino = os.path.join(raiz, "Playlists")
+        try:
+            resultado = playlist_export.exportar_por_carpeta(
+                raiz, destino, carpetas_excluidas={"playlists"}
+            )
+        except Exception as e:
+            logger.exception("Error exportando playlists")
+            return {"ok": False, "error": str(e)}
+        return {
+            "ok": True, "destino": destino, "playlists": resultado,
+            "total_canciones": sum(p["canciones"] for p in resultado),
+        }
+
+    def get_upgrade_candidates(self) -> list[dict]:
+        """
+        Likes ya descargados que tienen, según SoundCloud, un lugar mejor
+        de donde conseguirlos (el gate de descarga gratis del artista).
+        Panel aparte y opcional: la sync sigue bajando todo sola, esto es
+        para quien quiera ir a buscar mejor calidad puntualmente.
+        """
+        if not self._sync_manager:
+            return []
+        try:
+            likes = self._sync_manager.history.load_likes()
+            descargas = {
+                d["url"]: d for d in self._sync_manager.history.get_all_downloads()
+            }
+            return upgrade_links.candidatos_de_mejor_calidad(likes, descargas)
+        except Exception:
+            logger.exception("Error calculando candidatos de mejor calidad")
+            return []
+
+    def reveal_in_folder(self, path: str) -> dict:
+        """
+        Abre el explorador del sistema con el archivo seleccionado, para
+        que "Ultimas descargas" diga DONDE quedo cada cancion y no solo el
+        nombre de la carpeta.
+        """
+        if not path or not os.path.exists(path):
+            return {"ok": False, "error": "El archivo ya no esta en esa ubicacion."}
+        try:
+            if sys.platform == "win32":
+                subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", "-R", path])
+            else:
+                subprocess.Popen(["xdg-open", os.path.dirname(path)])
+            return {"ok": True}
+        except Exception as e:
+            logger.exception("No se pudo abrir la carpeta de %s", path)
+            return {"ok": False, "error": str(e)[:150]}
+
+    def open_external_url(self, url: str) -> dict:
+        """Abre un link en el navegador del sistema (no en la ventana de la app)."""
+        if not url or not url.startswith(("http://", "https://")):
+            return {"ok": False, "error": "URL inválida"}
+        try:
+            import webbrowser
+            webbrowser.open(url)
+            return {"ok": True}
+        except Exception as e:
+            logger.exception("No se pudo abrir el link externo")
+            return {"ok": False, "error": str(e)}
 
     def download_selected_likes(self, urls: list[str]) -> dict:
         """
@@ -724,6 +1222,9 @@ class WebViewAPI:
             track = TrackInfo(
                 url=like["url"], title=like["title"], artist=like["artist"] or "",
                 platform="soundcloud", thumbnail_url=like.get("artwork_url") or "",
+                # Necesarios para resolver el subgénero y rutear la descarga
+                # a su carpeta (ver _dest_for_track / sync/genre_utils.py).
+                genre=like.get("genre") or "", tags=like.get("tags") or "",
             )
             track.status = STATUS_PENDING
             with self._lock:
@@ -747,6 +1248,7 @@ class WebViewAPI:
             "remove_silence": self.controller.get_config_value("remove_silence", False),
             "embed_artwork": self.controller.get_config_value("embed_artwork", True),
             "embed_metadata": self.controller.get_config_value("embed_metadata", True),
+            "embed_genre": self.controller.get_config_value("embed_genre", False),
             "analyze_audio": self.controller.get_config_value("analyze_audio", False),
             "key_format": self.controller.get_config_value("key_format", "camelot"),
         }
@@ -777,7 +1279,7 @@ class WebViewAPI:
         self.download_manager.submit_download(
             track=track,
             handler=SoundCloudHandler(),
-            dest_folder=dest_folder,
+            dest_folder=self._dest_for_track(track),
             filename_pattern=self.controller.get_config_value("filename_pattern", "{artist} - {title}"),
             subfolder_by_artist=self.controller.get_config_value("subfolder_by_artist", False),
             quality_preset=preset,
@@ -787,6 +1289,300 @@ class WebViewAPI:
             on_status=on_status,
             oauth_token=oauth_token,
         )
+
+    def genre_root(self) -> str:
+        """
+        Raíz donde se crean las carpetas de género.
+
+        Si el usuario configuró una carpeta de biblioteca, manda esa (así
+        las descargas caen junto a la música que ya tiene ordenada). Si no
+        configuró ninguna, se usa la CARPETA DE DESCARGA misma: antes se
+        usaba su carpeta padre, y eso hacía aparecer carpetas de género
+        fuera del destino elegido, mezcladas con lo que hubiera al lado.
+        """
+        configurada = self.controller.get_config_value("library_folders", []) or []
+        configurada = [f for f in configurada if f]
+        if configurada:
+            return configurada[0]
+        return self.controller.get_config_value("dest_folder", "")
+
+    def _sc_client(self):
+        """Cliente de SoundCloud para busquedas, o None si no hay credenciales."""
+        if self._sync_manager:
+            return self._sync_manager.api
+        if self._sc_client_cache is None:
+            cfg = self.controller.get_config_value("soundcloud", {}) or {}
+            token = cfg.get("oauth_token", "") or self.controller.get_config_value("oauth_token", "")
+            client_id = cfg.get("client_id", "")
+            if not token or not client_id:
+                return None
+            self._sc_client_cache = SoundCloudAPIClient(token, client_id)
+        return self._sc_client_cache
+
+    def _buscar_tracks_sc(self, consulta: str) -> list[dict]:
+        cli = self._sc_client()
+        return cli.search_tracks(consulta) if cli else []
+
+    def _genero_aceptable(self, nombre: str) -> bool:
+        """
+        Un genero que sacamos de lo que puso otra persona en SoundCloud se
+        acepta si es del vocabulario conocido o si ya existe esa carpeta en la
+        biblioteca (como "Nasty Club"); si no, crearia una carpeta nueva por un
+        nombre que alguien invento.
+        """
+        if genre_utils.es_conocido(nombre):
+            return True
+        try:
+            raiz = self.genre_root()
+            return any(d.lower() == nombre.lower() and os.path.isdir(os.path.join(raiz, d))
+                       for d in os.listdir(raiz))
+        except OSError:
+            return False
+
+    def _asegurar_genero(self, info: TrackInfo) -> None:
+        """
+        Completa info.genre con la cadena de sync/genre_chain.py. Es idempotente
+        y seguro de llamar desde varios hilos: el primero hace el trabajo y los
+        demas esperan su resultado.
+        """
+        with self._lock:
+            evento = self._genero_eventos.get(info.url)
+            primero = evento is None
+            if primero:
+                evento = threading.Event()
+                self._genero_eventos[info.url] = evento
+        if not primero:
+            evento.wait(timeout=30)
+            return
+        try:
+            descripcion = info.description
+            if info.platform.startswith("YouTube") and not info.tags and not descripcion:
+                # Las listas planas no traen tags: hace falta la info completa.
+                try:
+                    meta = detect_handler(info.url).get_metadata(info.url)[0]
+                    info.tags, descripcion = meta.tags, meta.description
+                except Exception:
+                    logger.debug("Sin info completa de %s para el genero", info.url)
+            genero = self._genre_chain.resolver(
+                genre=info.genre, tags=info.tags, title=info.title,
+                artist=info.artist, duration_s=info.duration, description=descripcion,
+            )
+            if genero:
+                info.genre = genero
+        except Exception:
+            logger.exception("Error resolviendo el genero de %s", info.url)
+        finally:
+            evento.set()
+
+    def _asegurar_generos_en_segundo_plano(self, infos: list) -> None:
+        if not infos:
+            return
+        def tarea():
+            for info in infos:
+                self._asegurar_genero(info)
+        threading.Thread(target=tarea, daemon=True).start()
+
+    def _dest_for_track(self, track) -> str:
+        """
+        Carpeta destino de una descarga concreta. Con 'subfolder_by_genre'
+        activo devuelve la carpeta del subgénero resuelto (reusando la que
+        ya exista, sin importar mayúsculas); si no, la de descarga normal.
+        """
+        dest = self.controller.get_config_value("dest_folder", "")
+        if not self.controller.get_config_value("subfolder_by_genre", False):
+            return dest
+        raiz = self.genre_root() or dest
+        nombre = genre_utils.genre_folder(
+            getattr(track, "genre", None),
+            getattr(track, "tags", None),
+            getattr(track, "title", None),
+        )
+        try:
+            for d in os.listdir(raiz):
+                if d.lower() == nombre.lower() and os.path.isdir(os.path.join(raiz, d)):
+                    nombre = d
+                    break
+        except OSError:
+            pass
+        return os.path.join(raiz, nombre)
+
+    # ------------------------------------------------------------------ #
+    # Ordenar la biblioteca por género                                     #
+    # ------------------------------------------------------------------ #
+
+    def _plan_organize(self) -> tuple[list[tuple[Path, str]], str]:
+        """
+        Calcula, sin tocar nada, a qué carpeta de subgénero iría cada
+        archivo que hoy está suelto en la carpeta de descarga.
+
+        Solo mira la carpeta de descarga: las carpetas de género que el
+        usuario ya armó a mano son su criterio, y re-clasificarlas con los
+        tags (a menudo peores) le rompería la organización.
+        """
+        raiz = self.genre_root()
+        dest = self.controller.get_config_value("dest_folder", "")
+        origenes = [f for f in {dest} if f and os.path.isdir(f)]
+        if not origenes:
+            return [], raiz
+
+        likes = []
+        if self._sync_manager:
+            try:
+                likes = self._sync_manager.history.load_likes()
+            except Exception:
+                logger.exception("No se pudieron leer los likes para ordenar")
+
+        index = match_utils.index_audio_files(origenes)
+        por_archivo: dict[Path, dict] = {}
+        for lk in likes:
+            cands = match_utils.like_candidates(lk.get("artist") or "", lk.get("title") or "")
+            if not cands:
+                continue
+            path, _ = match_utils.find_best_match(cands, index, match_utils.MATCH_THRESHOLD,
+                                                  titulo=lk.get("title") or "")
+            if path is not None and path not in por_archivo:
+                por_archivo[path] = lk
+
+        plan: list[tuple[Path, str]] = []
+        for path, _ in index:
+            lk = por_archivo.get(path)
+            genero = None
+            if lk:
+                genero = genre_utils.resolve_genre(
+                    lk.get("genre"), lk.get("tags"), lk.get("title")
+                )
+            if not genero:
+                genero = genre_utils.resolve_genre(
+                    self._genre_tag_of(path), None, path.stem
+                )
+            if genero:
+                plan.append((path, genero))
+        return plan, raiz
+
+    @staticmethod
+    def _genre_tag_of(path: Path) -> Optional[str]:
+        try:
+            import mutagen
+            audio = mutagen.File(path, easy=True)
+            if audio:
+                val = audio.get("genre")
+                if val:
+                    return val[0] if isinstance(val, list) else str(val)
+        except Exception:
+            pass
+        return None
+
+    def preview_organize(self) -> dict:
+        """Vista previa: cuántos archivos irían a cada carpeta."""
+        try:
+            plan, raiz = self._plan_organize()
+        except Exception as e:
+            logger.exception("Error calculando el orden por género")
+            return {"ok": False, "error": str(e)}
+
+        from collections import Counter
+        conteo = Counter(g for _, g in plan)
+        existentes = set()
+        try:
+            existentes = {d.lower() for d in os.listdir(raiz)
+                          if os.path.isdir(os.path.join(raiz, d))}
+        except OSError:
+            pass
+        filas = [
+            {"genero": g, "cantidad": n, "existe": g.lower() in existentes}
+            for g, n in conteo.most_common()
+        ]
+        return {"ok": True, "raiz": raiz, "total": len(plan), "carpetas": filas}
+
+    def organize_library(self) -> dict:
+        """
+        Mueve los archivos a la carpeta de su subgénero. Deja un archivo de
+        deshacer y actualiza las rutas guardadas, que si no quedarían
+        apuntando a la ubicación vieja.
+        """
+        try:
+            plan, raiz = self._plan_organize()
+        except Exception as e:
+            logger.exception("Error calculando el orden por género")
+            return {"ok": False, "error": str(e)}
+        if not plan:
+            return {"ok": True, "movidos": 0, "mensaje": "No hay nada que ordenar."}
+
+        import shutil
+        from datetime import datetime
+
+        movimientos, colisiones = [], 0
+        for path, genero in plan:
+            nombre = genero
+            try:
+                for d in os.listdir(raiz):
+                    if d.lower() == genero.lower() and os.path.isdir(os.path.join(raiz, d)):
+                        nombre = d
+                        break
+            except OSError:
+                pass
+            destino_dir = Path(raiz) / genre_utils.genre_folder(nombre)
+            destino_dir.mkdir(parents=True, exist_ok=True)
+            destino = destino_dir / path.name
+            if destino.exists():
+                colisiones += 1
+                continue
+            try:
+                shutil.move(str(path), str(destino))
+                movimientos.append({"de": str(path), "a": str(destino)})
+            except Exception:
+                logger.exception("No se pudo mover %s", path)
+
+        undo = Path.home() / ".music_downloader" / f"undo_organizar_{datetime.now():%Y%m%d_%H%M%S}.json"
+        try:
+            undo.write_text(json.dumps(movimientos, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            logger.exception("No se pudo escribir el archivo para deshacer")
+
+        self._repath_after_move(movimientos)
+        return {
+            "ok": True, "movidos": len(movimientos), "omitidos": colisiones,
+            "deshacer": str(undo), "raiz": raiz,
+        }
+
+    def _repath_after_move(self, movimientos: list[dict]) -> None:
+        """Actualiza rutas en la BD e invalida el índice de huellas."""
+        if not movimientos:
+            return
+        import sqlite3
+        db = Path.home() / ".music_downloader" / "history.db"
+        try:
+            conn = sqlite3.connect(db)
+            for m in movimientos:
+                viejo, nuevo = m["de"], m["a"]
+                conn.execute(
+                    "UPDATE downloads SET local_path = ?, url = ? "
+                    "WHERE local_path = ? AND url LIKE 'local://%'",
+                    (nuevo, f"local://{nuevo}", viejo),
+                )
+                conn.execute(
+                    "UPDATE downloads SET local_path = ? "
+                    "WHERE local_path = ? AND url NOT LIKE 'local://%'",
+                    (nuevo, viejo),
+                )
+                conn.execute(
+                    "UPDATE sync_downloads SET file_path = ? WHERE file_path = ?",
+                    (nuevo, viejo),
+                )
+            conn.commit()
+            conn.close()
+        except Exception:
+            logger.exception("No se pudieron actualizar las rutas en la BD")
+
+        try:
+            pares = [(m["de"], m["a"]) for m in movimientos]
+            n = audio_fingerprint.LibraryFingerprintIndex.remap_paths(pares)
+            logger.info("Índice de huellas: %d rutas remapeadas (sin recalcular)", n)
+        except Exception:
+            logger.exception("No se pudo remapear el índice de huellas")
+        if self._sync_manager:
+            self._sync_manager.checker.invalidate_index()
+            self._sync_manager._fingerprint_index = None  # fuerza releer el JSON ya remapeado
 
     def get_default_scan_folder(self) -> str:
         """Carpeta padre de dest_folder (p. ej. D:\\Musik si dest_folder es D:\\Musik\\prueba)."""
@@ -878,7 +1674,7 @@ class WebViewAPI:
                     like.get("artist") or "", like.get("title") or ""
                 )
                 best_file, best_score = match_utils.find_best_match(
-                    candidates, files, threshold
+                    candidates, files, threshold, titulo=like.get("title") or ""
                 )
                 if best_file is not None:
                     pending.append((best_score, like, best_file))

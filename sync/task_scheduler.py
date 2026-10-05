@@ -14,6 +14,8 @@ import logging
 import os
 import subprocess
 import sys
+
+from utils.subprocess_utils import NO_WINDOW
 from pathlib import Path
 
 from config.manager import DEFAULT_CONFIG_PATH
@@ -62,15 +64,15 @@ def build_command(config_path: str = None) -> str:
 
 
 def _allow_battery(task_name: str = TASK_NAME) -> bool:
-    """Permite que la tarea corra con batería (schtasks no expone estos flags)."""
+    """Batería y hora perdida (schtasks no expone estos flags): si el PC estaba apagado a la hora, corre al encender."""
     ps = (
         f"$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries "
-        f"-DontStopIfGoingOnBatteries; "
+        f"-DontStopIfGoingOnBatteries -StartWhenAvailable; "
         f"Set-ScheduledTask -TaskName '{task_name}' -Settings $s"
     )
     result = subprocess.run(
         ["powershell", "-NoProfile", "-Command", ps],
-        capture_output=True, text=True,
+        capture_output=True, text=True, creationflags=NO_WINDOW,
     )
     return result.returncode == 0
 
@@ -89,8 +91,10 @@ def _schedule_args(interval_minutes: int) -> tuple[str, str]:
 
 def register(interval_minutes: int, config_path: str = None) -> tuple[bool, str]:
     """Crea (o reemplaza) la tarea programada para el usuario actual."""
+    if sys.platform == "darwin":
+        return _register_mac(interval_minutes, config_path)
     if sys.platform != "win32":
-        return False, "Solo Windows. En Linux/macOS usá systemd/music-sync.timer."
+        return False, "Solo Windows y macOS. En Linux usá systemd/music-sync.timer."
 
     command = build_command(config_path)
     sc, mo = _schedule_args(interval_minutes)
@@ -98,7 +102,7 @@ def register(interval_minutes: int, config_path: str = None) -> tuple[bool, str]
     result = subprocess.run(
         ["schtasks", "/create", "/tn", TASK_NAME, "/tr", command,
          "/sc", sc, "/mo", mo, "/f"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, creationflags=NO_WINDOW,
     )
     ok = result.returncode == 0
     msg = result.stdout.strip() if ok else (result.stderr.strip() or result.stdout.strip())
@@ -113,19 +117,97 @@ def register(interval_minutes: int, config_path: str = None) -> tuple[bool, str]
     return ok, msg
 
 
+# ── macOS: launchd ────────────────────────────────────────────────────────
+LAUNCHD_LABEL = "com.musicdownloader.autosync"
+
+
+def _plist_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
+
+
+def build_argumentos(config_path: str = None) -> list[str]:
+    """Mismo comando que build_command, como lista (launchd no usa un shell)."""
+    if is_frozen():
+        return [sys.executable, "--auto-sync"]
+    base = Path(__file__).resolve().parents[1]
+    return [sys.executable, str(base / "scripts" / "auto_sync.py"),
+            "--config", config_path or str(DEFAULT_CONFIG_PATH)]
+
+
+def build_plist(interval_minutes: int, config_path: str = None) -> str:
+    """
+    LaunchAgent con StartInterval: si el Mac estaba dormido o apagado a la
+    hora, corre al despertar (el equivalente de StartWhenAvailable).
+    """
+    from xml.sax.saxutils import escape
+    args = "\n".join(f"        <string>{escape(a)}</string>" for a in build_argumentos(config_path))
+    log = Path.home() / ".music_downloader" / "launchd.log"
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{LAUNCHD_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+{args}
+    </array>
+    <key>StartInterval</key>
+    <integer>{max(int(interval_minutes), 1) * 60}</integer>
+    <key>StandardOutPath</key>
+    <string>{escape(str(log))}</string>
+    <key>StandardErrorPath</key>
+    <string>{escape(str(log))}</string>
+</dict>
+</plist>
+"""
+
+
+def _launchctl(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["launchctl", *args], capture_output=True, text=True)
+
+
+def _register_mac(interval_minutes: int, config_path: str = None) -> tuple[bool, str]:
+    plist = _plist_path()
+    plist.parent.mkdir(parents=True, exist_ok=True)
+    plist.write_text(build_plist(interval_minutes, config_path), encoding="utf-8")
+    dominio = f"gui/{os.getuid()}"
+    _launchctl("bootout", dominio, str(plist))  # si ya estaba, se reemplaza
+    r = _launchctl("bootstrap", dominio, str(plist))
+    ok = r.returncode == 0
+    return ok, ("Tarea registrada con launchd" if ok else (r.stderr.strip() or r.stdout.strip()))
+
+
+def _remove_mac() -> tuple[bool, str]:
+    plist = _plist_path()
+    _launchctl("bootout", f"gui/{os.getuid()}", str(plist))
+    existia = plist.exists()
+    plist.unlink(missing_ok=True)
+    return True, "Tarea eliminada" if existia else "No había tarea"
+
+
+def _status_mac() -> tuple[bool, str]:
+    r = _launchctl("print", f"gui/{os.getuid()}/{LAUNCHD_LABEL}")
+    return r.returncode == 0, (r.stdout.strip()[:400] if r.returncode == 0 else "No configurada")
+
+
 def remove() -> tuple[bool, str]:
+    if sys.platform == "darwin":
+        return _remove_mac()
     result = subprocess.run(
         ["schtasks", "/delete", "/tn", TASK_NAME, "/f"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, creationflags=NO_WINDOW,
     )
     ok = result.returncode == 0
     return ok, (result.stdout.strip() if ok else result.stderr.strip())
 
 
 def status() -> tuple[bool, str]:
+    if sys.platform == "darwin":
+        return _status_mac()
     result = subprocess.run(
         ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, creationflags=NO_WINDOW,
     )
     ok = result.returncode == 0
     return ok, (result.stdout.strip() if ok else "No configurada")

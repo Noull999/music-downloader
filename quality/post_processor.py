@@ -13,6 +13,7 @@ from typing import Optional
 
 from utils.exceptions import DependencyNotFoundError, DownloadError
 from utils.dependencies import FFmpegValidator
+from utils.subprocess_utils import NO_WINDOW
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class PostProcessor:
         self.remove_silence: bool = options.get("remove_silence", False)
         self.embed_artwork: bool = options.get("embed_artwork", True)
         self.embed_metadata: bool = options.get("embed_metadata", True)
+        self.embed_genre: bool = options.get("embed_genre", False)
         self.analyze_audio: bool = options.get("analyze_audio", False)
         self.key_format: str = options.get("key_format", "camelot")
 
@@ -62,8 +64,10 @@ class PostProcessor:
         if (self.normalize_volume or self.remove_silence) and ext == ".mp3":
             input_file = self._apply_ffmpeg_filters(input_file)
 
-        # Re-embebido de metadatos y carátula (solo MP3 con mutagen)
-        if (self.embed_metadata or self.embed_artwork) and ext == ".mp3":
+        # Re-embebido de metadatos y carátula: MP3, WAV y AIFF admiten
+        # tags ID3 (_embed_tags decide el contenedor según la extensión).
+        if (self.embed_metadata or self.embed_artwork or self.embed_genre) and \
+                ext in (".mp3", ".wav", ".aiff", ".aif"):
             self._embed_tags(input_file, metadata, thumbnail_url if self.embed_artwork else "")
 
         # BPM + tonalidad (Camelot). Es la operación más lenta (~2s/track,
@@ -101,8 +105,16 @@ class PostProcessor:
             filters.append("loudnorm=I=-14:LRA=11:TP=-1")
 
         if self.remove_silence:
-            filters.append("silenceremove=start_periods=1:start_silence=0.5:start_threshold=-50dB")
-            filters.append("silenceremove=stop_periods=1:stop_silence=0.5:stop_threshold=-50dB")
+            # Solo el silencio del INICIO y del FINAL, nunca el del medio.
+            # El final se recorta invirtiendo el audio para que el filtro de
+            # "inicio" actue sobre el final real. NO usar stop_periods=1: con
+            # ese valor ffmpeg toma el primer silencio de 0.5 s como el fin
+            # del archivo y descarta todo lo que sigue. En musica de baile
+            # (cortes, breaks, intros) eso dejo canciones de 0.7 s en lugar
+            # de 4 minutos: 5 de 14 temas sanos de la biblioteca se
+            # truncaron al reproducir el filtro.
+            recorte = "silenceremove=start_periods=1:start_silence=0.5:start_threshold=-50dB"
+            filters.extend([recorte, "areverse", recorte, "areverse"])
 
         if not filters:
             return input_file
@@ -123,9 +135,22 @@ class PostProcessor:
                 capture_output=True,
                 timeout=120,
                 text=False,
+                creationflags=NO_WINDOW,
             )
 
             if result.returncode == 0 and os.path.exists(temp_file):
+                # Red de seguridad: recortar silencios o normalizar casi no
+                # cambia la duracion. Si el resultado quedo mucho mas corto,
+                # el filtro rompio el archivo y se conserva el original.
+                antes, despues = self._duracion(input_file), self._duracion(temp_file)
+                if antes and despues is not None and (antes - despues) > max(15.0, antes * 0.10):
+                    logger.error(
+                        "El filtro ffmpeg acorto %s de %.0fs a %.0fs: se descarta "
+                        "el resultado y se conserva el original",
+                        os.path.basename(input_file), antes, despues,
+                    )
+                    os.remove(temp_file)
+                    return input_file
                 os.replace(temp_file, input_file)
                 logger.info(f"✓ Filtros ffmpeg aplicados: {filter_chain}")
                 return input_file
@@ -159,24 +184,49 @@ class PostProcessor:
                 os.remove(temp_file)
             raise DownloadError(f"Post-procesado falló: {e}")
 
+    @staticmethod
+    def _duracion(path: str):
+        """Duracion en segundos segun mutagen, o None si no se puede leer."""
+        try:
+            from mutagen import File as MFile
+            f = MFile(path)
+            return float(f.info.length) if f and f.info else None
+        except Exception:
+            return None
+
     # ------------------------------------------------------------------ #
     # Embebido de tags con mutagen                                         #
     # ------------------------------------------------------------------ #
 
     def _embed_tags(self, file_path: str, metadata: dict, thumbnail_url: str) -> None:
         try:
-            from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, TDRC, error as ID3Error
-            from mutagen.mp3 import MP3
+            from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, TCON, TDRC, error as ID3Error
         except ImportError:
             logger.warning("mutagen no disponible; no se puede embeber tags manualmente.")
             return
 
+        # WAV y AIFF admiten tags ID3 igual que MP3 (en un chunk propio del
+        # contenedor RIFF/IFF), pero antes solo se llamaba a esto para
+        # ".mp3": el resto del catálogo se descargaba y quedaba sin
+        # título, artista, género ni carátula.
+        ext = os.path.splitext(file_path)[1].lower()
         try:
-            audio = MP3(file_path, ID3=ID3)
-            try:
+            if ext == ".mp3":
+                from mutagen.mp3 import MP3
+                audio = MP3(file_path, ID3=ID3)
+            elif ext == ".wav":
+                from mutagen.wave import WAVE
+                audio = WAVE(file_path)
+            elif ext in (".aiff", ".aif"):
+                from mutagen.aiff import AIFF
+                audio = AIFF(file_path)
+            else:
+                return
+            # WAVE/AIFF.add_tags() con tags existentes lanza el `error`
+            # propio de cada módulo, no ID3Error (que sí lanza MP3) —
+            # comprobar audio.tags evita depender de cuál excepción es.
+            if audio.tags is None:
                 audio.add_tags()
-            except ID3Error:
-                pass  # ya tiene tags
 
             if self.embed_metadata:
                 try:
@@ -191,14 +241,45 @@ class PostProcessor:
                 except Exception as meta_exc:
                     logger.warning("Error embebiendo metadatos: %s", meta_exc)
 
+            if self.embed_genre:
+                try:
+                    genero = metadata.get("genre")
+                    if genero:
+                        audio.tags.add(TCON(encoding=3, text=genero))
+                    else:
+                        # No hay género válido. yt-dlp ya escribió el suyo
+                        # durante la descarga y para YouTube eso es la
+                        # CATEGORÍA del video ("Music", "Entertainment"),
+                        # que no dice nada del estilo: si es de esas, se
+                        # borra en vez de dejarla.
+                        from sync import genre_utils
+                        actual = audio.tags.get("TCON")
+                        if actual and not genre_utils.resolve_genre(str(actual)):
+                            audio.tags.delall("TCON")
+                except Exception as meta_exc:
+                    logger.warning("Error embebiendo metadatos: %s", meta_exc)
+
             if self.embed_artwork and thumbnail_url:
                 try:
-                    img_data = self._fetch_image_cached(thumbnail_url)
+                    grande = self.upgrade_artwork_url(thumbnail_url)
+                    img_data = self._fetch_image_cached(grande)
+                    if not img_data and grande != thumbnail_url:
+                        # El tamaño grande no siempre existe; mejor la
+                        # miniatura que quedarse sin carátula.
+                        img_data = self._fetch_image_cached(thumbnail_url)
                     if img_data and len(img_data) > 0:
+                        img_data, mime = self.normalizar_imagen(img_data)
+                        # ID3 distingue frames APIC por su "desc": un archivo
+                        # que ya traía carátula con otro desc (yt-dlp suele
+                        # usar "cover" en minúscula, este código usa "Cover")
+                        # terminaba con DOS carátulas en vez de reemplazar
+                        # la vieja — bien grande en un caso real: 261 KB
+                        # sumados a la nueva.
+                        audio.tags.delall("APIC")
                         audio.tags.add(
                             APIC(
                                 encoding=3,
-                                mime="image/jpeg",
+                                mime=mime,
                                 type=3,   # Cover (front)
                                 desc="Cover",
                                 data=img_data,
@@ -207,9 +288,74 @@ class PostProcessor:
                 except Exception as art_exc:
                     logger.warning("Error embebiendo carátula: %s", art_exc)
 
-            audio.save()
+            # ID3v2.3 y no el v2.4 que mutagen usa por defecto: el
+            # Reproductor multimedia y el Explorador de Windows no leen la
+            # carátula de un v2.4 y la canción se ve sin tapa. Medido en la
+            # biblioteca real: 993 archivos tenían carátula correcta y no se
+            # veía en ninguno de los dos. v2.3 lo entienden ambos, más Serato
+            # y Rekordbox.
+            audio.save(v2_version=3)
         except Exception as exc:
             logger.warning("Error guardando tags en %s: %s", file_path, exc)
+
+    @staticmethod
+    def upgrade_artwork_url(url: str) -> str:
+        """
+        SoundCloud llama "large" a una miniatura de 100x100, que incrustada
+        se ve borrosa en Serato y en cualquier reproductor. La variante
+        t500x500 (500x500, ~57 KB) es el punto justo: nítida sin inflar
+        cada mp3 como haría "original" (3999x3999, ~1.9 MB).
+        """
+        if not url:
+            return url
+        for otro in ("-large.", "-t300x300.", "-small.", "-badge.", "-tiny.",
+                     "-original."):
+            if otro in url:
+                # "original" también se cambia, pero por lo contrario: son
+                # 3000x3000 y ~900 KB metidos en cada mp3.
+                return url.replace(otro, "-t500x500.")
+        return url
+
+    @staticmethod
+    def normalizar_imagen(data: bytes, lado_max: int = 600) -> tuple[bytes, str]:
+        """
+        Deja la imagen lista para incrustar: JPEG y de tamaño razonable.
+
+        YouTube devuelve las miniaturas en WebP, que Serato y varios
+        reproductores no muestran como carátula; y algunas fuentes dan
+        imágenes de 3000x3000 que inflan cada archivo casi 1 MB. Si algo
+        falla se devuelve el original tal cual: mejor una carátula
+        imperfecta que ninguna.
+        """
+        try:
+            from PIL import Image
+        except ImportError:
+            return data, PostProcessor._mime_de(data)
+        try:
+            im = Image.open(io.BytesIO(data))
+            formato = (im.format or "").upper()
+            grande = max(im.size) > lado_max
+            if formato in ("JPEG", "PNG") and not grande:
+                return data, PostProcessor._mime_de(data)
+            if grande:
+                im.thumbnail((lado_max, lado_max), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.convert("RGB").save(buf, "JPEG", quality=88, optimize=True)
+            return buf.getvalue(), "image/jpeg"
+        except Exception as exc:
+            logger.debug("No se pudo normalizar la carátula (%s); se usa tal cual", exc)
+            return data, PostProcessor._mime_de(data)
+
+    @staticmethod
+    def _mime_de(data: bytes) -> str:
+        """
+        Tipo real según los primeros bytes. Antes se declaraba siempre
+        image/jpeg, incluso para URLs .png: un reproductor estricto no
+        muestra una carátula cuyo mime no coincide con el contenido.
+        """
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image/png"
+        return "image/jpeg"
 
     def _fetch_image_cached(self, url: str, timeout: float = 5.0) -> Optional[bytes]:
         """Obtiene imagen con caché automático (evita re-descargar)."""

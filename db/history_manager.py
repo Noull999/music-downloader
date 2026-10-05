@@ -2,6 +2,7 @@
 HistoryManager: Gestiona historial de descargas en SQLite.
 Reemplaza history.json con BD más eficiente y thread-safe.
 """
+import os
 import sqlite3
 import logging
 import threading
@@ -85,16 +86,25 @@ class HistoryManager:
                 raise DatabaseError(f"Error en historial: {e}")
 
     def is_downloaded(self, url: str) -> bool:
-        """Verifica si URL ya fue descargada."""
+        """
+        True si la URL ya se descargo Y el archivo sigue estando.
+
+        Antes bastaba con que existiera la fila: la importacion antigua de
+        likes dejo 344 filas "descargadas" SIN archivo (local_path vacio), y
+        al pegar un link o ver una lista esos temas salian como "ya
+        descargados" y se omitian, sin decir donde estaban porque no estaban en
+        ningun lado. Ahora hace falta una ruta que exista en disco.
+        """
         with self._lock:
             try:
                 with sqlite3.connect(self.db_path) as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT 1 FROM downloads WHERE url = ?", (url,))
-                    return cursor.fetchone() is not None
+                    cursor.execute("SELECT local_path FROM downloads WHERE url = ?", (url,))
+                    filas = cursor.fetchall()
             except sqlite3.Error as e:
                 logger.error(f"Error verificando descarga: {e}")
                 return False
+        return any(ruta and os.path.exists(ruta) for (ruta,) in filas)
 
     def get_all_urls(self) -> Set[str]:
         """Retorna SET de todas las URLs descargadas (O(1) lookup)."""
@@ -131,7 +141,10 @@ class HistoryManager:
             try:
                 with sqlite3.connect(self.db_path) as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT COUNT(*) FROM downloads")
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM downloads WHERE url NOT LIKE 'local://%' "
+                        "AND local_path != '' AND local_path IS NOT NULL"
+                    )
                     return cursor.fetchone()[0]
             except sqlite3.Error as e:
                 logger.error(f"Error contando descargas: {e}")
@@ -205,23 +218,30 @@ class HistoryManager:
                 with sqlite3.connect(self.db_path) as conn:
                     cursor = conn.cursor()
 
+                    # Solo descargas reales: las filas "local://" son archivos que
+                    # ya estaban catalogados (3275 en la base real) y las de ruta
+                    # vacia son importaciones sin archivo (344). Contarlas hacia
+                    # decir miles de descargas que la app nunca hizo.
+                    reales = "url NOT LIKE 'local://%' AND local_path != '' AND local_path IS NOT NULL"
+
                     # Total descargas
-                    cursor.execute("SELECT COUNT(*) FROM downloads")
+                    cursor.execute(f"SELECT COUNT(*) FROM downloads WHERE {reales}")
                     total = cursor.fetchone()[0]
 
                     # Por plataforma
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT platform, COUNT(*) FROM downloads
+                        WHERE {reales}
                         GROUP BY platform
                     """)
                     by_platform = dict(cursor.fetchall())
 
                     # Tamaño total
-                    cursor.execute("SELECT SUM(file_size) FROM downloads")
+                    cursor.execute(f"SELECT SUM(file_size) FROM downloads WHERE {reales}")
                     total_size = cursor.fetchone()[0] or 0
 
                     # Duración total
-                    cursor.execute("SELECT SUM(duration) FROM downloads")
+                    cursor.execute(f"SELECT SUM(duration) FROM downloads WHERE {reales}")
                     total_duration = cursor.fetchone()[0] or 0
 
                     return {

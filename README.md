@@ -1,6 +1,6 @@
 # 🎵 Music Downloader
 
-Aplicación de escritorio para descargar música de **SoundCloud y YouTube**, con sincronización automática de tus likes, detección de duplicados (por nombre de archivo *y* por audio real), y detección de BPM/tonalidad para mezcla armónica.
+Aplicación de escritorio para descargar música de **SoundCloud y YouTube**, con sincronización automática de tus likes, organización en carpetas por subgénero, detección de duplicados (por nombre de archivo *y* por audio real), y detección de BPM/tonalidad para mezcla armónica.
 
 **Página del proyecto:** [noull999.github.io/music-downloader](https://noull999.github.io/music-downloader/)
 
@@ -18,9 +18,16 @@ Aplicación de escritorio para descargar música de **SoundCloud y YouTube**, co
   - Sincronización periódica (manual o programada con el Task Scheduler de Windows)
   - Explorador de "Mis Likes" con estado de descarga y fecha
 
+- **Organización automática por subgénero**
+  - Cada descarga va sola a la carpeta de su género (`Schranz/`, `Hardgroove/`, `Industrial Techno/`…), sin elegir nada por canción
+  - El subgénero se resuelve leyendo los **tags** de SoundCloud, no solo el campo `genre`, que el uploader suele dejar en algo genérico. Medido sobre una biblioteca real de 402 canciones: 34% tenían género genérico mientras el subgénero estaba en los tags, y *schranz* aparecía 57 veces en los tags contra 14 en `genre`
+  - Reusa las carpetas que ya tengas (ignorando mayúsculas) y descarta basura como categorías de YouTube (`Music`, `Entertainment`) o volcados de tags
+  - Panel **"Ordenar la música que ya tengo"**: vista previa de a qué carpeta iría cada canción antes de mover nada, con archivo de deshacer
+
 - **Detección de duplicados en dos capas**
-  - Matching difuso de nombre de archivo contra toda tu biblioteca (no solo la carpeta de destino)
+  - Matching difuso de nombre de archivo contra toda tu biblioteca (no solo la carpeta de destino), ignorando archivos basura (`.DS_Store`, `._*` de macOS) que si no se cuentan como canciones reales
   - **Huella de audio (Chromaprint)** como red de seguridad: si el nombre no coincide con nada, compara el audio real de un preview antes de descargar — atrapa el caso de "mismo tema, nombre de archivo muy distinto" sin generar falsos positivos con remixes/edits de título parecido
+  - Soporta MP3, WAV, FLAC, M4A, AAC, OGG, OPUS, AIFF
 
 - **BPM y tonalidad para DJs**
   - Detecta BPM y tonalidad (notación Camelot o musical) de cada descarga con `librosa`
@@ -31,7 +38,8 @@ Aplicación de escritorio para descargar música de **SoundCloud y YouTube**, co
   - SoundCloud y YouTube
 
 - **Post-procesamiento**
-  - Metadatos y carátula incrustados
+  - Metadatos, género y carátula incrustados en **MP3, WAV y AIFF** (no solo MP3)
+  - La carátula se normaliza a JPEG y máx. 600px: SoundCloud a veces entrega miniaturas de 100×100 y YouTube las da en WebP, que Serato no muestra
   - Normalización de volumen, eliminación de silencios
 
 - **Interfaz de escritorio**
@@ -62,7 +70,19 @@ python scripts/build.py
 
 Esto genera `dist/MusicDownloader.exe` (descarga e incrusta ffmpeg y fpcalc automáticamente, y lo firma con un certificado autofirmado para que Windows Smart App Control no lo bloquee en tu PC).
 
-### Opción 2: Desde código fuente
+### Opción 2: App para macOS (.app)
+
+No hace falta un Mac para armarla: en GitHub → pestaña **Actions** → **Build macOS** → **Run workflow**. Al terminar (unos 10 minutos) aparece como descarga `MusicDownloader-mac-apple-silicon.zip` (Macs M1/M2/M3...) y `MusicDownloader-mac-intel.zip`. Si subís una etiqueta (`git tag v1.0.0 && git push --tags`) también queda en **Releases**, con un link directo para mandárselo a alguien.
+
+Quien la reciba:
+
+1. Descomprime el `.zip` y arrastra `MusicDownloader.app` a *Aplicaciones*.
+2. La primera vez: **clic derecho → Abrir → Abrir** (Mac avisa de "desarrollador no identificado" porque la app no está firmada con una cuenta de Apple de pago; solo pasa la primera vez).
+3. La app abre sola un asistente para conectar SoundCloud: inicia sesión ahí y listo. Es opcional; descargar con links funciona sin eso.
+
+Incluye ffmpeg y fpcalc; no hay que instalar nada más.
+
+### Opción 3: Desde código fuente
 
 ```bash
 git clone https://github.com/Noull999/music-downloader.git
@@ -77,15 +97,17 @@ Para instrucciones detalladas por sistema operativo, ver [SETUP.md](SETUP.md).
 
 ## ⚙️ Configuración de SoundCloud
 
-Para sincronizar tus likes necesitás tu **OAuth Token** y **Client ID**:
+La primera vez que abrís la app aparece un asistente: **"Iniciar sesión en SoundCloud"** abre una ventana con la página de SoundCloud, iniciás sesión ahí (la app no ve tu contraseña) y se conecta sola, incluido el Client ID. También se abre desde "Conectar cuenta". Es opcional: descargar con links funciona sin cuenta.
 
-1. Abrí soundcloud.com en tu navegador
-2. Abrí DevTools (F12 → Network)
-3. Buscá cualquier request a `api-v2.soundcloud.com`
-4. En el header `Authorization` copiá el valor (formato: `OAuth 2-XXXXX...`)
-5. En los query params buscá `client_id=XXXXX` y copialo
+La ventana de inicio de sesión **no admite Google, Facebook ni Apple** (abren ventanas emergentes que la app no puede mostrar): ahí entrá con tu correo. Si tu cuenta es de esas, usá el **modo manual** del mismo asistente:
 
-Ingresá estos valores desde "Conectar cuenta" en la app.
+1. Abrí soundcloud.com en tu navegador e iniciá sesión (el asistente tiene un link para eso).
+2. Abrí la consola: **Ctrl + Shift + J** (Shift es la flecha ⇧, no Bloq Mayús; en Mac **Cmd + Opción + J**), o F12 → pestaña *Console*.
+3. Pegá la línea que muestra el asistente (botón *Copiar línea*) y Enter. Si Chrome lo pide, escribí antes `allow pasting` + Enter. La consola solo responde `undefined`: es normal, el token ya quedó copiado en tu portapapeles.
+4. Volvé a la app, hacé clic en **OAuth Token** y pegá con Ctrl+V (empieza con `2-`; el prefijo `OAuth` lo agrega la app). El Client ID se completa solo.
+5. **Verificar y conectar**: debe aparecer `✅ ¡Conectado!` con tu usuario.
+
+Si la consola responde `no encontrado`, usá DevTools → *Network* → cualquier request a `api-v2.soundcloud.com` → header `Authorization`.
 
 ## 🎯 Uso
 
@@ -93,6 +115,11 @@ Ingresá estos valores desde "Conectar cuenta" en la app.
 2. **Sincronizar** — conectá tu cuenta y sincronizá tus likes; la app se encarga de no re-descargar lo que ya tenés.
 3. **Mis Likes** — explorá tus likes guardados, con estado de descarga y fecha, y bajá selecciones puntuales.
 4. **Sincronización automática** — desde Configuración podés registrar una tarea programada de Windows para que sincronice sola cada X horas, incluso con la app cerrada.
+5. **Ordenar por género** — activá "Ordenar por género en carpetas" y cada descarga nueva cae sola donde corresponde. Si ya tenés música suelta, el botón "Ordenar la música que ya tengo" la acomoda: primero te muestra la simulación, y solo mueve si confirmás.
+
+### Sincronización automática
+
+Se programa desde la app (Windows: Programador de tareas; macOS: `launchd`). Si el equipo estaba apagado o dormido a la hora programada, sincroniza al encenderse o despertar.
 
 ## 📁 Estructura del Proyecto
 
@@ -107,6 +134,7 @@ music-downloader/
 │   ├── soundcloud_api.py
 │   ├── sync_manager.py
 │   ├── duplicate_checker.py # Matching difuso de nombres
+│   ├── genre_utils.py       # Resolución de subgénero (genre + tags + título)
 │   └── task_scheduler.py    # Integración con Task Scheduler de Windows
 ├── analysis/                 # BPM/tonalidad y huella de audio
 │   ├── audio_analysis.py     # Detección BPM/Camelot (librosa)
@@ -124,7 +152,8 @@ Desde el panel de Configuración de la app:
 
 - **Patrón de nombre de archivo**: `{artist} - {title}`, `{title}`, o personalizado
 - **Preset de calidad**: MP3 320/256/128 kbps, FLAC
-- **Post-procesamiento**: normalización de volumen, eliminación de silencios, metadatos, carátula
+- **Post-procesamiento**: normalización de volumen, eliminación de silencios, metadatos, carátula, género
+- **Ordenar por género en carpetas**: las carpetas se crean en la raíz de tu biblioteca (no dentro de la carpeta de descarga), y la app te muestra la ruta exacta
 - **Análisis de audio**: activar/desactivar BPM/tonalidad y elegir formato (Camelot o musical)
 - **Duplicados por audio**: activado por defecto; se puede desactivar si preferís solo el matching por nombre
 
@@ -141,12 +170,21 @@ Desde el panel de Configuración de la app:
 ### "No new tracks found" en sync
 - Los likes pueden tardar unos minutos en indexarse en la API de SoundCloud
 
+### "HTTP Error 403: Forbidden" al consultar SoundCloud
+- Es un límite de tasa temporal de SoundCloud, no un problema de la cuenta ni del código. Aparece si se hacen muchas consultas seguidas (por ejemplo, reprocesando metadatos de decenas de canciones de una sola vez). Esperá unos minutos y volvé a intentar.
+
 ### Windows bloquea el .exe (Smart App Control)
 - `scripts/build.py` firma el .exe automáticamente con un certificado local. Si igual lo bloquea, revisá que el certificado quedó agregado a los almacenes `CurrentUser\Root` y `CurrentUser\TrustedPublisher`.
 
+### La primera sync tarda muchísimo (varios minutos, sin avisar nada)
+- Es la construcción inicial del índice de huellas de audio (`analysis/fingerprint.py`), que le saca la huella a toda tu biblioteca la primera vez. Un antivirus con protección en tiempo real puede escanear cada apertura de `fpcalc.exe` y volverlo bastante más lento que corrido fuera del .exe — es esperable solo la primera vez; después queda cacheado (`~/.music_downloader/fingerprint_index.json`) y solo recalcula lo nuevo o cambiado.
+- Reorganizar la biblioteca por género (o cualquier operación que MUEVA archivos existentes) actualiza ese caché en vez de borrarlo — remapea las rutas sin recalcular nada, porque el contenido del audio no cambió.
+
 ## 📊 Base de datos
 
-El historial se guarda en `~/.music_downloader/history.db` (SQLite), con tablas separadas para descargas manuales, descargas por sync, likes guardados y fallos permanentes (DRM/geo-bloqueo).
+El historial se guarda en `~/.music_downloader/history.db` (SQLite), con tablas separadas para descargas manuales, descargas por sync, likes guardados (incluidos sus tags, para resolver el subgénero) y fallos permanentes (DRM/geo-bloqueo).
+
+En esa misma carpeta quedan el índice de huellas de audio (`fingerprint_index.json`, cacheado por fecha y tamaño para no re-analizar la biblioteca entera en cada sync) y los archivos `undo_organizar_*.json` que genera el ordenado por género.
 
 ## 🤝 Contribuciones
 

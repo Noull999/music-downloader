@@ -32,7 +32,23 @@ from thefuzz import fuzz
 
 logger = logging.getLogger(__name__)
 
-AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".wav", ".ogg", ".opus", ".aac"}
+AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".wav", ".ogg", ".opus", ".aac",
+                    ".aiff", ".aif"}
+
+
+def es_basura_del_sistema(path: Path) -> bool:
+    """
+    Archivos que NO son música aunque tengan extensión de audio.
+
+    macOS deja un "._NombreCancion.mp3" (AppleDouble, unos pocos KB con
+    metadatos) junto a cada archivo al copiar a un disco no-Mac, más los
+    .DS_Store de Finder. Como copian la extensión, se indexaban como
+    canciones reales: en una biblioteca de prueba había 613 de estos
+    falsos sobre 2036 archivos, y ensuciaban tanto la detección de
+    duplicados como el conteo y las huellas de audio.
+    """
+    name = path.name
+    return name.startswith("._") or name == ".DS_Store"
 
 # Umbral por defecto para considerar dos títulos la misma canción.
 # Elegido midiendo contra una biblioteca real de 1904 archivos y 392 likes:
@@ -71,6 +87,69 @@ def clean_for_match(text: str) -> str:
 
 def _usable(candidates: Iterable[str]) -> set[str]:
     return {c for c in candidates if len(c) >= MIN_MATCH_LEN}
+
+
+# Palabras que van entre parentesis pero no son el nombre de quien hizo la
+# version: sin esto "(Free Download)" se tomaria por un remixer.
+_NO_ES_REMIXER = frozenset({
+    "remix", "edit", "bootleg", "free", "download", "dl", "extended", "original", "mix", "hard",
+    "techno", "schranz", "rework", "flip", "vip", "version", "remaster", "remastered", "master",
+    "mastered", "premiere", "out", "now", "feat", "the", "and", "dub", "radio", "club",
+    "hardtechno", "hardstyle", "hardcore", "tek", "mashup", "rave", "kick", "new", "intro",
+    "temporary", "limited", "time", "only", "full", "track", "official", "video", "audio",
+    "preview", "clip", "promo", "exclusive", "soundcloud", "bandcamp", "buy", "link", "bio",
+})
+
+
+def _solo_alfanumerico(texto: str) -> str:
+    t = unicodedata.normalize("NFD", texto or "")
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    return re.sub(r"[^a-z0-9 ]+", " ", t.lower())
+
+
+def tokens_de_remixer(titulo: str) -> frozenset:
+    """
+    Nombres propios dentro de los PARENTESIS de un titulo: quien hizo la
+    version ("(SX2 Remix)" -> {"sx2"}).
+
+    clean_for_match borra todo lo que va entre parentesis, y ahi esta justo el
+    remixer: "Faithless - Insomnia (SX2 Remix)" e "Insomnia - Faithless
+    (Restricted & NIK)" quedaban IDENTICOS y la sync daba el segundo por el
+    primero. No se miran los corchetes: ahi van sellos y codigos ([FREE DL],
+    [TFT046]), no remixers.
+    """
+    toks: set[str] = set()
+    for grupo in re.findall(r"\(([^)]*)\)", titulo or ""):
+        toks |= {w for w in _solo_alfanumerico(grupo).split()
+                 if len(w) >= 3 and w not in _NO_ES_REMIXER and not w.isdigit()}
+    return frozenset(toks)
+
+
+def respeta_remixer(titulo: str, stem: str) -> bool:
+    """False si el titulo nombra un remixer que el archivo no menciona: otra version."""
+    toks = tokens_de_remixer(titulo)
+    if not toks:
+        return True
+    nombre = _solo_alfanumerico(stem)
+    return all(t in nombre for t in toks)
+
+
+# Un remix o edit que comparte la voz con el original suena igual en los primeros
+# 30 s, asi que la huella lo da por duplicado; pero casi nunca dura lo mismo.
+TOLERANCIA_DURACION_S = 15
+
+
+def duracion_compatible(ruta, duracion_s, tolerancia: float = TOLERANCIA_DURACION_S) -> bool:
+    """True si el archivo dura lo que se espera (o si no se puede saber)."""
+    if not duracion_s:
+        return True
+    try:
+        from mutagen import File as MFile
+        archivo = MFile(str(ruta))
+        real = float(archivo.info.length)
+    except Exception:
+        return True
+    return abs(real - duracion_s) <= tolerancia
 
 
 def like_candidates(artist: str, title: str) -> set[str]:
@@ -118,6 +197,8 @@ def index_audio_files(folders: Iterable[str]) -> list[tuple[Path, set[str]]]:
             continue
         try:
             for path in root.rglob("*"):
+                if es_basura_del_sistema(path):
+                    continue
                 if not path.is_file() or path.suffix.lower() not in AUDIO_EXTENSIONS:
                     continue
                 key = str(path).lower()
@@ -136,17 +217,23 @@ def find_best_match(
     candidates: Iterable[str],
     index: list[tuple[Path, set[str]]],
     threshold: int = MATCH_THRESHOLD,
+    titulo: Optional[str] = None,
 ) -> tuple[Optional[Path], int]:
     """
     Busca en el índice el archivo MÁS parecido (no el primero que supere el
     umbral). Devuelve (ruta, score) o (None, mejor_score) si nada llega al
     umbral.
+
+    Si se pasa `titulo`, se descartan los archivos cuyo nombre no menciona al
+    remixer que ese titulo nombra entre parentesis (ver tokens_de_remixer).
     """
     candidates = list(candidates)
     if not candidates:
         return None, 0
     best_path, best = None, 0
     for path, file_cands in index:
+        if titulo and not respeta_remixer(titulo, path.stem):
+            continue
         score = best_score(candidates, file_cands)
         if score > best:
             best, best_path = score, path

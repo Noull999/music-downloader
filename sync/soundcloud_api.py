@@ -23,6 +23,19 @@ class SoundCloudTrack:
     artwork_url: Optional[str]
     genre: Optional[str]
     created_at: str
+    # Tags libres del uploader. El campo `genre` tira a lo genérico
+    # ("Techno") mientras el subgénero real suele estar acá
+    # ("schranz", "hardgroove"); ver sync/genre_utils.py.
+    tags: str = ""
+    # Dónde bajar la versión que ofrece el artista a cambio de seguir/dar
+    # like (Hypeddit, Bandcamp, fanlink...). SoundCloud lo trae en un campo
+    # dedicado — no hay que buscarlo en la descripción. Ver
+    # webview_app/api.py:get_upgrade_candidates().
+    purchase_url: str = ""
+    # Si el artista activó la descarga nativa de SoundCloud (el botón
+    # "Download" real, no un link externo): ahí yt-dlp ya se lleva el
+    # archivo original, no el stream. No hace falta gate para estos.
+    downloadable: bool = False
 
     def __repr__(self) -> str:
         return f"<SoundCloudTrack '{self.artist}' - '{self.title}' ({self.duration_ms}ms)>"
@@ -63,6 +76,70 @@ class SoundCloudAPIClient:
             "Referer": "https://soundcloud.com/",
             "Content-Type": "application/json; charset=utf-8",
         })
+
+    def search_tracks(self, consulta: str, limit: int = 20) -> list[dict]:
+        """Busca tracks en SoundCloud. Devuelve los objetos crudos de la API, o [] si falla."""
+        try:
+            r = self.session.get(
+                f"{self.BASE_URL}/search/tracks",
+                params={"q": consulta, "client_id": self.client_id, "limit": limit},
+                timeout=15,
+            )
+        except requests.RequestException:
+            return []
+        return r.json().get("collection", []) if r.status_code == 200 else []
+
+    def _get_json(self, ruta: str, **params):
+        """GET a la API con el client_id; devuelve el JSON o None si falla."""
+        try:
+            r = self.session.get(
+                f"{self.BASE_URL}{ruta}",
+                params={"client_id": self.client_id, **params},
+                timeout=20,
+            )
+        except requests.RequestException:
+            return None
+        return r.json() if r.status_code == 200 else None
+
+    def get_related(self, track_id, limit: int = 50) -> list[dict]:
+        """Temas parecidos a uno (la 'estacion' de SoundCloud)."""
+        data = self._get_json(f"/tracks/{track_id}/related", limit=limit)
+        return (data or {}).get("collection", [])
+
+    def resolve(self, url: str) -> Optional[dict]:
+        """Convierte un link publico (set, perfil, tema) en su objeto de la API."""
+        return self._get_json("/resolve", url=url)
+
+    def get_tracks_by_ids(self, ids: list) -> list[dict]:
+        """Datos completos de varios temas a la vez."""
+        data = self._get_json("/tracks", ids=",".join(str(i) for i in ids))
+        return data if isinstance(data, list) else []
+
+    def _get_json_url(self, url: str):
+        """GET a una URL absoluta de la API (la del 'next_href' de una pagina)."""
+        try:
+            r = self.session.get(url, params={"client_id": self.client_id}, timeout=20)
+        except requests.RequestException:
+            return None
+        return r.json() if r.status_code == 200 else None
+
+    def get_user_tracks(self, user_id, limit: int = 200) -> list[dict]:
+        """
+        Los temas subidos por un usuario. La API los entrega por paginas de
+        tamano variable (29, 18...) sin importar el `limit` pedido: un perfil de
+        79 temas devolvia 29 si no se seguia la pagina siguiente.
+        """
+        data = self._get_json(f"/users/{user_id}/tracks", limit=limit, linked_partitioning=1)
+        temas: list[dict] = []
+        for _ in range(15):   # tope de paginas, por si algo no termina nunca
+            if not data:
+                break
+            temas.extend(data.get("collection", []))
+            siguiente = data.get("next_href")
+            if len(temas) >= limit or not siguiente:
+                break
+            data = self._get_json_url(siguiente)
+        return temas[:limit]
 
     def validate_credentials(self) -> dict:
         """
@@ -222,6 +299,9 @@ class SoundCloudAPIClient:
                         artwork_url=track_data.get("artwork_url"),
                         genre=track_data.get("genre"),
                         created_at=track_data.get("created_at", ""),
+                        tags=track_data.get("tag_list") or "",
+                        purchase_url=track_data.get("purchase_url") or "",
+                        downloadable=bool(track_data.get("downloadable")),
                     )
                     tracks.append(track)
                 except (KeyError, TypeError) as e:
@@ -299,6 +379,9 @@ class SoundCloudAPIClient:
                     artwork_url=track_data.get("artwork_url"),
                     genre=track_data.get("genre"),
                     created_at=track_data.get("created_at", ""),
+                    tags=track_data.get("tag_list") or "",
+                    purchase_url=track_data.get("purchase_url") or "",
+                    downloadable=bool(track_data.get("downloadable")),
                 ))
             except (KeyError, TypeError):
                 continue

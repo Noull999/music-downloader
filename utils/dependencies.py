@@ -7,6 +7,8 @@ import sys
 import shutil
 import subprocess
 import logging
+
+from utils.subprocess_utils import NO_WINDOW
 from typing import Optional, Tuple
 
 from utils.exceptions import DependencyNotFoundError, DependencyVersionError
@@ -91,7 +93,8 @@ class FFmpegValidator:
                 [ffmpeg_path, "-version"],
                 capture_output=True,
                 timeout=5,
-                text=True
+                text=True,
+                creationflags=NO_WINDOW,
             )
 
             if result.returncode != 0:

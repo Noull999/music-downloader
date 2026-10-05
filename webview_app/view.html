@@ -105,9 +105,13 @@
     text-transform: uppercase;
     padding: 10px 16px;
     border: 2px solid;
-    border-radius: 999px; /* píldora, no esquinas en punta: los paneles y
-      modales siguen con el corte pixel, solo los botones pasan a este
-      estilo neón redondeado */
+    clip-path: polygon(
+      0 8px, 4px 8px, 4px 4px, 8px 4px, 8px 0,
+      calc(100% - 8px) 0, calc(100% - 8px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 8px, 100% 8px,
+      100% calc(100% - 8px), calc(100% - 4px) calc(100% - 8px), calc(100% - 4px) calc(100% - 4px), calc(100% - 8px) calc(100% - 4px), calc(100% - 8px) 100%,
+      8px 100%, 8px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 8px), 0 calc(100% - 8px)
+    ); /* mismo corte escalonado que .pixel-corners, para que los botones
+      vuelvan a hacer juego con paneles y modales en vez del estilo píldora */
     cursor: pointer;
     transition: box-shadow 150ms ease, transform 100ms ease, background 150ms ease, border-color 150ms ease;
   }
@@ -266,7 +270,13 @@
   .task-actions { display: flex; gap: 6px; flex: none; }
   .mini-btn {
     font-family: var(--f-label); font-size: 8px; letter-spacing: .08em; text-transform: uppercase;
-    padding: 4px 10px; border: 2px solid var(--iron-hi); border-radius: 999px;
+    padding: 4px 10px; border: 2px solid var(--iron-hi);
+    clip-path: polygon(
+      0 3px, 3px 3px, 3px 0,
+      calc(100% - 3px) 0, calc(100% - 3px) 3px, 100% 3px,
+      100% calc(100% - 3px), calc(100% - 3px) calc(100% - 3px), calc(100% - 3px) 100%,
+      3px 100%, 3px calc(100% - 3px), 0 calc(100% - 3px)
+    );
     background: var(--iron); color: var(--bone-dim); cursor: pointer;
     transition: box-shadow 150ms ease, color 150ms ease, border-color 150ms ease;
   }
@@ -338,7 +348,12 @@
   .modal-title { font-family: var(--f-display); font-size: 16px; font-weight: 700; color: var(--bone); }
   .modal-close {
     margin-left: auto; background: transparent; border: 2px solid var(--iron-hi); color: var(--bone-dim);
-    border-radius: 999px;
+    clip-path: polygon(
+      0 4px, 4px 4px, 4px 0,
+      calc(100% - 4px) 0, calc(100% - 4px) 4px, 100% 4px,
+      100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px), calc(100% - 4px) 100%,
+      4px 100%, 4px calc(100% - 4px), 0 calc(100% - 4px)
+    );
     font-family: var(--f-label); font-size: 12px; width: 26px; height: 26px; cursor: pointer;
     transition: box-shadow 150ms ease, color 150ms ease, border-color 150ms ease;
   }
@@ -405,6 +420,11 @@
       <span class="field-label">Carpeta de destino</span>
       <div class="path-box" id="destPath">—</div>
       <button class="btn btn-ghost btn-block" id="btnBrowse"><svg class="picon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v2H4zm0 14h16v2H4zM20 8h2v10h-2zM2 6h2v12H2zm8 0h10v2H10z"/></svg>Examinar</button>
+      <div class="hint" id="destHint">
+        Es la carpeta principal: adentro se van creando solas las carpetas
+        de cada género (Schranz, Hard Techno…) y cada canción cae en la
+        suya según sus datos.
+      </div>
     </div>
 
 
@@ -427,6 +447,8 @@
         <button class="btn btn-blood" id="btnScSync"><svg class="picon" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M13 20H9V18H13V20ZM19 16H21V18H19V20H17V18H15V16H17V8H19V16ZM9 18H7V16H9V18ZM7 6H9V8H7V16H5V8H3V6H5V4H7V6ZM15 16H13V14H15V16ZM23 16H21V14H23V16ZM3 10H1V8H3V10ZM11 10H9V8H11V10ZM17 8H15V6H17V8ZM15 6H11V4H15V6Z"/></svg>Sincronizar</button>
         <button class="btn btn-ghost" id="btnScLikes"><svg class="picon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M13 22h-2v-2h2v2Zm-2-2H9v-2h2v2Zm4 0h-2v-2h2v2Zm-6-2H7v-2h2v2Zm8 0h-2v-2h2v2ZM7 16H5v-2h2v2Zm12 0h-2v-2h2v2ZM5 14H3v-2h2v2Zm16 0h-2v-2h2v2ZM3 12H1V6h2v6Zm20 0h-2V6h2v6ZM13 8h-2V6h2v2ZM5 6H3V4h2v2Zm6 0H9V4h2v2Zm4 0h-2V4h2v2Zm6 0h-2V4h2v2ZM9 4H5V2h4v2Zm10 0h-4V2h4v2Z"/></svg>Mis Likes</button>
       </div>
+      <button class="btn btn-ghost btn-block" id="btnDiscover" title="Temas que SoundCloud recomienda a partir de tus últimos likes">✦ Descubrir temas</button>
+      <button class="btn btn-ghost btn-block" id="btnUpgrades">📀 Mejor calidad disponible</button>
       <button class="btn btn-ghost btn-block" id="btnScConnect"><svg class="picon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h7v2H4zm0 10h7v2H4zM2 8h2v8H2zm18-2h-7v2h7zm0 10h-7v2h7zm2-8h-2v8h2zM7 11h10v2H7z"/></svg>Conectar cuenta</button>
     </div>
 
@@ -522,6 +544,89 @@
 
 </div>
 
+<!-- ============ Modal: Mejor calidad disponible ============ -->
+<div class="modal-overlay" id="modalUpgrades">
+  <div class="modal pixel-corners-lg" style="max-width: 620px;">
+    <div class="modal-head">
+      <span class="modal-title">Mejor calidad disponible</span>
+      <button class="modal-close" data-close="modalUpgrades">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="hint">
+        Estos temas los tenés bajados desde el stream de SoundCloud, pero
+        el artista dejó un link para conseguir la versión buena (WAV o
+        320 real) a cambio de un follow/like/repost. La app no completa
+        eso por vos — abrí el link, hacé lo que pide, y la próxima sync
+        se lleva la versión mejor sin que hagas nada más.
+      </div>
+      <div class="hint" id="upgradesIntro">Buscando…</div>
+      <div class="log" id="upgradesList" style="max-height:320px"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close="modalUpgrades">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Modal: Elegir temas de una lista ============ -->
+<div class="modal-overlay" id="modalPlaylist" style="z-index: 60">
+  <div class="modal pixel-corners-lg" style="max-width: 640px;">
+    <div class="modal-head">
+      <span class="modal-title" id="playlistTitle">Elegir temas de la lista</span>
+      <button class="modal-close" data-close="modalPlaylist">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="hint" id="playlistIntro">Cargando la lista…</div>
+      <div class="form-row" id="playlistFilterRow" style="display:none">
+        <input type="text" id="playlistFilter" placeholder="Filtrar por título o artista…">
+      </div>
+      <div class="form-row-inline" id="playlistTools" style="display:none">
+        <button class="mini-btn" id="playlistAll">Marcar los visibles</button>
+        <button class="mini-btn" id="playlistNone">Ninguno</button>
+        <span class="hint" id="playlistCount" style="margin-left:auto">0 marcados</span>
+      </div>
+      <div class="log" id="playlistList" style="max-height:300px"></div>
+      <div id="playlistPlayer" style="display:none; flex-direction:column; gap:6px">
+        <span class="hrow-sub" id="playerTitulo"></span>
+        <div class="form-row-inline">
+          <button class="mini-btn" id="playerToggle" type="button">❚❚</button>
+          <input type="range" id="playerSeek" min="0" max="1000" value="0" style="accent-color: var(--ember)">
+          <span class="hrow-sub" id="playerTiempo">0:00 / 0:00</span>
+          <button class="mini-btn" id="playerInicio" type="button" title="Volver al principio">Inicio</button>
+        </div>
+      </div>
+      <audio id="playerAudio" preload="metadata"></audio>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close="modalPlaylist">Cancelar</button>
+      <button class="btn btn-blood" id="playlistAdd" disabled>Agregar 0 a la cola</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Modal: Ordenar por género ============ -->
+<div class="modal-overlay" id="modalOrganize">
+  <div class="modal pixel-corners-lg" style="max-width: 560px;">
+    <div class="modal-head">
+      <span class="modal-title">Ordenar por género</span>
+      <button class="modal-close" data-close="modalOrganize">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="hint" id="organizeIntro">Calculando…</div>
+      <div class="log" id="organizeList" style="max-height:260px"></div>
+      <div class="hint">
+        Nada se mueve hasta que confirmes. Se guarda un archivo para
+        deshacer, y se actualizan las rutas del historial.
+      </div>
+      <span class="sc-status-line" id="organizeStatus"></span>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close="modalOrganize">Cancelar</button>
+      <button class="btn btn-blood" id="btnOrganizeApply">Ordenar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ Modal: Conectar SoundCloud ============ -->
 <div class="modal-overlay" id="modalConnect">
   <div class="modal pixel-corners-lg">
@@ -530,6 +635,38 @@
       <button class="modal-close" data-close="modalConnect">✕</button>
     </div>
     <div class="modal-body">
+      <div class="hint" id="scWizardIntro">
+        Para sincronizar tus likes de SoundCloud la app necesita conectarse a tu
+        cuenta. <b>Es opcional</b>: pegar links y descargar funciona sin esto.
+      </div>
+      <button class="btn btn-blood btn-block" id="btnScLogin">1 · Iniciar sesión en SoundCloud</button>
+      <div class="hint">
+        Se abre una ventana con la página de SoundCloud. Iniciá sesión ahí
+        con tu <b>correo</b> (la app no ve tu contraseña) y se conecta sola al
+        terminar. <b>Google, Facebook y Apple no funcionan en esa ventana</b>
+        (necesitan ventanas emergentes): si tu cuenta es de esas, usá el modo
+        manual de abajo.
+      </div>
+      <div class="sc-status-line" style="margin:8px 0;min-height:18px" id="scVerifyStatus"></div>
+      <details id="scManual">
+      <summary class="hint" style="cursor:pointer;margin:8px 0;">Modo manual (Google/Facebook/Apple o si falla)</summary>
+      <div class="hint" style="margin-bottom:8px;">
+        <b>1)</b> <a href="#" id="scAbrirWeb" style="color:var(--amber)">Abrir soundcloud.com en mi navegador</a>
+        e iniciá sesión como siempre.<br>
+        <b>2)</b> Con esa pestaña abierta apretá <b id="scAtajo">Ctrl + Shift (⇧) + J</b>
+        (Shift es la flecha ⇧ hacia arriba, <u>no</u> Bloq Mayús; o apretá F12 y
+        elegí la pestaña <b>Console</b>) y pegá esta línea con Enter. Chrome pide primero
+        que escribas <code>allow pasting</code> + Enter (es una protección normal; la línea
+        solo copia tu token a tu portapapeles, no envía nada):
+        <button class="btn btn-ghost" id="btnCopiarSnippet" style="padding:4px 8px;margin:4px 0;">Copiar línea</button><br>
+        <code id="scSnippet" style="user-select:all">copy(document.cookie.match(/oauth_token=([^;]+)/)?.[1] || "no encontrado")</code><br>
+        <b>3)</b> Tu token ya quedó copiado solo (la consola solo muestra
+        "undefined", es normal): volvé acá, hacé clic en OAuth Token y apretá
+        <b>Ctrl+V</b> (o Cmd+V en Mac). Debería empezar con <code>2-</code>; la app
+        agrega el "OAuth" sola. El Client ID se completa solo.
+        Si la consola dice "no encontrado": pestaña <b>Network</b> → recargá →
+        cualquier request a <i>api-v2</i> → header <b>Authorization</b>.
+      </div>
       <div class="form-row">
         <label>OAuth Token</label>
         <div class="form-row-inline">
@@ -541,16 +678,16 @@
         <label>Client ID</label>
         <input type="text" id="scClientInput" placeholder="XXXXXXXXXXXXXXXX">
       </div>
-      <span class="sc-status-line" id="scVerifyStatus"></span>
       <div class="hint">
         F12 en soundcloud.com → pestaña Network → filtrá "api-v2" → recargá →
         abrí cualquier request: el header <b>Authorization</b> es el OAuth Token,
-        y <b>client_id</b> en la URL del request es el Client ID. Son como una
-        contraseña, no los compartas.
+        y <b>client_id</b> en la URL del request es el Client ID (si lo dejás
+        vacío la app lo busca sola). Son como una contraseña, no los compartas.
       </div>
+      </details>
     </div>
     <div class="modal-foot">
-      <button class="btn btn-ghost" data-close="modalConnect">Cerrar</button>
+      <button class="btn btn-ghost" data-close="modalConnect">Ahora no</button>
       <button class="btn btn-blood" id="btnScVerify">Verificar y conectar</button>
     </div>
   </div>
@@ -592,8 +729,22 @@
           <label>Patrón de nombre</label>
           <input type="text" id="cfgPattern" placeholder="{artist} - {title}">
         </div>
-        <label class="check-row"><input type="checkbox" id="cfgSubArtist"><span>Subcarpeta por artista</span></label>
-        <label class="check-row"><input type="checkbox" id="cfgSubGenre"><span>Subcarpeta por género</span></label>
+        <label class="check-row"><input type="checkbox" id="cfgSubGenre"><span>Ordenar por género en carpetas</span></label>
+        <label class="check-row"><input type="checkbox" id="cfgSubArtist"><span>Subcarpeta por artista (en vez de por género)</span></label>
+        <div class="hint">
+          Las dos no se combinan: si "ordenar por género" está activo, manda
+          ese. Por género agrupás por estilo (unas 25 carpetas); por artista
+          se crea una carpeta por cada uno, y suelen quedar muchísimas con
+          una sola canción.
+        </div>
+        <div class="hint" id="genreRootHint">
+          Cada canción se guarda sola en la carpeta de su subgénero
+          (Schranz, Hardgroove…), leyendo los tags de SoundCloud y no solo
+          el género genérico. Se reusan las carpetas que ya tengas.
+        </div>
+        <button class="btn btn-ghost btn-block" id="btnOrganize">📁 Ordenar la música que ya tengo…</button>
+        <button class="btn btn-ghost btn-block" id="btnExportPlaylists">🎧 Exportar playlists (Serato/Rekordbox)</button>
+        <span class="sc-status-line" id="exportPlaylistsStatus"></span>
       </div>
 
       <div class="form-group">
@@ -632,6 +783,23 @@
           tema, nombre de archivo muy distinto. Validado sin falsos
           positivos ni con remixes/edits de título casi idéntico.
         </div>
+      </div>
+
+      <div class="form-group">
+        <span class="form-group-title">Completar tags rotos (AcoustID)</span>
+        <div class="form-row">
+          <label>API key de acoustid.org</label>
+          <input type="text" id="cfgAcoustidKey" placeholder="gratuita en acoustid.org/api-key">
+        </div>
+        <div class="hint">
+          Identifica canciones sin título/artista por su audio, contra el
+          servicio gratuito de AcoustID. Nunca pisa un tag que ya existe,
+          solo llena lo que está vacío. No completa género — eso queda
+          para más adelante.
+        </div>
+        <button class="btn btn-ghost btn-block" id="btnFixTags">🏷️ Completar tags rotos…</button>
+        <button class="btn btn-blood btn-block" id="btnFixTagsApply" style="display:none">Confirmar y consultar AcoustID</button>
+        <span class="sc-status-line" id="fixTagsStatus"></span>
       </div>
 
       <div class="form-group">
@@ -725,6 +893,28 @@
         upsertTrack(payload);
         renderQueueRow(payload.url, true);
         break;
+      case "soundcloud_login": {
+        const st = document.getElementById("scVerifyStatus");
+        if (payload.ok) {
+          st.textContent = `✓ ${payload.user_info.username} · ${payload.user_info.likes_count} likes`;
+          st.className = "sc-status-line on";
+          renderScStatus(true, payload.user_info);
+          setStatus("SoundCloud conectado", "ok");
+          mostrarConectado(payload.user_info);
+        } else {
+          st.textContent = `✗ ${payload.error}`;
+          st.className = "sc-status-line off";
+          document.getElementById("scManual").open = true;
+        }
+        break;
+      }
+      case "abrir_lista":
+        // Un link de lista (playlist, perfil, set): en vez de llenar la cola,
+        // se abre la ventana para elegir cuales temas agregar.
+        removeRow(payload.url);
+        tracks.delete(payload.url);
+        abrirLista(payload.url);
+        break;
       case "track_replaced":
         // Si la URL canónica difiere de la pegada, la fila vieja se
         // descarta. Si es la misma (caso común), se actualiza en el
@@ -801,6 +991,7 @@
         <div class="task-foot">
           <span class="task-sub"></span>
           <div class="task-actions">
+            <button class="mini-btn" data-action="playlist" hidden title="Este video viene de una lista (álbum o temas parecidos): elegí cuáles agregar">Ver lista…</button>
             <button class="mini-btn dl" data-action="download">Descargar</button>
             <button class="mini-btn" data-action="cancel">Cancelar</button>
           </div>
@@ -810,6 +1001,9 @@
       });
       el.querySelector('[data-action="cancel"]').addEventListener("click", () => {
         api().cancel_download(url);
+      });
+      el.querySelector('[data-action="playlist"]').addEventListener("click", () => {
+        abrirLista(tracks.get(url)?.playlist_url);
       });
       document.getElementById("queueList").appendChild(el);
       rows.set(url, el);
@@ -823,6 +1017,11 @@
 
     const dlBtn = el.querySelector('[data-action="download"]');
     dlBtn.disabled = ["downloading", "fetching", "done", "skip"].includes(t.status);
+    const btnLista = el.querySelector('[data-action="playlist"]');
+    btnLista.hidden = !t.playlist_url;
+    // list=RD... es la "radio" de temas parecidos que YouTube arma para
+    // cualquier video; el resto (OLAK5uy..., PL...) es un álbum o una lista.
+    btnLista.textContent = /[?&]list=RD|^sc-related:/.test(t.playlist_url || "") ? "Ver parecidos…" : "Ver lista…";
 
     updateProgress(url, t.progress || 0);
   }
@@ -869,8 +1068,26 @@
       const sub = document.createElement("span");
       sub.className = "hrow-sub";
       const sourceLabel = it.source === "sync" ? "sync" : "manual";
-      sub.textContent = `${it.platform || "?"} · ${sourceLabel}`;
+      // Carpeta donde quedó el archivo, para no tener que ir a buscarla en
+      // el explorador: el nombre de la carpeta contenedora, o "sin carpeta"
+      // si el patrón de nombre no usa subcarpetas.
+      let carpeta = "";
+      if (it.local_path) {
+        const partes = it.local_path.replace(/\\/g, "/").split("/");
+        carpeta = partes.length > 1 ? partes[partes.length - 2] : "";
+      }
+      sub.textContent = `${it.platform || "?"} · ${sourceLabel}` + (carpeta ? ` · ${carpeta}` : "");
       main.append(title, sub);
+      if (it.local_path) {
+        // La ruta completa al pasar el mouse, y un clic abre el explorador
+        // con el archivo seleccionado.
+        sub.title = it.local_path;
+        sub.style.cursor = "pointer";
+        sub.addEventListener("click", async () => {
+          const r = await api().reveal_in_folder(it.local_path);
+          if (!r.ok) setStatus(r.error || "No se pudo abrir la carpeta", "err");
+        });
+      }
       const date = document.createElement("span");
       date.className = "hrow-sub";
       date.textContent = (it.date || "").slice(0, 16);
@@ -895,6 +1112,232 @@
     document.getElementById("statTotal").textContent = stats.total_downloads ?? 0;
     document.getElementById("statSize").textContent = fmtBytes(stats.total_size_bytes || 0);
   }
+
+  // ---- Elegir temas de una lista (álbum / radio de parecidos) ----
+  let listaActual = { url: "", entradas: [] };
+  // Lo marcado vive aca y no en las casillas: dibujarLista() reconstruye las
+  // filas al filtrar, y si el estado estuviera solo en el DOM se perderia lo
+  // ya elegido al cambiar el filtro.
+  const marcadasLista = new Set();
+
+  function actualizarContadorLista() {
+    const marcadas = marcadasLista.size;
+    document.getElementById("playlistCount").textContent = `${marcadas} marcados`;
+    const btn = document.getElementById("playlistAdd");
+    btn.textContent = `Agregar ${marcadas} a la cola`;
+    btn.disabled = marcadas === 0;
+  }
+
+  function dibujarLista() {
+    const filtro = document.getElementById("playlistFilter").value.trim().toLowerCase();
+    const cont = document.getElementById("playlistList");
+    cont.innerHTML = "";
+    for (const e of listaActual.entradas) {
+      const texto = `${e.artist} ${e.title}`.toLowerCase();
+      if (filtro && !texto.includes(filtro)) continue;
+      const row = document.createElement("label");
+      row.className = "hrow";
+      row.style.cursor = e.en_cola || e.ya_descargada ? "default" : "pointer";
+      // La casilla va en la primera columna de .hrow (18px 1fr auto): sin
+      // algo ahí el titulo cae en la columna angosta y se corta.
+      const caja = document.createElement("input");
+      caja.type = "checkbox";
+      caja.dataset.url = e.url;
+      caja.disabled = e.en_cola || e.ya_descargada;
+      caja.checked = marcadasLista.has(e.url);
+      caja.addEventListener("change", () => {
+        if (caja.checked) marcadasLista.add(e.url); else marcadasLista.delete(e.url);
+        actualizarContadorLista();
+      });
+      const main = document.createElement("div");
+      main.className = "hrow-main";
+      const t = document.createElement("span");
+      t.className = "hrow-title";
+      t.textContent = e.artist ? `${e.artist} — ${e.title}` : e.title;
+      const s = document.createElement("span");
+      s.className = "hrow-sub";
+      s.textContent = e.ya_descargada ? "ya la tenés" : (e.en_cola ? "ya está en la cola" : (
+        (e.coincidencias ? `recomendado por ${e.coincidencias} de tus likes` + (e.genero ? " · " : "") : "") + (e.genero || "")));
+      main.append(t, s);
+      const dur = document.createElement("span");
+      dur.className = "hrow-sub";
+      dur.textContent = e.duration_str;
+      const derecha = document.createElement("div");
+      derecha.style.cssText = "display:flex; align-items:center; gap:8px";
+      const prev = document.createElement("button");
+      prev.type = "button";
+      prev.className = "mini-btn";
+      prev.dataset.prev = e.url;
+      prev.textContent = "▶";
+      prev.title = "Escuchar un fragmento, sin descargar";
+      // La fila es un <label>: sin esto, tocar ▶ también marcaría la casilla.
+      prev.addEventListener("click", (ev) => { ev.preventDefault(); ev.stopPropagation(); escuchar(e, prev); });
+      derecha.append(prev, dur);
+      row.append(caja, main, derecha);
+      cont.appendChild(row);
+    }
+    actualizarContadorLista();
+    marcarFilaEnReproduccion();
+  }
+
+  // ---- Escuchar un fragmento antes de bajar ----
+  // Siempre una sola reproducción a la vez. Arranca al 35% del tema (donde
+  // suele estar el desarrollo o el drop) y no al segundo cero, que casi
+  // siempre es una intro que no dice nada.
+  const FRACCION_INICIO = 0.35;
+  const audioPrevia = document.getElementById("playerAudio");
+  const previa = { url: null, token: 0 };
+
+  function fmtTiempo(s) {
+    if (!isFinite(s)) return "0:00";
+    const m = Math.floor(s / 60);
+    return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  }
+
+  function marcarFilaEnReproduccion() {
+    document.querySelectorAll("#playlistList [data-prev]").forEach(b => {
+      const suena = b.dataset.prev === previa.url && !audioPrevia.paused;
+      b.textContent = suena ? "❚❚" : "▶";
+    });
+    document.getElementById("playerToggle").textContent = audioPrevia.paused ? "▶" : "❚❚";
+  }
+
+  function mostrarReproductor(titulo) {
+    document.getElementById("playlistPlayer").style.display = "flex";
+    document.getElementById("playerTitulo").textContent = titulo;
+  }
+
+  function detenerVistaPrevia() {
+    previa.token++;
+    previa.url = null;
+    audioPrevia.pause();
+    audioPrevia.removeAttribute("src");
+    audioPrevia.load();
+    document.getElementById("playlistPlayer").style.display = "none";
+    marcarFilaEnReproduccion();
+  }
+
+  async function escuchar(entrada, boton) {
+    if (previa.url === entrada.url && audioPrevia.getAttribute("src")) {
+      // El mismo tema: pausar o seguir.
+      if (audioPrevia.paused) audioPrevia.play(); else audioPrevia.pause();
+      return;
+    }
+    const token = ++previa.token;
+    audioPrevia.pause();
+    previa.url = entrada.url;
+    document.querySelectorAll("#playlistList [data-prev]").forEach(b => { b.textContent = "▶"; });
+    boton.textContent = "…";
+    mostrarReproductor(`${entrada.artist ? entrada.artist + " — " : ""}${entrada.title}  ·  buscando el audio…`);
+    document.getElementById("playerSeek").value = 0;
+    document.getElementById("playerTiempo").textContent = "0:00 / 0:00";
+
+    let r;
+    try { r = await api().get_preview_url(entrada.url); } catch (e) { r = { ok: false, error: String(e) }; }
+    if (token !== previa.token) return;       // mientras tanto eligió otro tema
+    if (!r.ok) {
+      previa.url = null;
+      boton.textContent = "▶";
+      mostrarReproductor(`${entrada.title}  ·  ${r.error || "No se puede escuchar"}`);
+      return;
+    }
+    mostrarReproductor(`${entrada.artist ? entrada.artist + " — " : ""}${entrada.title}`);
+    audioPrevia.src = r.url;
+    // Sin load() explicito el navegador puede no pedir ni la duración (con
+    // preload="none" nunca), y entonces "loadedmetadata" -que dispara el salto
+    // al 35% y el play- no llega nunca.
+    audioPrevia.load();
+  }
+
+  audioPrevia.addEventListener("loadedmetadata", () => {
+    if (isFinite(audioPrevia.duration)) audioPrevia.currentTime = audioPrevia.duration * FRACCION_INICIO;
+    audioPrevia.play().catch(() => {});
+  });
+  audioPrevia.addEventListener("timeupdate", () => {
+    const d = audioPrevia.duration;
+    if (isFinite(d) && d > 0) document.getElementById("playerSeek").value = Math.round(audioPrevia.currentTime / d * 1000);
+    document.getElementById("playerTiempo").textContent = `${fmtTiempo(audioPrevia.currentTime)} / ${fmtTiempo(d)}`;
+  });
+  audioPrevia.addEventListener("play", marcarFilaEnReproduccion);
+  audioPrevia.addEventListener("pause", marcarFilaEnReproduccion);
+  audioPrevia.addEventListener("ended", marcarFilaEnReproduccion);
+  audioPrevia.addEventListener("error", () => {
+    if (!audioPrevia.getAttribute("src")) return;     // se vació a propósito al cerrar
+    previa.url = null;
+    document.getElementById("playerTitulo").textContent += "  ·  no se pudo reproducir";
+    marcarFilaEnReproduccion();
+  });
+  document.getElementById("playerSeek").addEventListener("input", (e) => {
+    if (isFinite(audioPrevia.duration)) audioPrevia.currentTime = e.target.value / 1000 * audioPrevia.duration;
+  });
+  document.getElementById("playerToggle").addEventListener("click", () => {
+    if (!audioPrevia.getAttribute("src")) return;
+    if (audioPrevia.paused) audioPrevia.play(); else audioPrevia.pause();
+  });
+  document.getElementById("playerInicio").addEventListener("click", () => { audioPrevia.currentTime = 0; });
+
+  async function abrirLista(playlistUrl) {
+    if (!playlistUrl) return;
+    openModal("modalPlaylist");
+    // La ventana siempre muestra UNA plataforma: la del tema o link de donde se abrió.
+    const esDescubrir = playlistUrl === "sc-discover";
+    const esRadio = /[?&]list=RD|^sc-related:/.test(playlistUrl);
+    const plataforma = /^sc-related:|^sc-discover$|soundcloud\.com/.test(playlistUrl) ? "SoundCloud" : "YouTube";
+    document.getElementById("playlistTitle").textContent =
+      esDescubrir ? "Descubrir en SoundCloud" : `${esRadio ? "Parecidos" : "Lista"} en ${plataforma}`;
+    const intro = document.getElementById("playlistIntro");
+    document.getElementById("playlistFilterRow").style.display = "none";
+    document.getElementById("playlistTools").style.display = "none";
+    document.getElementById("playlistList").innerHTML = "";
+    document.getElementById("playlistFilter").value = "";
+    marcadasLista.clear();
+    intro.textContent = "Cargando la lista… (puede tardar unos segundos si es larga)";
+    actualizarContadorLista();
+
+    const r = await api().get_playlist_entries(playlistUrl);
+    if (!r.ok) {
+      intro.textContent = r.error || "No se pudo cargar la lista";
+      return;
+    }
+    listaActual = { url: playlistUrl, entradas: r.entradas };
+    const nuevas = r.entradas.filter(e => !e.en_cola && !e.ya_descargada).length;
+    intro.textContent = r.descubrir
+      ? `Temas que SoundCloud recomienda a partir de tus últimos likes, primero los que más de ellos recomiendan (${nuevas} disponibles). Nada se baja solo: marcá los que quieras.`
+      : r.es_radio
+      ? `Los ${r.entradas.length} temas más parecidos que sugiere ${r.plataforma} (${nuevas} disponibles). Marcá los que quieras.`
+      : `${r.entradas.length} temas en la lista (${nuevas} disponibles). Marcá los que quieras.`;
+    document.getElementById("playlistFilterRow").style.display = "";
+    document.getElementById("playlistTools").style.display = "flex";
+    dibujarLista();
+  }
+
+  document.getElementById("playlistFilter").addEventListener("input", dibujarLista);
+  document.getElementById("playlistAll").addEventListener("click", () => {
+    document.querySelectorAll("#playlistList input:not(:disabled)").forEach(c => {
+      c.checked = true;
+      marcadasLista.add(c.dataset.url);
+    });
+    actualizarContadorLista();
+  });
+  document.getElementById("playlistNone").addEventListener("click", () => {
+    marcadasLista.clear();
+    document.querySelectorAll("#playlistList input").forEach(c => { c.checked = false; });
+    actualizarContadorLista();
+  });
+  document.getElementById("playlistAdd").addEventListener("click", async () => {
+    const urls = [...marcadasLista];
+    if (!urls.length) return;
+    const btn = document.getElementById("playlistAdd");
+    btn.disabled = true;
+    const r = await api().add_playlist_selection(listaActual.url, urls);
+    if (!r.ok) {
+      document.getElementById("playlistIntro").textContent = r.error || "No se pudo agregar";
+      btn.disabled = false;
+      return;
+    }
+    closeModal("modalPlaylist");
+    setStatus(`${r.agregadas} temas agregados a la cola`, "ok");
+  });
 
   async function refreshFailed() {
     const items = await api().get_failed_downloads();
@@ -924,7 +1367,34 @@
       sub.className = "hrow-sub";
       sub.textContent = `${it.permanent ? "permanente" : `${it.attempts} intento(s)`} · ${it.error || ""}`.slice(0, 110);
       main.append(title, sub);
-      row.append(glyph, main);
+      // Tercera columna de la grilla .hrow (18px 1fr auto): el boton.
+      const btn = document.createElement("button");
+      btn.className = "mini-btn dl";
+      btn.textContent = "Probar desde YouTube";
+      btn.title = "Busca la misma cancion en YouTube y la baja si hay una version confiable";
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        btn.textContent = "Buscando…";
+        sub.textContent = "Buscando en YouTube y verificando que sea la misma…";
+        let r;
+        try {
+          r = await api().retry_failed_with_youtube(it.url);
+        } catch (e) {
+          r = { ok: false, error: String(e) };
+        }
+        if (r && r.ok) {
+          setStatus(`Descargada desde YouTube: ${it.title}`, "ok");
+          refreshHistory();
+          refreshStats();
+          refreshFailed();
+          return;
+        }
+        btn.disabled = false;
+        btn.textContent = "Probar desde YouTube";
+        sub.textContent = (r && r.error) || "No se pudo";
+        sub.style.color = "var(--amber)";
+      });
+      row.append(glyph, main, btn);
       list.appendChild(row);
     }
   }
@@ -932,6 +1402,31 @@
   async function loadConfig() {
     const cfg = await api().get_config();
     document.getElementById("destPath").textContent = cfg.dest_folder || "—";
+    refreshDestHint(cfg);
+  }
+
+  // El texto bajo "Carpeta de destino": explica que ahí se crean las
+  // carpetas de género, y nombra la ruta real cuando no coincide con el
+  // destino (pasa si hay una carpeta de biblioteca configurada aparte).
+  async function refreshDestHint(cfg) {
+    const el = document.getElementById("destHint");
+    if (!el) return;
+    if (cfg && cfg.subfolder_by_genre === false) {
+      el.textContent = "Todas las descargas caen acá. Podés activar el orden " +
+        "por género desde Configuración.";
+      return;
+    }
+    let raiz = "";
+    try { raiz = await api().genre_root(); } catch (e) { /* se usa el texto base */ }
+    const dest = (cfg && cfg.dest_folder) || "";
+    const base = "Adentro se van creando solas las carpetas de cada género " +
+      "(Schranz, Hard Techno…) y cada canción cae en la suya según sus datos.";
+    if (raiz && dest && raiz.replace(/[\\/]+$/, "") !== dest.replace(/[\\/]+$/, "")) {
+      el.innerHTML = base + "<br>Ahora se están creando en <b>" + raiz +
+        "</b> (carpeta de biblioteca configurada).";
+    } else {
+      el.textContent = "Es la carpeta principal: " + base;
+    }
   }
 
   // ------------------------------------------------------------------ //
@@ -947,7 +1442,10 @@
   function wireEvents() {
     document.getElementById("btnBrowse").addEventListener("click", async () => {
       const folder = await api().browse_folder();
-      if (folder) document.getElementById("destPath").textContent = folder;
+      if (folder) {
+        document.getElementById("destPath").textContent = folder;
+        refreshDestHint(await api().get_config());
+      }
     });
 
     document.getElementById("btnProcess").addEventListener("click", async () => {
@@ -998,7 +1496,48 @@
       document.getElementById("scOauthInput").value = sc.oauth_token || "";
       document.getElementById("scClientInput").value = sc.client_id || "";
       document.getElementById("scVerifyStatus").textContent = "";
+      document.getElementById("scVerifyStatus").style.fontSize = "";
+      document.getElementById("btnScVerify").style.display = "";
+      document.getElementById("btnScLogin").style.display = "";
+      document.querySelector('#modalConnect .modal-foot [data-close]').textContent = "Ahora no";
       openModal("modalConnect");
+      if (!document.getElementById("scClientInput").value) {
+        api().detect_soundcloud_client_id().then(r => {
+          const inp = document.getElementById("scClientInput");
+          if (r.ok && !inp.value) inp.value = r.client_id;
+        });
+      }
+    });
+
+    if (/Mac/i.test(navigator.platform || navigator.userAgent)) {
+      document.getElementById("scAtajo").textContent = "Cmd + Opción + J";
+    }
+    document.getElementById("btnCopiarSnippet").addEventListener("click", async () => {
+      const txt = document.getElementById("scSnippet").textContent;
+      const btn = document.getElementById("btnCopiarSnippet");
+      try { await navigator.clipboard.writeText(txt); btn.textContent = "¡Copiada!"; }
+      catch (e) {
+        const r = document.createRange(); r.selectNode(document.getElementById("scSnippet"));
+        getSelection().removeAllRanges(); getSelection().addRange(r);
+        btn.textContent = "Seleccionada: Ctrl+C";
+      }
+      setTimeout(() => { btn.textContent = "Copiar línea"; }, 2500);
+    });
+
+    document.getElementById("scAbrirWeb").addEventListener("click", (e) => {
+      e.preventDefault();
+      api().open_external_url("https://soundcloud.com/");
+    });
+
+    document.getElementById("btnScLogin").addEventListener("click", async () => {
+      const statusEl = document.getElementById("scVerifyStatus");
+      statusEl.textContent = "Esperando que inicies sesión en la ventana que se abrió…";
+      statusEl.className = "sc-status-line";
+      const r = await api().login_soundcloud();
+      if (!r.ok) {
+        statusEl.textContent = `✗ ${r.error}`;
+        statusEl.className = "sc-status-line off";
+      }
     });
 
     document.getElementById("btnScToggleOauth").addEventListener("click", () => {
@@ -1013,6 +1552,11 @@
       const oauth = document.getElementById("scOauthInput").value.trim();
       const clientId = document.getElementById("scClientInput").value.trim();
       const statusEl = document.getElementById("scVerifyStatus");
+      if (/no encontrado/i.test(oauth)) {
+        statusEl.textContent = "✗ La consola no pudo leer el token. Usá el método de Network (header Authorization).";
+        statusEl.className = "sc-status-line off";
+        return;
+      }
       if (!oauth || !clientId) {
         statusEl.textContent = "Completá ambos campos";
         statusEl.className = "sc-status-line off";
@@ -1026,7 +1570,7 @@
         statusEl.className = "sc-status-line on";
         renderScStatus(true, r.user_info);
         setStatus("SoundCloud conectado", "ok");
-        setTimeout(() => closeModal("modalConnect"), 900);
+        mostrarConectado(r.user_info);
       } else {
         statusEl.textContent = `✗ ${r.error}`;
         statusEl.className = "sc-status-line off";
@@ -1109,10 +1653,189 @@
       }
     });
 
+    // ---- Mejor calidad disponible ----
+    document.getElementById("btnDiscover").addEventListener("click", () => abrirLista("sc-discover"));
+
+    document.getElementById("btnUpgrades").addEventListener("click", async () => {
+      openModal("modalUpgrades");
+      const intro = document.getElementById("upgradesIntro");
+      const list = document.getElementById("upgradesList");
+      intro.textContent = "Buscando…";
+      list.innerHTML = "";
+
+      const items = await api().get_upgrade_candidates();
+      if (!items.length) {
+        intro.textContent = "Nada por ahora: o no hay gates detectados, o ya bajaste el original de todos.";
+        return;
+      }
+      intro.textContent = `${items.length} canciones tienen una versión mejor disponible:`;
+      for (const it of items) {
+        const row = document.createElement("div");
+        row.className = "hrow";
+        // .hrow es una grilla de 3 columnas (18px 1fr auto): el glifo va
+        // siempre, si no el título cae en la columna angosta y se corta.
+        const glyph = document.createElement("span");
+        glyph.className = "hrow-glyph";
+        glyph.textContent = "📀";
+        const main = document.createElement("div");
+        main.className = "hrow-main";
+        const t = document.createElement("span");
+        t.className = "hrow-title";
+        t.textContent = it.artist ? `${it.artist} — ${it.title}` : it.title;
+        const s = document.createElement("span");
+        s.className = "hrow-sub";
+        s.textContent = `vía ${it.servicio}`;
+        main.append(t, s);
+        const btn = document.createElement("button");
+        btn.className = "mini-btn";
+        btn.textContent = "Abrir";
+        btn.addEventListener("click", () => api().open_external_url(it.purchase_url));
+        row.append(glyph, main, btn);
+        list.appendChild(row);
+      }
+    });
+
     // ---- Configuración ----
     document.getElementById("btnSettings").addEventListener("click", async () => {
       await loadSettingsIntoModal();
       openModal("modalSettings");
+    });
+
+    document.getElementById("btnOrganize").addEventListener("click", async () => {
+      // Se abre DESDE Configuración: sin cerrarla, los dos overlays quedan
+      // con el mismo z-index y el de Configuración tapa a este.
+      closeModal("modalSettings");
+      openModal("modalOrganize");
+      const intro = document.getElementById("organizeIntro");
+      const list = document.getElementById("organizeList");
+      const apply = document.getElementById("btnOrganizeApply");
+      document.getElementById("organizeStatus").textContent = "";
+      intro.textContent = "Calculando…";
+      list.innerHTML = "";
+      apply.disabled = true;
+
+      const r = await api().preview_organize();
+      if (!r.ok) {
+        intro.textContent = r.error || "No se pudo calcular";
+        return;
+      }
+      if (!r.total) {
+        intro.textContent = "No hay canciones sueltas para ordenar.";
+        return;
+      }
+      intro.textContent = `${r.total} canciones se moverían a estas carpetas, dentro de ${r.raiz}:`;
+      for (const f of r.carpetas) {
+        const row = document.createElement("div");
+        row.className = "hrow";
+        // .hrow es una grilla de 3 columnas (18px 1fr auto): sin el glifo,
+        // el nombre cae en la columna de 18px y se corta.
+        const glyph = document.createElement("span");
+        glyph.className = "hrow-glyph";
+        glyph.textContent = f.existe ? "✓" : "+";
+        const main = document.createElement("div");
+        main.className = "hrow-main";
+        const t = document.createElement("span");
+        t.className = "hrow-title";
+        t.textContent = f.genero;
+        const s = document.createElement("span");
+        s.className = "hrow-sub";
+        s.textContent = f.existe ? "carpeta existente" : "carpeta nueva";
+        main.append(t, s);
+        const n = document.createElement("span");
+        n.className = "hrow-sub";
+        n.textContent = `${f.cantidad}`;
+        row.append(glyph, main, n);
+        list.appendChild(row);
+      }
+      apply.disabled = false;
+    });
+
+    document.getElementById("btnOrganizeApply").addEventListener("click", async () => {
+      const apply = document.getElementById("btnOrganizeApply");
+      const st = document.getElementById("organizeStatus");
+      apply.disabled = true;
+      st.textContent = "Moviendo…";
+      const r = await api().organize_library();
+      if (!r.ok) {
+        st.textContent = r.error || "Error al ordenar";
+        st.className = "sc-status-line err";
+        apply.disabled = false;
+        return;
+      }
+      st.textContent = `Listo: ${r.movidos} movidas` +
+        (r.omitidos ? `, ${r.omitidos} ya existían en destino` : "");
+      st.className = "sc-status-line on";
+      setStatus(`Biblioteca ordenada: ${r.movidos} canciones`, "ok");
+      refreshHistory();
+    });
+
+    document.getElementById("btnExportPlaylists").addEventListener("click", async () => {
+      const btn = document.getElementById("btnExportPlaylists");
+      const st = document.getElementById("exportPlaylistsStatus");
+      btn.disabled = true;
+      st.textContent = "Exportando…";
+      st.className = "sc-status-line";
+      const r = await api().export_playlists();
+      btn.disabled = false;
+      if (!r.ok) {
+        st.textContent = r.error || "Error al exportar";
+        st.className = "sc-status-line err";
+        return;
+      }
+      st.textContent = `${r.playlists.length} playlists (${r.total_canciones} temas) en ${r.destino}`;
+      st.className = "sc-status-line on";
+      setStatus(`Playlists exportadas a ${r.destino}`, "ok");
+    });
+
+    document.getElementById("btnFixTags").addEventListener("click", async () => {
+      const btn = document.getElementById("btnFixTags");
+      const apply = document.getElementById("btnFixTagsApply");
+      const st = document.getElementById("fixTagsStatus");
+      const key = document.getElementById("cfgAcoustidKey").value.trim();
+      apply.style.display = "none";
+      if (!key) {
+        st.textContent = "Primero guardá una API key de acoustid.org arriba.";
+        st.className = "sc-status-line err";
+        return;
+      }
+      btn.disabled = true;
+      st.textContent = "Buscando canciones con tags vacíos…";
+      st.className = "sc-status-line";
+      const r = await api().preview_missing_tags();
+      btn.disabled = false;
+      if (!r.ok) {
+        st.textContent = r.error || "No se pudo calcular";
+        st.className = "sc-status-line err";
+        return;
+      }
+      if (!r.total) {
+        st.textContent = "No hay canciones con título o artista vacío.";
+        st.className = "sc-status-line on";
+        return;
+      }
+      st.textContent = `${r.total} canciones sin título/artista. Se consultará AcoustID una por una (puede tardar).`;
+      st.className = "sc-status-line";
+      apply.style.display = "";
+    });
+
+    document.getElementById("btnFixTagsApply").addEventListener("click", async () => {
+      const apply = document.getElementById("btnFixTagsApply");
+      const st = document.getElementById("fixTagsStatus");
+      apply.disabled = true;
+      st.textContent = "Consultando AcoustID…";
+      st.className = "sc-status-line";
+      const r = await api().fix_missing_tags();
+      apply.disabled = false;
+      apply.style.display = "none";
+      if (!r.ok) {
+        st.textContent = r.error || "Error al completar tags";
+        st.className = "sc-status-line err";
+        return;
+      }
+      st.textContent = `Listo: ${r.completados} completadas, ${r.sin_match} sin match, ${r.errores} con error (${r.total} en total).`;
+      st.className = "sc-status-line on";
+      setStatus(`Tags completados: ${r.completados}/${r.total}`, "ok");
+      refreshHistory();
     });
 
     document.getElementById("btnSaveSettings").addEventListener("click", async () => {
@@ -1130,6 +1853,7 @@
         analyze_audio: document.getElementById("cfgAnalyzeAudio").checked,
         key_format: document.getElementById("cfgKeyFormat").value,
         fingerprint_check: document.getElementById("cfgFingerprintCheck").checked,
+        acoustid_api_key: document.getElementById("cfgAcoustidKey").value.trim(),
         soundcloud: {
           sync_interval_minutes: parseInt(document.getElementById("cfgSyncInterval").value, 10) || 1440,
         },
@@ -1164,11 +1888,27 @@
   // ------------------------------------------------------------------ //
 
   function openModal(id) { document.getElementById(id).classList.add("open"); }
-  function closeModal(id) { document.getElementById(id).classList.remove("open"); }
+  function closeModal(id) {
+    if (id === "modalPlaylist") detenerVistaPrevia();
+    document.getElementById(id).classList.remove("open");
+  }
 
   // ------------------------------------------------------------------ //
   // SoundCloud: estado, sync, likes                                      //
   // ------------------------------------------------------------------ //
+
+  // Confirmacion que se queda a la vista (antes el modal se cerraba solo y
+  // no quedaba claro si habia funcionado).
+  function mostrarConectado(info) {
+    const st = document.getElementById("scVerifyStatus");
+    st.textContent = `✅ ¡Conectado! Cuenta: ${info.username} · ${info.likes_count} likes`;
+    st.className = "sc-status-line on";
+    st.style.fontSize = "14px";
+    document.getElementById("btnScVerify").style.display = "none";
+    document.getElementById("btnScLogin").style.display = "none";
+    const cerrar = document.querySelector('#modalConnect .modal-foot [data-close]');
+    cerrar.textContent = "Listo";
+  }
 
   function renderScStatus(connected, userInfo) {
     const line = document.getElementById("scStatusLine");
@@ -1219,6 +1959,14 @@
     }
     renderScStatus(status.connected, status.user_info);
     renderLastSync(status.last_sync);
+    if (!status.connected && !status.has_credentials) {
+      // Primera vez: se ofrece conectar SoundCloud una sola vez.
+      const cfg = await api().get_config();
+      if (!cfg.setup_seen) {
+        await api().save_settings({ setup_seen: true });
+        document.getElementById("btnScConnect").click();
+      }
+    }
     if (status.sync_interval_minutes) {
       const field = document.getElementById("cfgSyncInterval");
       if (field && !field.value) field.value = status.sync_interval_minutes;
@@ -1301,9 +2049,26 @@
         sub.className = "like-sub";
         if (like.downloaded) {
           const when = (like.downloaded_at || "").slice(0, 16);
-          sub.textContent = when
-            ? `descargada ${when}`
-            : "descargada";
+          // DONDE quedo: antes solo decia "descargada" y no habia forma de
+          // saber si el archivo estaba o a que carpeta habia ido.
+          let donde = "";
+          if (like.file_path) {
+            const partes = like.file_path.replace(/\\/g, "/").split("/");
+            donde = partes.length > 1 ? partes[partes.length - 2] : "";
+          }
+          sub.textContent = (when ? `descargada ${when}` : "descargada") + (donde ? ` · ${donde}` : "");
+          if (like.archivo_distinto && like.file_path) {
+            const nombre = like.file_path.replace(/\\/g, "/").split("/").pop();
+            sub.textContent = `⚠ enlazada a otro archivo: ${nombre}`;
+            sub.style.color = "var(--amber)";
+          }
+          if (like.file_path) {
+            sub.style.cursor = "pointer";
+            sub.addEventListener("click", async () => {
+              const r = await api().reveal_in_folder(like.file_path);
+              if (!r.ok) setStatus(r.error || "No se pudo abrir la carpeta", "err");
+            });
+          }
         } else {
           sub.textContent = like.genre || "soundcloud";
         }
@@ -1314,7 +2079,21 @@
         flag.className = "like-flag";
         flag.textContent = like.downloaded ? "✓" : "";
 
-        row.append(cb, main, flag);
+        // Tercera columna de la grilla .like-row (20px 1fr auto): parecidos + marca.
+        const derecha = document.createElement("div");
+        derecha.style.cssText = "display:flex; align-items:center; gap:8px";
+        if (like.id) {
+          const par = document.createElement("button");
+          par.type = "button";
+          par.className = "mini-btn";
+          par.textContent = "Parecidos";
+          par.title = "Ver temas parecidos a este";
+          par.addEventListener("click", () => abrirLista(`sc-related:${like.id}`));
+          derecha.appendChild(par);
+        }
+        derecha.appendChild(flag);
+
+        row.append(cb, main, derecha);
         list.appendChild(row);
       }
     }
@@ -1344,6 +2123,17 @@
     document.getElementById("cfgAnalyzeAudio").checked = !!cfg.analyze_audio;
     document.getElementById("cfgKeyFormat").value = cfg.key_format || "camelot";
     document.getElementById("cfgFingerprintCheck").checked = cfg.fingerprint_check !== false;
+    document.getElementById("cfgAcoustidKey").value = cfg.acoustid_api_key || "";
+    try {
+      const raiz = await api().genre_root();
+      if (raiz) {
+        document.getElementById("genreRootHint").innerHTML =
+          "Cada canción se guarda sola en la carpeta de su subgénero " +
+          "(Schranz, Hardgroove…), leyendo los tags de SoundCloud y no solo " +
+          "el género genérico. Se reusan las carpetas que ya tengas.<br>" +
+          "Las carpetas se crean en <b>" + raiz + "</b>.";
+      }
+    } catch (e) { /* el hint estático ya explica lo esencial */ }
     document.getElementById("cfgSyncInterval").value =
       (cfg.soundcloud && cfg.soundcloud.sync_interval_minutes) || 1440;
     await refreshTaskStatus();

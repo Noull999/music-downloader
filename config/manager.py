@@ -27,11 +27,20 @@ class ConfigManager:
         "quality_preset": "mp3_320",
         "filename_pattern": "{artist} - {title}",
         "subfolder_by_artist": False,
+        # Activado de fábrica: si no, quien nunca abre Configuración termina
+        # con todo amontonado en una sola carpeta. Las carpetas de género se
+        # crean dentro de la carpeta de descarga, salvo que se configure una
+        # carpeta de biblioteca aparte (ver WebViewAPI.genre_root).
+        "subfolder_by_genre": True,
+        "embed_genre": True,
         "normalize_volume": False,
         "remove_silence": False,
         "embed_artwork": True,
         "embed_metadata": True,
         "oauth_token": "",
+        # Key gratuita de https://acoustid.org/api-key, para identificar
+        # canciones con tags rotos/vacíos por su huella de audio.
+        "acoustid_api_key": "",
         "delay": 0.5,
         "log_level": "INFO",
         "theme": "dark",
@@ -134,10 +143,12 @@ class ConfigManager:
         if not isinstance(delay, (int, float)) or delay < 0 or delay > 5:
             issues.append("delay debe estar entre 0 y 5")
 
-        # Validar preset
-        valid_presets = ["mp3_128", "mp3_256", "mp3_320", "flac"]
-        if self.get("quality_preset") not in valid_presets:
-            issues.append(f"quality_preset inválido: {valid_presets}")
+        # Validar preset. La lista sale de quality/presets.py y no de una
+        # copia acá: estaban desincronizadas, y un preset que existía de
+        # verdad se reportaba como inválido en cada arranque.
+        from quality.presets import QUALITY_PRESETS
+        if self.get("quality_preset") not in QUALITY_PRESETS:
+            issues.append(f"quality_preset inválido: {sorted(QUALITY_PRESETS)}")
 
         if issues:
             logger.warning(f"Config inválida: {', '.join(issues)}")

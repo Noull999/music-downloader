@@ -12,11 +12,12 @@ from typing import Callable, Optional
 
 from .soundcloud_api import SoundCloudAPIClient, SoundCloudTrack
 from .duplicate_checker import DuplicateChecker
-from . import match_utils
+from . import artist_genre, genre_utils, match_utils, youtube_fallback
 from analysis import fingerprint as audio_fingerprint
 from db.history import DownloadHistory
 from notifications.notifier import Notifier
 from quality.post_processor import PostProcessor
+from quality.presets import DEFAULT_PRESET, get_preset
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,10 @@ class SyncManager:
         analyze_audio: bool = False,
         key_format: str = "camelot",
         fingerprint_check: bool = True,
+        quality_preset: str = DEFAULT_PRESET,
+        post_options: Optional[dict] = None,
+        subfolder_by_genre: bool = False,
+        youtube_fallback_enabled: bool = True,
     ):
         """
         Args:
@@ -82,6 +87,13 @@ class SyncManager:
                        marcó como duplicada. Atrapa casos que el nombre solo
                        no puede: mismo tema con nombre de archivo muy
                        distinto. Ver analysis/fingerprint.py.
+            quality_preset: Clave del preset de calidad (ver quality/presets.py).
+                       Antes la sync ignoraba la elección del usuario y bajaba
+                       siempre MP3 320.
+            post_options: Opciones de post-proceso (normalize_volume,
+                       remove_silence, embed_artwork, embed_metadata). Antes
+                       estaban hardcodeadas, así que "normalizar volumen" y
+                       "eliminar silencios" no tenían efecto en la sync.
         """
         self.api = SoundCloudAPIClient(oauth_token, client_id)
         self.history = DownloadHistory()
@@ -98,9 +110,31 @@ class SyncManager:
         self.analyze_audio = analyze_audio
         self.key_format = key_format
         self.fingerprint_check = fingerprint_check
+        self.quality_preset = quality_preset
+        self.post_options = dict(post_options or {})
+        self.subfolder_by_genre = subfolder_by_genre
+        self.youtube_fallback_enabled = youtube_fallback_enabled
         self.library_folders = list(library_folders or [])
+        # Último recurso cuando el track viene sin genre ni tags: preguntar
+        # por el artista real. Se resuelve una vez por track y se recuerda,
+        # porque carpeta y tag de género lo piden por separado.
+        self._artist_genre = artist_genre.ArtistGenreResolver(self._buscar_tracks_de)
+        self._genero_cache: dict[str, Optional[str]] = {}
+        # Raíz de las carpetas de género: la biblioteca configurada si la
+        # hay (así caen junto a la música ya ordenada), y si no la carpeta
+        # de descarga misma. Antes se usaba la carpeta PADRE del destino,
+        # que hacía aparecer carpetas de género fuera de la carpeta que el
+        # usuario eligió.
+        self.genre_root = (
+            self.library_folders[0] if self.library_folders else download_folder
+        )
         self.oauth_token = oauth_token
         self._fingerprint_index: Optional[audio_fingerprint.LibraryFingerprintIndex] = None
+        # Callback de progreso de la sync en curso, para que el análisis de
+        # huellas (que corre por dentro, sin su propio callback) pueda
+        # avisarle algo a la interfaz en vez de quedarse mudo. Se setea al
+        # entrar a sync_once()/sync_recent() y se limpia al salir.
+        self._progress_callback: Optional[Callable[[int, str], None]] = None
 
         self._stop_event = threading.Event()
         self._is_syncing = False
@@ -134,6 +168,156 @@ class SyncManager:
             "copyright",
         ))
 
+    @staticmethod
+    def _vale_probar_youtube(error: str) -> bool:
+        """
+        Si el fallo de SoundCloud es de los que YouTube puede resolver: la
+        cancion existe pero SoundCloud no la sirve (DRM, Go+, bloqueo de
+        pais, borrada). No cuenta lo transitorio (red), que se reintenta
+        solo, ni una cancelacion del usuario, ni lo privado o con copyright,
+        donde buscar en otro lado no es el punto.
+        """
+        e = (error or "").lower()
+        if not e or "cancel" in e:
+            return False
+        return any(s in e for s in (
+            "drm", "go+", "premium", "geo restriction",
+            "not available from your location", "not available in your country",
+            "video unavailable", "track not found", "404", "410", "removed",
+        ))
+
+    def _descargar(self, track, output_path: str) -> tuple[str, str]:
+        """
+        Baja la cancion de SoundCloud; si SoundCloud no la sirve (DRM, Go+,
+        bloqueo de pais), busca la misma en YouTube.
+
+        Si YouTube no tiene un candidato confiable, relanza el error original
+        de SoundCloud: la cancion queda como fallida igual que antes, sin
+        bajar nada dudoso.
+
+        Returns:
+            (ruta_del_archivo, plataforma) con plataforma 'soundcloud' o 'youtube'
+        """
+        preset = get_preset(self.quality_preset)
+        cancelar = lambda: self._stop_event.is_set()
+        try:
+            archivo = self.downloader.download(
+                track.url, output_path, quality_preset=preset,
+                progress_callback=lambda p: None, cancel_check=cancelar,
+            )
+            return archivo, "soundcloud"
+        except Exception as exc:
+            error_sc = exc
+
+        if not self.youtube_fallback_enabled or not self._vale_probar_youtube(str(error_sc)):
+            raise error_sc
+
+        archivo = self._respaldo_youtube(track, output_path, error_sc)
+        if archivo is None:
+            raise error_sc
+        return archivo, "youtube"
+
+    def _respaldo_youtube(self, track, output_path: str, error_sc: Exception):
+        """
+        Busca la cancion en YouTube y la baja. Devuelve la ruta del archivo,
+        o None si no hay un candidato confiable (en ese caso no se baja
+        nada). Si el candidato existe pero la descarga falla, lanza un
+        error que conserva el motivo original de SoundCloud.
+        """
+        candidato = youtube_fallback.encontrar(
+            track.artist, track.title, (track.duration_ms or 0) / 1000
+        )
+        try:
+            self.history.mark_youtube_tried(track.url)
+        except Exception:
+            logger.exception("No se pudo anotar el intento de YouTube")
+        if not candidato:
+            return None
+
+        from handlers.youtube_handler import YouTubeHandler
+        try:
+            archivo = YouTubeHandler().download(
+                candidato["url"], output_path, get_preset(self.quality_preset),
+                progress_callback=lambda p: None,
+                cancel_check=lambda: self._stop_event.is_set(),
+            )
+        except Exception as exc_yt:
+            # Se conserva el texto original para que siga clasificandose igual
+            # (p.ej. "DRM" => permanente) y se vea que el respaldo tambien fallo.
+            raise RuntimeError(
+                f"{error_sc} (el respaldo de YouTube tambien fallo: {exc_yt})"
+            ) from exc_yt
+
+        try:
+            self.history.clear_failed(track.url)
+        except Exception:
+            logger.exception("No se pudo limpiar la fallida %s", track.url)
+        msg = (f"\u21aa {track.artist} - {track.title}: SoundCloud no la sirve, "
+               f"descargada desde YouTube")
+        logger.info(msg)
+        if self.activity_log_callback:
+            self.activity_log_callback(msg)
+        return archivo
+
+    def reintentar_con_youtube(self, url: str) -> dict:
+        """
+        Prueba a mano una cancion fallida contra YouTube (boton "Probar
+        desde YouTube" del panel de fallidas). A diferencia de la sync, no
+        mira si ya se habia intentado: es el usuario pidiendolo.
+
+        Returns:
+            {"ok": True, "archivo": ruta} o {"ok": False, "error": motivo}
+        """
+        from types import SimpleNamespace
+
+        fallida = next((f for f in self.history.get_failed() if f["url"] == url), None)
+        if not fallida:
+            return {"ok": False, "error": "Esa cancion ya no figura como fallida."}
+        like = next((l for l in self.history.load_likes() if l["url"] == url), None) or {}
+
+        track = SimpleNamespace(
+            url=url,
+            title=fallida.get("title") or like.get("title") or "",
+            artist=fallida.get("artist") or like.get("artist") or "",
+            duration_ms=like.get("duration_ms") or 0,
+            artwork_url=like.get("artwork_url") or "",
+            genre=like.get("genre") or "",
+            tags=like.get("tags") or "",
+            id=like.get("id"),
+            created_at=like.get("created_at"),
+        )
+        if not track.duration_ms:
+            return {"ok": False, "error": "No tengo la duracion de esta cancion, "
+                                          "y sin ella no puedo verificar que sea la misma."}
+
+        self._emit_track("start", track)
+        try:
+            output_path = self._build_output_path(track.artist, track.title, track)
+            archivo = self._respaldo_youtube(
+                track, output_path, RuntimeError(fallida.get("error") or "")
+            )
+            if archivo is None:
+                self._emit_track("error", track, fallida.get("error") or "")
+                return {"ok": False, "error": "No encontre una version confiable en YouTube."}
+
+            self.history.mark_downloaded(
+                track.url, track.title, track.artist, archivo, platform="youtube"
+            )
+            self.history.mark_like_downloaded(
+                url=track.url, title=track.title, artist=track.artist,
+                track_id=track.id, duration_ms=track.duration_ms,
+                artwork_url=track.artwork_url, genre=track.genre,
+                created_at=track.created_at,
+            )
+            self._post_process(archivo, track)
+            self.checker.invalidate_index()
+            self._emit_track("done", track, archivo)
+            return {"ok": True, "archivo": archivo}
+        except Exception as e:
+            logger.exception("Error reintentando %s con YouTube", url)
+            self._emit_track("error", track, str(e))
+            return {"ok": False, "error": str(e)[:200]}
+
     def _record_failure(self, track, error: str) -> None:
         """Guarda el fallo para no reintentarlo indefinidamente."""
         permanent = self._is_permanent_error(error)
@@ -161,10 +345,22 @@ class SyncManager:
         if not skippable:
             return tracks, []
 
+        # Las que ya estaban marcadas como permanentes antes de existir el
+        # respaldo de YouTube se omitian para siempre: se las deja pasar una
+        # vez para probarlo (_descargar anota que ya se intento).
+        sin_probar = {}
+        if self.youtube_fallback_enabled:
+            try:
+                sin_probar = self.history.get_youtube_pending()
+            except Exception:
+                logger.exception("No se pudieron leer las fallidas sin respaldo de YouTube")
+
         pending, skipped = [], []
         for t in tracks:
             reason = skippable.get(t.url)
-            if reason:
+            if reason and self._vale_probar_youtube(sin_probar.get(t.url, "")):
+                pending.append(t)
+            elif reason:
                 skipped.append((t, reason))
             else:
                 pending.append(t)
@@ -177,7 +373,14 @@ class SyncManager:
         if self._fingerprint_index is None:
             self._fingerprint_index = audio_fingerprint.LibraryFingerprintIndex()
             folders = [self.download_folder, *self.library_folders]
-            self._fingerprint_index.build(folders)
+
+            def avisar(hecho, total):
+                if self._progress_callback and total:
+                    self._progress_callback(
+                        15, f"Analizando tu biblioteca por primera vez: {hecho}/{total}…"
+                    )
+
+            self._fingerprint_index.build(folders, on_progress=avisar)
         return self._fingerprint_index
 
     def _fingerprint_precheck(self, track: "SoundCloudTrack") -> Optional[tuple[str, float]]:
@@ -196,6 +399,9 @@ class SyncManager:
         if len(index) == 0:
             return None
 
+        if self._progress_callback:
+            self._progress_callback(20, f"Comprobando duplicados por audio: {track.title}…")
+
         import tempfile
         tmp_dir = tempfile.mkdtemp(prefix="mdl_fp_")
         preview_base = os.path.join(tmp_dir, "preview")
@@ -208,7 +414,17 @@ class SyncManager:
             fp = audio_fingerprint.fingerprint_file(preview_path)
             if not fp:
                 return None
-            return index.find_best_match(fp)
+            encontrado = index.find_best_match(fp)
+            if encontrado and not match_utils.duracion_compatible(
+                encontrado[0], (getattr(track, "duration_ms", 0) or 0) / 1000
+            ):
+                # La huella mira solo 30 s: un remix o bootleg que comparte la
+                # voz con otro tema suena igual ahi. Si el archivo dura otra
+                # cosa, es otra version y no un duplicado.
+                logger.info("Misma huella pero distinta duracion, se descarga igual: %s (%s)",
+                            track.title, Path(encontrado[0]).name)
+                return None
+            return encontrado
         except Exception:
             logger.exception("Error en pre-chequeo de huella de audio (%s)", track.url)
             return None
@@ -218,16 +434,65 @@ class SyncManager:
             except Exception:
                 pass
 
-    def _build_output_path(self, artist: str, title: str) -> str:
-        """Construye el output_path con patrón de nombre y artista."""
+    def _carpeta_existente(self, nombre: str) -> str:
+        """
+        Reusa el nombre de una carpeta de género que ya exista, ignorando
+        mayúsculas: sin esto, un usuario con "hard techno" terminaría con
+        una segunda carpeta "Hard Techno" al lado.
+        """
+        try:
+            raiz = self.genre_root or self.download_folder
+            for d in os.listdir(raiz):
+                if d.lower() == nombre.lower() and os.path.isdir(os.path.join(raiz, d)):
+                    return d
+        except OSError:
+            pass
+        return nombre
+
+    def _buscar_tracks_de(self, artista: str) -> list[dict]:
+        """Tracks de un artista en SoundCloud (para el género por artista)."""
+        return self.api.search_tracks(artista)
+
+    def _genero_de(self, track) -> Optional[str]:
+        """
+        Género del track: primero tags/título (offline), y si no hay nada,
+        el artista real en SoundCloud. Cacheado por track porque la carpeta
+        de destino y el tag que se embebe lo piden por separado.
+        """
+        clave = getattr(track, "url", None) or getattr(track, "title", "") or ""
+        if clave in self._genero_cache:
+            return self._genero_cache[clave]
+
+        genero = genre_utils.resolve_genre(
+            getattr(track, "genre", None),
+            getattr(track, "tags", None),
+            getattr(track, "title", None),
+        )
+        if not genero:
+            genero = self._artist_genre.resolver(getattr(track, "title", None))
+
+        self._genero_cache[clave] = genero
+        return genero
+
+    def _build_output_path(self, artist: str, title: str, track=None) -> str:
+        """
+        Construye el output_path con patrón de nombre, artista y género.
+
+        Con subfolder_by_genre, el destino es la carpeta del subgénero
+        resuelto (Schranz, Hardgroove...) DENTRO de la biblioteca, no de la
+        carpeta de descarga: así cada tema cae junto a los de su mismo
+        estilo en vez de amontonarse todo en un solo lugar.
+        """
         safe_artist = sanitize_filename(artist)
         safe_title = sanitize_filename(title)
 
-        folder = (
-            os.path.join(self.download_folder, safe_artist)
-            if self.subfolder_by_artist
-            else self.download_folder
-        )
+        folder = self.download_folder
+        if self.subfolder_by_genre and track is not None:
+            nombre = genre_utils.carpeta_segura(self._genero_de(track))
+            folder = os.path.join(self.genre_root or self.download_folder,
+                                  self._carpeta_existente(nombre))
+        elif self.subfolder_by_artist:
+            folder = os.path.join(self.download_folder, safe_artist)
         os.makedirs(folder, exist_ok=True)
 
         try:
@@ -244,12 +509,19 @@ class SyncManager:
             return
         try:
             pp = PostProcessor({
-                "embed_artwork": True, "embed_metadata": True,
-                "normalize_volume": False, "remove_silence": False,
+                "embed_artwork": self.post_options.get("embed_artwork", True),
+                "embed_metadata": self.post_options.get("embed_metadata", True),
+                "normalize_volume": self.post_options.get("normalize_volume", False),
+                "remove_silence": self.post_options.get("remove_silence", False),
                 "analyze_audio": self.analyze_audio, "key_format": self.key_format,
+                "embed_genre": self.post_options.get("embed_genre", False),
             })
+            # El género que se escribe es el RESUELTO (Schranz), no el crudo
+            # de SoundCloud (Techno): ver sync/genre_utils.py.
+            genero = self._genero_de(track)
             pp.process(file_path, {"title": track.title, "artist": track.artist,
-                                   "album": "", "year": ""}, track.artwork_url or "")
+                                   "album": "", "year": "", "genre": genero or ""},
+                       track.artwork_url or "")
         except Exception as e:
             logger.warning("Error en post-proceso de %s: %s", track.title, e)
 
@@ -352,6 +624,7 @@ class SyncManager:
             return {'new': 0, 'skipped': 0, 'tracks': [], 'duplicates': []}
 
         self._is_syncing = True
+        self._progress_callback = progress_callback
         self._stop_event.clear()
 
         results = {
@@ -405,6 +678,7 @@ class SyncManager:
 
         finally:
             self._is_syncing = False
+            self._progress_callback = None
 
     def sync_once(
         self,
@@ -434,6 +708,7 @@ class SyncManager:
             }
 
         self._is_syncing = True
+        self._progress_callback = progress_callback
         self._stop_event.clear()
 
         results = {
@@ -531,25 +806,25 @@ class SyncManager:
                         )
                         results['skipped'] += 1
                         results['duplicates'].append((track, reason))
-                        self._emit_track("done", track, reason)
+                        # El "detail" de un evento "done" es la ruta del
+                        # archivo en los otros 3 lugares que lo emiten (ver
+                        # WebViewAPI._on_sync_track_event, que lo guarda tal
+                        # cual en local_path). Pasar `reason` acá rompía esa
+                        # convención: el panel de descargas terminaba
+                        # mostrando la frase entera donde debía ir una ruta.
+                        #
+                        # Evento propio y no "done": esta canción NO se
+                        # descargó, ya estaba en la biblioteca (quizás hace
+                        # meses). Se ve igual que un "done" en la cola, pero
+                        # no entra a "Últimas descargas" con fecha de hoy.
+                        self._emit_track("already_had", track, local_path)
                         continue
 
                 self._emit_track("start", track)
 
                 try:
-                    output_path = self._build_output_path(track.artist, track.title)
-                    file_path = self.downloader.download(
-                        track.url,
-                        output_path,
-                        quality_preset={
-                            "sc_format": "bestaudio/best",
-                            "yt_format": "bestaudio/best",
-                            "convert_to": "mp3",
-                            "bitrate": "320"
-                        },
-                        progress_callback=lambda p: None,  # No mostrar progreso individual
-                        cancel_check=lambda: self._stop_event.is_set()
-                    )
+                    output_path = self._build_output_path(track.artist, track.title, track)
+                    file_path, plataforma = self._descargar(track, output_path)
 
                     # Registrar en historial
                     self.history.mark_downloaded(
@@ -557,7 +832,7 @@ class SyncManager:
                         track.title,
                         track.artist,
                         file_path,
-                        platform="soundcloud"
+                        platform=plataforma
                     )
                     # Also register in soundcloud_likes table
                     self.history.mark_like_downloaded(
@@ -632,6 +907,7 @@ class SyncManager:
 
         finally:
             self._is_syncing = False
+            self._progress_callback = None
             # Los archivos recién bajados deben contar como duplicados en la
             # próxima verificación.
             self.checker.invalidate_index()
@@ -659,6 +935,7 @@ class SyncManager:
                     'tracks': [], 'duplicates': []}
 
         self._is_syncing = True
+        self._progress_callback = progress_callback
         self._stop_event.clear()
 
         results = {
@@ -754,21 +1031,15 @@ class SyncManager:
                 self._emit_track("start", track)
 
                 try:
-                    output_path = self._build_output_path(track.artist, track.title)
-                    file_path = self.downloader.download(
-                        track.url,
-                        output_path,
-                        quality_preset={"format": "best"},
-                        progress_callback=lambda p: None,
-                        cancel_check=lambda: self._stop_event.is_set()
-                    )
+                    output_path = self._build_output_path(track.artist, track.title, track)
+                    file_path, plataforma = self._descargar(track, output_path)
 
                     self.history.mark_downloaded(
                         track.url,
                         track.title,
                         track.artist,
                         file_path,
-                        platform="soundcloud"
+                        platform=plataforma
                     )
                     self._post_process(file_path, track)
 
@@ -819,6 +1090,7 @@ class SyncManager:
 
         finally:
             self._is_syncing = False
+            self._progress_callback = None
             self.checker.invalidate_index()
 
     def sync_recent(
@@ -844,6 +1116,7 @@ class SyncManager:
             }
 
         self._is_syncing = True
+        self._progress_callback = progress_callback
         self._stop_event.clear()
 
         results = {
@@ -882,20 +1155,11 @@ class SyncManager:
                 self._emit_track("start", track)
 
                 try:
-                    output_path = self._build_output_path(track.artist, track.title)
-                    file_path = self.downloader.download(
-                        track.url,
-                        output_path,
-                        quality_preset={
-                            "sc_format": "bestaudio/best",
-                            "yt_format": "bestaudio/best",
-                            "convert_to": "mp3",
-                            "bitrate": "320"
-                        },
-                        progress_callback=None
-                    )
+                    output_path = self._build_output_path(track.artist, track.title, track)
+                    file_path, plataforma = self._descargar(track, output_path)
                     self.history.mark_downloaded(
-                        track.url, track.title, track.artist, file_path
+                        track.url, track.title, track.artist, file_path,
+                        platform=plataforma
                     )
                     # Also register in soundcloud_likes table
                     self.history.mark_like_downloaded(
@@ -935,6 +1199,7 @@ class SyncManager:
 
         finally:
             self._is_syncing = False
+            self._progress_callback = None
 
     def stop(self):
         """Detiene la sincronización en curso."""
@@ -1038,6 +1303,23 @@ class SyncManager:
             'total_found': total
         }
 
+    @staticmethod
+    def _archivo_no_se_parece(like: dict, archivo: Optional[str]) -> bool:
+        """
+        True si el archivo registrado para un like tiene un nombre que casi no
+        se le parece. Umbral bajo a proposito (60): un archivo renombrado de
+        verdad (sin el sello, con guiones bajos) puntua 80-90 y no debe
+        marcarse; un tema equivocado ("Loreen - Tattoo" para uno de O.B.I.)
+        puntua 30-40.
+        """
+        if not archivo or str(archivo).startswith("local://"):
+            return False
+        candidatos = match_utils.like_candidates(like.get("artist") or "", like.get("title") or "")
+        archivo_cands = match_utils.file_candidates(Path(str(archivo)).stem)
+        if not candidatos or not archivo_cands:
+            return False
+        return match_utils.best_score(candidatos, archivo_cands) < 60
+
     def get_likes_with_status(self) -> list[dict]:
         """
         Obtiene todos los likes guardados con su estado de descarga.
@@ -1061,16 +1343,22 @@ class SyncManager:
         result = []
         for like in likes:
             download_info = downloads.get(like['url'])
+            archivo = download_info['file_path'] if download_info else None
             result.append({
                 'id': like['id'],
                 'url': like['url'],
                 'title': like['title'],
                 'artist': like['artist'],
                 'downloaded': download_info is not None,
-                'file_path': download_info['file_path'] if download_info else None,
+                'file_path': archivo,
+                # Un like puede quedar "descargado" apuntando a un archivo que
+                # no se le parece (la sync lo daba por duplicado de otro tema):
+                # se avisa para que se vea en vez de quedar oculto.
+                'archivo_distinto': self._archivo_no_se_parece(like, archivo),
                 'downloaded_at': download_info['downloaded_at'] if download_info else None,
                 'created_at': like['created_at'],
                 'genre': like['genre'],
+                'tags': like.get('tags', ''),
                 'duration_ms': like['duration_ms'],
                 'artwork_url': like['artwork_url']
             })

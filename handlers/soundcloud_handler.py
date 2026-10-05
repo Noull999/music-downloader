@@ -19,17 +19,53 @@ _PLATFORM = "SoundCloud"
 class SoundCloudHandler(BaseHandler):
 
     def can_handle(self, url: str) -> bool:
+        """
+        Acepta soundcloud.com y sus subdominios. Antes exigía el dominio
+        exacto, así que el link que da el botón "Compartir" de la app del
+        teléfono (on.soundcloud.com/xxxx) y el móvil (m.soundcloud.com)
+        pasaban el validador de URLs, entraban a la cola como track, y
+        recién al descargar fallaban con "URL no soportada".
+        """
         try:
-            host = urlparse(url.strip()).netloc.lower().replace("www.", "")
-            return host == "soundcloud.com"
+            host = urlparse(url.strip()).netloc.lower()
+            return host == "soundcloud.com" or host.endswith(".soundcloud.com")
         except Exception:
             return False
+
+    @staticmethod
+    def normalize_url(url: str) -> str:
+        """
+        Resuelve los links cortos on.soundcloud.com a su URL real.
+
+        yt-dlp entiende soundcloud.com, www. y m., pero NO on.: no tiene
+        extractor para el acortador, así que hay que seguir la redirección
+        acá. Si falla (sin red, link muerto), se devuelve la original y que
+        el error lo reporte yt-dlp con su propio mensaje.
+        """
+        url = (url or "").strip()
+        try:
+            if urlparse(url).netloc.lower() != "on.soundcloud.com":
+                return url
+        except Exception:
+            return url
+
+        try:
+            from utils.http_session import get_session
+            resp = get_session().head(url, allow_redirects=True, timeout=10)
+            destino = resp.url or ""
+            if "soundcloud.com" in urlparse(destino).netloc.lower():
+                logger.info("Link corto resuelto: %s -> %s", url, destino)
+                return destino
+        except Exception as exc:
+            logger.warning("No se pudo resolver el link corto %s: %s", url, exc)
+        return url
 
     # ------------------------------------------------------------------ #
     # Metadatos                                                            #
     # ------------------------------------------------------------------ #
 
     def get_metadata(self, url: str) -> list[TrackMetadata]:
+        url = self.normalize_url(url)
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
@@ -54,7 +90,12 @@ class SoundCloudHandler(BaseHandler):
 
         # Single track — re-fetch with full info para detectar calidad
         full = self._full_info(url)
-        return [self._parse(full or info, url)]
+        track = self._parse(full or info, url)
+        if track.track_id.isdigit():
+            # Los temas parecidos salen de la API de SoundCloud por id de tema,
+            # no de una URL: se guarda como una referencia propia ("sc-related:").
+            track._radio_url = f"sc-related:{track.track_id}"  # type: ignore[attr-defined]
+        return [track]
 
     def _full_info(self, url: str) -> dict | None:
         opts = {"quiet": True, "no_warnings": True, "skip_download": True}
@@ -95,6 +136,9 @@ class SoundCloudHandler(BaseHandler):
             platform=_PLATFORM,
             detected_quality=quality,
             track_id=track_id,
+            genre=info.get("genre") or "",
+            tags=" ".join(info.get("tags") or []) if isinstance(info.get("tags"), list)
+                 else (info.get("tags") or ""),
         )
 
     # ------------------------------------------------------------------ #
@@ -111,6 +155,7 @@ class SoundCloudHandler(BaseHandler):
         oauth_token: str = "",
         on_speed: Optional[Callable[[str, str], None]] = None,
     ) -> str:
+        url = self.normalize_url(url)
 
         def hook(d: dict):
             if cancel_check and cancel_check():

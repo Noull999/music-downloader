@@ -64,6 +64,9 @@ class DownloadHistory:
                     duration_ms INTEGER,
                     artwork_url TEXT,
                     genre       TEXT,
+                    tags        TEXT,
+                    purchase_url TEXT,
+                    downloadable INTEGER DEFAULT 0,
                     created_at  TEXT,
                     liked_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
@@ -96,6 +99,27 @@ class DownloadHistory:
                 CREATE INDEX IF NOT EXISTS idx_likes_url
                     ON soundcloud_likes(url);
             """)
+            # Migración: CREATE TABLE IF NOT EXISTS no agrega columnas a una
+            # tabla que ya existe, así que las bases anteriores a `tags` se
+            # quedarían sin ella.
+            cols = {r[1] for r in self.conn.execute(
+                "PRAGMA table_info(soundcloud_likes)"
+            )}
+            if "tags" not in cols:
+                self.conn.execute("ALTER TABLE soundcloud_likes ADD COLUMN tags TEXT")
+                logger.info("Migración: columna 'tags' agregada a soundcloud_likes")
+            if "purchase_url" not in cols:
+                self.conn.execute("ALTER TABLE soundcloud_likes ADD COLUMN purchase_url TEXT")
+                logger.info("Migración: columna 'purchase_url' agregada a soundcloud_likes")
+            if "downloadable" not in cols:
+                self.conn.execute("ALTER TABLE soundcloud_likes ADD COLUMN downloadable INTEGER DEFAULT 0")
+                logger.info("Migración: columna 'downloadable' agregada a soundcloud_likes")
+            cols_fallidas = {r[1] for r in self.conn.execute(
+                "PRAGMA table_info(failed_downloads)"
+            )}
+            if "youtube_tried" not in cols_fallidas:
+                self.conn.execute("ALTER TABLE failed_downloads ADD COLUMN youtube_tried INTEGER DEFAULT 0")
+                logger.info("Migración: columna 'youtube_tried' agregada a failed_downloads")
             self.conn.commit()
             logger.info(f"✅ Base de datos inicializada en {self.db_path}")
         except sqlite3.Error as e:
@@ -276,6 +300,38 @@ class DownloadHistory:
                 logger.error(f"Error obteniendo fallidas: {e}")
                 return []
 
+    def get_youtube_pending(self) -> dict[str, str]:
+        """
+        Fallidas a las que todavía no se les probó el respaldo de YouTube.
+
+        Sin esto, las que ya estaban marcadas como permanentes (DRM, Go+...)
+        se omitían para siempre y el respaldo no les servía: solo habría
+        actuado en las que fallaran de ahora en más.
+
+        Returns:
+            {url: error_original}
+        """
+        with self.lock:
+            try:
+                cursor = self.conn.execute(
+                    "SELECT url, error FROM failed_downloads WHERE youtube_tried = 0"
+                )
+                return {url: error or "" for url, error in cursor.fetchall()}
+            except sqlite3.Error as e:
+                logger.error(f"Error leyendo fallidas sin respaldo: {e}")
+                return {}
+
+    def mark_youtube_tried(self, url: str) -> None:
+        """Anota que ya se buscó en YouTube, haya salido bien o no."""
+        with self.lock:
+            try:
+                self.conn.execute(
+                    "UPDATE failed_downloads SET youtube_tried = 1 WHERE url = ?", (url,)
+                )
+                self.conn.commit()
+            except sqlite3.Error as e:
+                logger.error(f"Error marcando respaldo de YouTube: {e}")
+
     def get_skippable_failures(self, max_attempts: int = 3) -> dict[str, str]:
         """
         URLs que no vale la pena reintentar: las de error permanente (DRM,
@@ -445,8 +501,9 @@ class DownloadHistory:
                     self.conn.execute(
                         """
                         INSERT OR REPLACE INTO soundcloud_likes
-                        (id, url, title, artist, duration_ms, artwork_url, genre, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        (id, url, title, artist, duration_ms, artwork_url, genre, tags,
+                         purchase_url, downloadable, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             track.id,
@@ -456,6 +513,9 @@ class DownloadHistory:
                             track.duration_ms,
                             track.artwork_url,
                             track.genre,
+                            getattr(track, "tags", "") or "",
+                            getattr(track, "purchase_url", "") or "",
+                            1 if getattr(track, "downloadable", False) else 0,
                             track.created_at
                         )
                     )
@@ -469,14 +529,16 @@ class DownloadHistory:
         Carga los likes guardados en la DB.
 
         Returns:
-            Lista de {id, url, title, artist, duration_ms, artwork_url, genre, created_at}
+            Lista de {id, url, title, artist, duration_ms, artwork_url, genre,
+                      tags, created_at}
             O lista vacía si no hay likes guardados
         """
         with self.lock:
             try:
                 cursor = self.conn.execute(
                     """
-                    SELECT id, url, title, artist, duration_ms, artwork_url, genre, created_at
+                    SELECT id, url, title, artist, duration_ms, artwork_url, genre,
+                           tags, purchase_url, downloadable, created_at
                     FROM soundcloud_likes ORDER BY liked_at DESC
                     """
                 )
@@ -489,7 +551,10 @@ class DownloadHistory:
                         "duration_ms": row[4],
                         "artwork_url": row[5],
                         "genre": row[6],
-                        "created_at": row[7]
+                        "tags": row[7] or "",
+                        "purchase_url": row[8] or "",
+                        "downloadable": bool(row[9]),
+                        "created_at": row[10]
                     }
                     for row in cursor.fetchall()
                 ]

@@ -13,12 +13,28 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+_ES_MAC = sys.platform == "darwin"
+
 try:
+    if sys.platform != "win32":
+        raise ImportError("win11toast es solo de Windows")
     from win11toast import notify as _win_notify
     TOAST_AVAILABLE = True
 except ImportError:
-    TOAST_AVAILABLE = False
-    logger.warning("win11toast no instalado; notificaciones deshabilitadas")
+    TOAST_AVAILABLE = _ES_MAC  # en macOS se usa osascript, que viene con el sistema
+    if not _ES_MAC:
+        logger.warning("win11toast no disponible; notificaciones deshabilitadas")
+
+
+def _comillas_applescript(texto: str) -> str:
+    return str(texto).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _notificar_mac(title: str, message: str) -> None:
+    import subprocess
+    script = (f'display notification "{_comillas_applescript(message)}" '
+              f'with title "{_comillas_applescript(title)}"')
+    subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
 
 # Resuelve el ícono tanto en desarrollo (.py) como empaquetado (.exe):
 # los datas empaquetados se extraen a _MEIPASS, no a la carpeta del .exe.
@@ -55,6 +71,9 @@ class Notifier:
             return
 
         try:
+            if _ES_MAC:
+                _notificar_mac(title, message)
+                return
             _win_notify(
                 title,
                 message,
