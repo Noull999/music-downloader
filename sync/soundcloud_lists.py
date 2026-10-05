@@ -19,13 +19,55 @@ from handlers.base_handler import TrackMetadata
 logger = logging.getLogger(__name__)
 
 PREFIJO_PARECIDOS = "sc-related:"
+REF_DESCUBRIR = "sc-discover"
 LIMITE_PARECIDOS = 50
+# "Descubrir": parecidos de los ultimos likes, unidos y ordenados.
+SEMILLAS_DESCUBRIR = 15
+PARECIDOS_POR_SEMILLA = 30
+MAXIMO_DESCUBRIR = 60
 LIMITE_PERFIL = 200
 _LOTE_IDS = 50   # la API acepta pocos ids por pedido
 
 
 def es_parecidos(ref: str) -> bool:
     return (ref or "").startswith(PREFIJO_PARECIDOS)
+
+
+def descubrir(cli, ids: list, excluir: set, por_semilla: int = PARECIDOS_POR_SEMILLA,
+              maximo: int = MAXIMO_DESCUBRIR) -> list[tuple[TrackMetadata, int]]:
+    """
+    Sugerencias a partir de varios temas (tus ultimos likes): se juntan los
+    parecidos de cada uno y se ordenan por CUANTOS de ellos coinciden en
+    recomendar el mismo tema. Uno que aparece como parecido de 5 de tus likes
+    casi seguro te gusta mas que uno que aparece una sola vez.
+
+    `excluir` son URLs que no tiene sentido sugerir (lo que ya tenes como like).
+    Devuelve [(tema, coincidencias)], de mas a menos coincidencias; a igualdad,
+    en el orden en que SoundCloud los fue mostrando.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    if not ids:
+        return []
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        listas = list(pool.map(lambda i: cli.get_related(i, por_semilla), ids))
+
+    cuenta: dict[str, int] = {}
+    metas: dict[str, TrackMetadata] = {}
+    orden: dict[str, int] = {}
+    for lista in listas:
+        vistos: set = set()
+        for crudo in lista:
+            m = a_metadata(crudo)
+            # Un tema cuenta una sola vez por semilla, aunque se repita en su lista.
+            if m is None or m.url in excluir or m.url in vistos:
+                continue
+            vistos.add(m.url)
+            cuenta[m.url] = cuenta.get(m.url, 0) + 1
+            metas.setdefault(m.url, m)
+            orden.setdefault(m.url, len(orden))
+    ranking = sorted(cuenta, key=lambda u: (-cuenta[u], orden[u]))[:maximo]
+    return [(metas[u], cuenta[u]) for u in ranking]
 
 
 def es_url_de_lista(url: str) -> bool:

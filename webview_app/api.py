@@ -297,14 +297,21 @@ class WebViewAPI:
         entera como antes con las playlists puras.
         """
         try:
-            if soundcloud_lists.es_parecidos(playlist_url) or "soundcloud.com" in playlist_url:
+            if (soundcloud_lists.es_parecidos(playlist_url) or "soundcloud.com" in playlist_url
+                    or playlist_url == soundcloud_lists.REF_DESCUBRIR):
                 plataforma = "SoundCloud"
                 cli = self._sc_client()
                 if cli is None:
                     return {"ok": False, "error": "Conectá tu cuenta de SoundCloud (botón "
                                                   "«Conectar cuenta») para ver listas y parecidos."}
-                es_radio = soundcloud_lists.es_parecidos(playlist_url)
-                metas = soundcloud_lists.obtener(cli, playlist_url)
+                if playlist_url == soundcloud_lists.REF_DESCUBRIR:
+                    descubiertos = self._descubrir(cli)
+                    metas = [m for m, _ in descubiertos]
+                    coincidencias = {m.url: n for m, n in descubiertos}
+                    es_radio = False
+                else:
+                    es_radio = soundcloud_lists.es_parecidos(playlist_url)
+                    metas = soundcloud_lists.obtener(cli, playlist_url)
             else:
                 plataforma = "YouTube"
                 handler = detect_handler(playlist_url)
@@ -327,6 +334,7 @@ class WebViewAPI:
         with self._lock:
             self._playlist_cache[playlist_url] = {m.url: m for m in metas}
             en_cola = set(self._tracks)
+        es_descubrir = playlist_url == soundcloud_lists.REF_DESCUBRIR
 
         entradas = []
         for m in metas:
@@ -341,8 +349,10 @@ class WebViewAPI:
                 # SoundCloud trae el genero de cada tema (YouTube no): se ve
                 # antes de decidir si bajarlo.
                 "genero": genre_utils.resolve_genre(m.genre, m.tags, None) or "",
+                "coincidencias": coincidencias.get(m.url, 0) if es_descubrir else 0,
             })
-        return {"ok": True, "entradas": entradas, "es_radio": es_radio, "plataforma": plataforma}
+        return {"ok": True, "entradas": entradas, "es_radio": es_radio, "plataforma": plataforma,
+                "descubrir": es_descubrir}
 
     def get_preview_url(self, url: str) -> dict:
         """
@@ -381,6 +391,21 @@ class WebViewAPI:
         if str(info.get("protocol", "")).startswith("m3u8"):
             return {"ok": False, "error": "Este tema solo ofrece un formato que no se puede escuchar aquí."}
         return {"ok": True, "url": stream, "duracion": info.get("duration") or 0}
+
+    def _descubrir(self, cli) -> list:
+        """
+        Sugerencias de SoundCloud a partir de tus ultimos likes. Las
+        recomendaciones nunca se bajan solas: aca solo se listan para elegir.
+        """
+        if not self._sync_manager:
+            raise RuntimeError("Conectá tu cuenta de SoundCloud y sincronizá primero, "
+                               "así hay likes de dónde partir.")
+        likes = self._sync_manager.history.load_likes()
+        if not likes:
+            raise RuntimeError("Todavía no hay likes guardados: tocá «Sincronizar» primero.")
+        semillas = [l["id"] for l in likes[:soundcloud_lists.SEMILLAS_DESCUBRIR] if l.get("id")]
+        ya_tenes = {l["url"] for l in likes}
+        return soundcloud_lists.descubrir(cli, semillas, ya_tenes)
 
     def add_playlist_selection(self, playlist_url: str, urls: list) -> dict:
         """Agrega a la cola solo los temas marcados de una lista ya abierta."""
@@ -793,6 +818,7 @@ class WebViewAPI:
             info = self._tracks.get(url)
             if info is None:
                 duration_ms = getattr(track, "duration_ms", 0) or 0
+                track_id = getattr(track, "id", None)
                 info = TrackInfo(
                     url=url,
                     title=getattr(track, "title", "") or url,
@@ -800,6 +826,8 @@ class WebViewAPI:
                     duration=duration_ms // 1000,
                     platform="soundcloud",
                     thumbnail_url=getattr(track, "artwork_url", "") or "",
+                    # Para ofrecer "Ver parecidos" tambien en lo que baja la sync.
+                    playlist_url=f"{soundcloud_lists.PREFIJO_PARECIDOS}{track_id}" if track_id else "",
                 )
                 self._tracks[url] = info
                 is_new = True

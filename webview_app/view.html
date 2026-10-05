@@ -447,6 +447,7 @@
         <button class="btn btn-blood" id="btnScSync"><svg class="picon" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M13 20H9V18H13V20ZM19 16H21V18H19V20H17V18H15V16H17V8H19V16ZM9 18H7V16H9V18ZM7 6H9V8H7V16H5V8H3V6H5V4H7V6ZM15 16H13V14H15V16ZM23 16H21V14H23V16ZM3 10H1V8H3V10ZM11 10H9V8H11V10ZM17 8H15V6H17V8ZM15 6H11V4H15V6Z"/></svg>Sincronizar</button>
         <button class="btn btn-ghost" id="btnScLikes"><svg class="picon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M13 22h-2v-2h2v2Zm-2-2H9v-2h2v2Zm4 0h-2v-2h2v2Zm-6-2H7v-2h2v2Zm8 0h-2v-2h2v2ZM7 16H5v-2h2v2Zm12 0h-2v-2h2v2ZM5 14H3v-2h2v2Zm16 0h-2v-2h2v2ZM3 12H1V6h2v6Zm20 0h-2V6h2v6ZM13 8h-2V6h2v2ZM5 6H3V4h2v2Zm6 0H9V4h2v2Zm4 0h-2V4h2v2Zm6 0h-2V4h2v2ZM9 4H5V2h4v2Zm10 0h-4V2h4v2Z"/></svg>Mis Likes</button>
       </div>
+      <button class="btn btn-ghost btn-block" id="btnDiscover" title="Temas que SoundCloud recomienda a partir de tus últimos likes">✦ Descubrir temas</button>
       <button class="btn btn-ghost btn-block" id="btnUpgrades">📀 Mejor calidad disponible</button>
       <button class="btn btn-ghost btn-block" id="btnScConnect"><svg class="picon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h7v2H4zm0 10h7v2H4zM2 8h2v8H2zm18-2h-7v2h7zm0 10h-7v2h7zm2-8h-2v8h2zM7 11h10v2H7z"/></svg>Conectar cuenta</button>
     </div>
@@ -568,7 +569,7 @@
 </div>
 
 <!-- ============ Modal: Elegir temas de una lista ============ -->
-<div class="modal-overlay" id="modalPlaylist">
+<div class="modal-overlay" id="modalPlaylist" style="z-index: 60">
   <div class="modal pixel-corners-lg" style="max-width: 640px;">
     <div class="modal-head">
       <span class="modal-title" id="playlistTitle">Elegir temas de la lista</span>
@@ -1108,7 +1109,8 @@
       t.textContent = e.artist ? `${e.artist} — ${e.title}` : e.title;
       const s = document.createElement("span");
       s.className = "hrow-sub";
-      s.textContent = e.ya_descargada ? "ya la tenés" : (e.en_cola ? "ya está en la cola" : (e.genero || ""));
+      s.textContent = e.ya_descargada ? "ya la tenés" : (e.en_cola ? "ya está en la cola" : (
+        (e.coincidencias ? `recomendado por ${e.coincidencias} de tus likes` + (e.genero ? " · " : "") : "") + (e.genero || "")));
       main.append(t, s);
       const dur = document.createElement("span");
       dur.className = "hrow-sub";
@@ -1231,9 +1233,11 @@
     if (!playlistUrl) return;
     openModal("modalPlaylist");
     // La ventana siempre muestra UNA plataforma: la del tema o link de donde se abrió.
+    const esDescubrir = playlistUrl === "sc-discover";
     const esRadio = /[?&]list=RD|^sc-related:/.test(playlistUrl);
-    const plataforma = /^sc-related:|soundcloud\.com/.test(playlistUrl) ? "SoundCloud" : "YouTube";
-    document.getElementById("playlistTitle").textContent = `${esRadio ? "Parecidos" : "Lista"} en ${plataforma}`;
+    const plataforma = /^sc-related:|^sc-discover$|soundcloud\.com/.test(playlistUrl) ? "SoundCloud" : "YouTube";
+    document.getElementById("playlistTitle").textContent =
+      esDescubrir ? "Descubrir en SoundCloud" : `${esRadio ? "Parecidos" : "Lista"} en ${plataforma}`;
     const intro = document.getElementById("playlistIntro");
     document.getElementById("playlistFilterRow").style.display = "none";
     document.getElementById("playlistTools").style.display = "none";
@@ -1250,7 +1254,9 @@
     }
     listaActual = { url: playlistUrl, entradas: r.entradas };
     const nuevas = r.entradas.filter(e => !e.en_cola && !e.ya_descargada).length;
-    intro.textContent = r.es_radio
+    intro.textContent = r.descubrir
+      ? `Temas que SoundCloud recomienda a partir de tus últimos likes, primero los que más de ellos recomiendan (${nuevas} disponibles). Nada se baja solo: marcá los que quieras.`
+      : r.es_radio
       ? `Los ${r.entradas.length} temas más parecidos que sugiere ${r.plataforma} (${nuevas} disponibles). Marcá los que quieras.`
       : `${r.entradas.length} temas en la lista (${nuevas} disponibles). Marcá los que quieras.`;
     document.getElementById("playlistFilterRow").style.display = "";
@@ -1555,6 +1561,8 @@
     });
 
     // ---- Mejor calidad disponible ----
+    document.getElementById("btnDiscover").addEventListener("click", () => abrirLista("sc-discover"));
+
     document.getElementById("btnUpgrades").addEventListener("click", async () => {
       openModal("modalUpgrades");
       const intro = document.getElementById("upgradesIntro");
@@ -1940,7 +1948,21 @@
         flag.className = "like-flag";
         flag.textContent = like.downloaded ? "✓" : "";
 
-        row.append(cb, main, flag);
+        // Tercera columna de la grilla .like-row (20px 1fr auto): parecidos + marca.
+        const derecha = document.createElement("div");
+        derecha.style.cssText = "display:flex; align-items:center; gap:8px";
+        if (like.id) {
+          const par = document.createElement("button");
+          par.type = "button";
+          par.className = "mini-btn";
+          par.textContent = "Parecidos";
+          par.title = "Ver temas parecidos a este";
+          par.addEventListener("click", () => abrirLista(`sc-related:${like.id}`));
+          derecha.appendChild(par);
+        }
+        derecha.appendChild(flag);
+
+        row.append(cb, main, derecha);
         list.appendChild(row);
       }
     }
