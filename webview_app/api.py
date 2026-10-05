@@ -43,7 +43,7 @@ from utils.validators import parse_urls_from_text
 _AUDIO_EXTENSIONS = match_utils.AUDIO_EXTENSIONS
 
 # Cuántos temas parecidos se muestran al elegir de una "radio" de YouTube.
-LIMITE_RADIO = 100
+LIMITE_RADIO = 50
 
 logger = logging.getLogger(__name__)
 

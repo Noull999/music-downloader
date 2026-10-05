@@ -127,8 +127,8 @@ class YouTubeHandler(BaseHandler):
         """
         Extrae los tracks de una playlist (llamado explícitamente por el GUI).
         `limite` corta la lista: una radio de parecidos trae cientos de temas
-        (916-1356 en las pruebas) y tarda 14 s; los primeros 100, que son los
-        más cercanos al video, cargan en 4 s.
+        (916-1356 en las pruebas) y tarda 14 s; los primeros 50, que son los
+        más cercanos al video, cargan en ~2 s.
         """
         return self._fetch_playlist(playlist_url, limite)
 
