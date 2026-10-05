@@ -34,6 +34,7 @@ from models import (
 )
 from quality.presets import get_preset
 from sync import genre_utils, match_utils, playlist_export, task_scheduler, upgrade_links
+from sync.genre_chain import ResolutorDeGenero
 from sync.soundcloud_api import SoundCloudAPIClient
 from sync.sync_manager import SyncManager
 from url_detector import detect_handler, detect_platform_name
@@ -59,6 +60,9 @@ _STATUS_EMOJI = {
 
 def _track_to_dict(track: TrackInfo) -> dict:
     d = asdict(track)
+    # La descripcion solo sirve para sacar hashtags de genero: no hace falta
+    # mandarla a la vista en cada evento.
+    d.pop("description", None)
     d["duration_str"] = track.duration_str()
     return d
 
@@ -89,6 +93,13 @@ class WebViewAPI:
         # Temas de las listas que el usuario abrió para elegir (por URL de la
         # lista), para no volver a pedirlos a YouTube al agregar la selección.
         self._playlist_cache: dict[str, dict] = {}
+
+        # Genero de lo que se baja por link (YouTube casi nunca lo trae): se
+        # completa en segundo plano al llegar a la cola, y si el usuario baja
+        # antes de que termine, la descarga espera ese resultado.
+        self._genre_chain = ResolutorDeGenero(self._buscar_tracks_sc, self._genero_aceptable)
+        self._genero_eventos: dict[str, threading.Event] = {}
+        self._sc_client_cache = None
 
         # SoundCloud sync (se inicializa al verificar credenciales, igual
         # que gui/sync_window.py). None hasta la primera verificación OK.
@@ -239,6 +250,8 @@ class WebViewAPI:
         for info in extra_added:
             self._push("track_added", _track_to_dict(info))
 
+        self._asegurar_generos_en_segundo_plano([first] + extra_added)
+
     def get_playlist_entries(self, playlist_url: str) -> dict:
         """
         Los temas de una lista de YouTube (álbum, radio de parecidos...) para
@@ -303,6 +316,7 @@ class WebViewAPI:
 
         for info in nuevas:
             self._push("track_added", _track_to_dict(info))
+        self._asegurar_generos_en_segundo_plano(nuevas)
         return {"ok": True, "agregadas": len(nuevas)}
 
     def _mark_fetch_error(self, url: str, message: str) -> None:
@@ -384,6 +398,7 @@ class WebViewAPI:
                 self.controller.record_download(track)
             self._push_status(url, status, err)
 
+        self._asegurar_genero(track)
         self.download_manager.submit_download(
             track=track,
             handler=handler,
@@ -1108,6 +1123,82 @@ class WebViewAPI:
         if configurada:
             return configurada[0]
         return self.controller.get_config_value("dest_folder", "")
+
+    def _sc_client(self):
+        """Cliente de SoundCloud para busquedas, o None si no hay credenciales."""
+        if self._sync_manager:
+            return self._sync_manager.api
+        if self._sc_client_cache is None:
+            cfg = self.controller.get_config_value("soundcloud", {}) or {}
+            token = cfg.get("oauth_token", "") or self.controller.get_config_value("oauth_token", "")
+            client_id = cfg.get("client_id", "")
+            if not token or not client_id:
+                return None
+            self._sc_client_cache = SoundCloudAPIClient(token, client_id)
+        return self._sc_client_cache
+
+    def _buscar_tracks_sc(self, consulta: str) -> list[dict]:
+        cli = self._sc_client()
+        return cli.search_tracks(consulta) if cli else []
+
+    def _genero_aceptable(self, nombre: str) -> bool:
+        """
+        Un genero que sacamos de lo que puso otra persona en SoundCloud se
+        acepta si es del vocabulario conocido o si ya existe esa carpeta en la
+        biblioteca (como "Nasty Club"); si no, crearia una carpeta nueva por un
+        nombre que alguien invento.
+        """
+        if genre_utils.es_conocido(nombre):
+            return True
+        try:
+            raiz = self.genre_root()
+            return any(d.lower() == nombre.lower() and os.path.isdir(os.path.join(raiz, d))
+                       for d in os.listdir(raiz))
+        except OSError:
+            return False
+
+    def _asegurar_genero(self, info: TrackInfo) -> None:
+        """
+        Completa info.genre con la cadena de sync/genre_chain.py. Es idempotente
+        y seguro de llamar desde varios hilos: el primero hace el trabajo y los
+        demas esperan su resultado.
+        """
+        with self._lock:
+            evento = self._genero_eventos.get(info.url)
+            primero = evento is None
+            if primero:
+                evento = threading.Event()
+                self._genero_eventos[info.url] = evento
+        if not primero:
+            evento.wait(timeout=30)
+            return
+        try:
+            descripcion = info.description
+            if info.platform.startswith("YouTube") and not info.tags and not descripcion:
+                # Las listas planas no traen tags: hace falta la info completa.
+                try:
+                    meta = detect_handler(info.url).get_metadata(info.url)[0]
+                    info.tags, descripcion = meta.tags, meta.description
+                except Exception:
+                    logger.debug("Sin info completa de %s para el genero", info.url)
+            genero = self._genre_chain.resolver(
+                genre=info.genre, tags=info.tags, title=info.title,
+                artist=info.artist, duration_s=info.duration, description=descripcion,
+            )
+            if genero:
+                info.genre = genero
+        except Exception:
+            logger.exception("Error resolviendo el genero de %s", info.url)
+        finally:
+            evento.set()
+
+    def _asegurar_generos_en_segundo_plano(self, infos: list) -> None:
+        if not infos:
+            return
+        def tarea():
+            for info in infos:
+                self._asegurar_genero(info)
+        threading.Thread(target=tarea, daemon=True).start()
 
     def _dest_for_track(self, track) -> str:
         """

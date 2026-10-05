@@ -77,6 +77,18 @@ class SoundCloudAPIClient:
             "Content-Type": "application/json; charset=utf-8",
         })
 
+    def search_tracks(self, consulta: str, limit: int = 20) -> list[dict]:
+        """Busca tracks en SoundCloud. Devuelve los objetos crudos de la API, o [] si falla."""
+        try:
+            r = self.session.get(
+                f"{self.BASE_URL}/search/tracks",
+                params={"q": consulta, "client_id": self.client_id, "limit": limit},
+                timeout=15,
+            )
+        except requests.RequestException:
+            return []
+        return r.json().get("collection", []) if r.status_code == 200 else []
+
     def validate_credentials(self) -> dict:
         """
         Verifica que el token OAuth es válido y retorna info del usuario actual.

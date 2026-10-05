@@ -199,6 +199,11 @@ def resolve_genre(genre: Optional[str], tag_list=None, title: Optional[str] = No
     return None
 
 
+def es_conocido(nombre: Optional[str]) -> bool:
+    """True si el genero esta en el vocabulario (Schranz, Guaracha, Techno...)."""
+    return bool(nombre) and _norm(nombre) in SPECIFICITY
+
+
 def carpeta_segura(nombre: Optional[str], fallback: str = "Sin género") -> str:
     """
     Convierte un género en un nombre de carpeta válido. Sin esto, un

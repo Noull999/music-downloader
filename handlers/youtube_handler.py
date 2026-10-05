@@ -222,6 +222,18 @@ class YouTubeHandler(BaseHandler):
 
         track_id = str(info.get("id") or url_str)
 
+        # Tags del video, en el mismo formato que el tag_list de SoundCloud
+        # (espacios entre tags, comillas en los de varias palabras) para que
+        # "hard techno" no se parta en "hard" y "techno". Solo vienen con la
+        # info completa de un video, no en las listas planas.
+        etiquetas = list(info.get("tags") or [])
+        # El genero crudo de YouTube va como un tag mas y NO como `genre`:
+        # resolve_genre conserva un genero desconocido como nombre de carpeta,
+        # y los de YouTube ("Pop", categorias) crearian carpetas basura.
+        if info.get("genre"):
+            etiquetas.append(str(info["genre"]))
+        tags = " ".join(f'"{t}"' if " " in t else t for t in etiquetas)
+
         # Calidad detectada (solo disponible con full info, no en extract_flat)
         formats = info.get("formats") or []
         detected_quality = self._best_audio_quality(formats)
@@ -239,6 +251,8 @@ class YouTubeHandler(BaseHandler):
             platform=platform,
             detected_quality=detected_quality,
             track_id=track_id,
+            tags=tags,
+            description=(info.get("description") or "")[:2000],
         )
 
     # ------------------------------------------------------------------ #

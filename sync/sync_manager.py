@@ -441,14 +441,7 @@ class SyncManager:
 
     def _buscar_tracks_de(self, artista: str) -> list[dict]:
         """Tracks de un artista en SoundCloud (para el género por artista)."""
-        r = self.api.session.get(
-            f"{self.api.BASE_URL}/search/tracks",
-            params={"q": artista, "client_id": self.api.client_id, "limit": 20},
-            timeout=15,
-        )
-        if r.status_code != 200:
-            return []
-        return r.json().get("collection", [])
+        return self.api.search_tracks(artista)
 
     def _genero_de(self, track) -> Optional[str]:
         """

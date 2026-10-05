@@ -43,6 +43,8 @@ class TrackInfo:
     # Lista (álbum, radio de temas parecidos) a la que pertenece este video,
     # si se pegó un link de "video + list=". La vista ofrece elegir temas de ahí.
     playlist_url: str = ""
+    # Descripcion del video: solo se usa para sacar hashtags de genero.
+    description: str = ""
 
     # ── Estado de descarga (mutable) ─────────────────────────────────── #
     status: str = STATUS_PENDING
@@ -81,6 +83,7 @@ class TrackInfo:
             tags=getattr(meta, "tags", "") or "",
             playlist_url=(getattr(meta, "_playlist_url", "")
                           or getattr(meta, "_radio_url", "") or ""),
+            description=getattr(meta, "description", "") or "",
         )
 
     def update_from_metadata(self, meta: TrackMetadata) -> None:

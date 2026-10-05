@@ -32,6 +32,9 @@ def _api(metas=None):
     api.controller = MagicMock()
     api.controller.is_track_downloaded.return_value = False
     api._push = MagicMock()
+    # El genero se completa en un hilo de fondo que sale a internet: en los
+    # tests se simula, y se verifica aparte (test_genero_de_youtube.py).
+    api._asegurar_generos_en_segundo_plano = MagicMock()
     handler = MagicMock()
     handler.get_playlist_tracks.return_value = metas or []
     api._handler = handler
