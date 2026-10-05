@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cross-platform support**: Full compatibility with Windows, macOS, and Linux
   - Automatic FFmpeg detection across all platforms
   - Platform-aware installation scripts (`install.bat`, `install.sh`)
-  - Comprehensive setup guide (SETUP.md) for all operating systems
   - Automated CI/CD testing on Windows, macOS, and Linux with Python 3.9-3.12
   - GitHub Actions workflow for multiplatform validation
 
@@ -57,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 If you encounter any issues:
 
-1. Check [SETUP.md](SETUP.md) Troubleshooting section
+1. Check the Troubleshooting section of the [README](../README.md)
 2. Verify your FFmpeg installation: `ffmpeg -version`
 3. Run tests: `pytest tests/ -v`
 4. Open an issue on GitHub with:
@@ -68,4 +67,4 @@ If you encounter any issues:
 
 ## Contributing
 
-See [SETUP.md](SETUP.md) Development section for guidelines on contributing across platforms.
+See the [README](../README.md) for how to build and run from source.

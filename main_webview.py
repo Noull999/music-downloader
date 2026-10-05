@@ -2,8 +2,8 @@
 Music Downloader — entry point con pywebview.
 Ejecutar: python main_webview.py
 
-No reemplaza main.py/gui/ (sigue intacto). Vista HTML/CSS en vez de
-CustomTkinter, misma lógica de negocio (UIController, DownloadManager).
+Vista HTML/CSS embebida; la lógica de negocio vive en UIController y
+DownloadManager.
 
 Requiere: pip install pywebview
 """
@@ -48,7 +48,7 @@ _VIEW_HTML = os.path.join(_RESOURCES, "webview_app", "view.html")
 # config.json vive en ~/.music_downloader/ (estable, igual que la BD) y no
 # junto al ejecutable: en el .exe empaquetado esa ruta es una carpeta
 # temporal que Windows borra al cerrar, así que se perderían los ajustes en
-# cada arranque. Misma ubicación que usa la GUI de tkinter, para que ambas
+# cada arranque.
 # interfaces compartan configuración en vez de divergir.
 _CONFIG_PATH = str(DEFAULT_CONFIG_PATH)
 if not os.path.isfile(_CONFIG_PATH):
