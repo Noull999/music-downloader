@@ -135,3 +135,63 @@ class TestVideoConLista(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRadioDeParecidos(unittest.TestCase):
+    """
+    YouTube arma una radio de temas parecidos (list=RD<id>) para CUALQUIER
+    video, aunque el link pegado no traiga lista. Es lo que la interfaz vieja
+    ofrecia al buscar un tema de un artista.
+    """
+
+    def _handler(self, url_pegada: str):
+        from handlers.youtube_handler import YouTubeHandler
+        h = YouTubeHandler()
+        track = TrackMetadata(url=url_pegada, title="Tema", artist="A", duration=200,
+                              platform="YouTube", track_id="abc123")
+        h._fetch_single = MagicMock(return_value=track)
+        return h, track
+
+    def test_un_video_sin_lista_ofrece_la_radio(self):
+        h, _ = self._handler("https://www.youtube.com/watch?v=abc123")
+        t = h.get_metadata("https://www.youtube.com/watch?v=abc123")[0]
+        assert t._radio_url == "https://www.youtube.com/watch?v=abc123&list=RDabc123"
+        assert not hasattr(t, "_playlist_url"), (
+            "no debe marcarlo como 'parte de una playlist': la GUI vieja "
+            "preguntaria eso para todos los videos"
+        )
+
+    def test_un_video_con_lista_conserva_la_suya(self):
+        url = "https://www.youtube.com/watch?v=abc123&list=OLAK5uy_album"
+        h, _ = self._handler(url)
+        t = h.get_metadata(url)[0]
+        assert t._playlist_url == url
+        assert not hasattr(t, "_radio_url")
+
+    def test_trackinfo_usa_la_radio_si_no_hay_lista(self):
+        m = _meta(1)
+        m._radio_url = "https://www.youtube.com/watch?v=abc&list=RDabc"
+        assert TrackInfo.from_metadata(m).playlist_url.endswith("list=RDabc")
+
+    def test_trackinfo_prefiere_la_lista_real_a_la_radio(self):
+        m = _meta(1)
+        m._playlist_url = "https://www.youtube.com/watch?v=abc&list=OLAK5uy_x"
+        m._radio_url = "https://www.youtube.com/watch?v=abc&list=RDabc"
+        assert "OLAK5uy_x" in TrackInfo.from_metadata(m).playlist_url
+
+    def test_la_radio_se_pide_con_tope(self):
+        from webview_app.api import LIMITE_RADIO
+        api = _api([_meta(1)])
+        with patch("webview_app.api.detect_handler", return_value=api._handler):
+            r = api.get_playlist_entries("https://www.youtube.com/watch?v=abc&list=RDabc")
+        api._handler.get_playlist_tracks.assert_called_once_with(
+            "https://www.youtube.com/watch?v=abc&list=RDabc", limite=LIMITE_RADIO)
+        assert r["es_radio"] is True
+
+    def test_una_lista_normal_se_pide_entera(self):
+        api = _api([_meta(1)])
+        with patch("webview_app.api.detect_handler", return_value=api._handler):
+            r = api.get_playlist_entries("https://www.youtube.com/watch?v=abc&list=OLAK5uy_x")
+        api._handler.get_playlist_tracks.assert_called_once_with(
+            "https://www.youtube.com/watch?v=abc&list=OLAK5uy_x")
+        assert r["es_radio"] is False

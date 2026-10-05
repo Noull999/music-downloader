@@ -111,12 +111,26 @@ class YouTubeHandler(BaseHandler):
         # Si también tiene playlist, marcar para que el GUI ofrezca la opción
         if self.is_video_with_playlist(url):
             track._playlist_url = url  # type: ignore[attr-defined]
+        elif track.track_id:
+            # Sin lista en el link, YouTube igual arma una "radio" de temas
+            # parecidos para CUALQUIER video (list=RD<id>). Se anota aparte de
+            # _playlist_url a proposito: la GUI vieja pregunta "este video
+            # forma parte de una playlist" cuando existe _playlist_url, y eso
+            # seria falso para todos los videos.
+            track._radio_url = (  # type: ignore[attr-defined]
+                f"https://www.youtube.com/watch?v={track.track_id}&list=RD{track.track_id}"
+            )
 
         return [track]
 
-    def get_playlist_tracks(self, playlist_url: str) -> list[TrackMetadata]:
-        """Extrae todos los tracks de una playlist (llamado explícitamente por el GUI)."""
-        return self._fetch_playlist(playlist_url)
+    def get_playlist_tracks(self, playlist_url: str, limite: Optional[int] = None) -> list[TrackMetadata]:
+        """
+        Extrae los tracks de una playlist (llamado explícitamente por el GUI).
+        `limite` corta la lista: una radio de parecidos trae cientos de temas
+        (916-1356 en las pruebas) y tarda 14 s; los primeros 100, que son los
+        más cercanos al video, cargan en 4 s.
+        """
+        return self._fetch_playlist(playlist_url, limite)
 
     def _fetch_single(self, url: str) -> TrackMetadata:
         """Extrae info completa de un video individual (incluye formatos para detectar calidad)."""
@@ -136,7 +150,7 @@ class YouTubeHandler(BaseHandler):
 
         return self._parse(info, url)
 
-    def _fetch_playlist(self, url: str) -> list[TrackMetadata]:
+    def _fetch_playlist(self, url: str, limite: Optional[int] = None) -> list[TrackMetadata]:
         """Extrae lista de tracks de una playlist de YouTube."""
         opts = {
             "quiet": True,
@@ -147,6 +161,8 @@ class YouTubeHandler(BaseHandler):
             "retries": 3,          # Aumentado de 1 para mayor robustez
             "ignoreerrors": True,  # Continuar si una entrada falla
         }
+        if limite:
+            opts["playlistend"] = limite
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)

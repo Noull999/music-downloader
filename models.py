@@ -79,7 +79,8 @@ class TrackInfo:
             track_id=meta.track_id,
             genre=getattr(meta, "genre", "") or "",
             tags=getattr(meta, "tags", "") or "",
-            playlist_url=getattr(meta, "_playlist_url", "") or "",
+            playlist_url=(getattr(meta, "_playlist_url", "")
+                          or getattr(meta, "_radio_url", "") or ""),
         )
 
     def update_from_metadata(self, meta: TrackMetadata) -> None:

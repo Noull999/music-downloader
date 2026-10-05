@@ -952,7 +952,11 @@
 
     const dlBtn = el.querySelector('[data-action="download"]');
     dlBtn.disabled = ["downloading", "fetching", "done", "skip"].includes(t.status);
-    el.querySelector('[data-action="playlist"]').hidden = !t.playlist_url;
+    const btnLista = el.querySelector('[data-action="playlist"]');
+    btnLista.hidden = !t.playlist_url;
+    // list=RD... es la "radio" de temas parecidos que YouTube arma para
+    // cualquier video; el resto (OLAK5uy..., PL...) es un álbum o una lista.
+    btnLista.textContent = /[?&]list=RD/.test(t.playlist_url || "") ? "Ver parecidos…" : "Ver lista…";
 
     updateProgress(url, t.progress || 0);
   }
@@ -1117,7 +1121,9 @@
     }
     listaActual = { url: playlistUrl, entradas: r.entradas };
     const nuevas = r.entradas.filter(e => !e.en_cola && !e.ya_descargada).length;
-    intro.textContent = `${r.entradas.length} temas en la lista (${nuevas} disponibles). Marcá los que quieras.`;
+    intro.textContent = r.es_radio
+      ? `Los ${r.entradas.length} temas más parecidos que sugiere YouTube (${nuevas} disponibles). Marcá los que quieras.`
+      : `${r.entradas.length} temas en la lista (${nuevas} disponibles). Marcá los que quieras.`;
     document.getElementById("playlistFilterRow").style.display = "";
     document.getElementById("playlistTools").style.display = "flex";
     dibujarLista();

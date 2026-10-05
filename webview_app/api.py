@@ -42,6 +42,9 @@ from utils.validators import parse_urls_from_text
 
 _AUDIO_EXTENSIONS = match_utils.AUDIO_EXTENSIONS
 
+# Cuántos temas parecidos se muestran al elegir de una "radio" de YouTube.
+LIMITE_RADIO = 100
+
 logger = logging.getLogger(__name__)
 
 _STATUS_EMOJI = {
@@ -250,7 +253,10 @@ class WebViewAPI:
             obtener = getattr(handler, "get_playlist_tracks", None)
             if obtener is None:
                 return {"ok": False, "error": "Esta plataforma no tiene listas."}
-            metas = obtener(playlist_url)
+            # Una radio de parecidos (list=RD...) es casi interminable: se
+            # piden solo los más cercanos.
+            es_radio = "list=RD" in playlist_url
+            metas = obtener(playlist_url, limite=LIMITE_RADIO) if es_radio else obtener(playlist_url)
         except (ValueError, RuntimeError) as exc:
             return {"ok": False, "error": str(exc)[:200]}
         except Exception as exc:
@@ -275,7 +281,7 @@ class WebViewAPI:
                 "en_cola": m.url in en_cola,
                 "ya_descargada": self.controller.is_track_downloaded(m.url),
             })
-        return {"ok": True, "entradas": entradas}
+        return {"ok": True, "entradas": entradas, "es_radio": es_radio}
 
     def add_playlist_selection(self, playlist_url: str, urls: list) -> dict:
         """Agrega a la cola solo los temas marcados de una lista ya abierta."""
