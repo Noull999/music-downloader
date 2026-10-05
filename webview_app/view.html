@@ -655,7 +655,9 @@
         e iniciá sesión como siempre.<br>
         <b>2)</b> Con esa pestaña abierta apretá <b id="scAtajo">Ctrl + Shift (⇧) + J</b>
         (Shift es la flecha ⇧ hacia arriba, <u>no</u> Bloq Mayús; o apretá F12 y
-        elegí la pestaña <b>Console</b>) y pegá esta línea con Enter:
+        elegí la pestaña <b>Console</b>) y pegá esta línea con Enter. Chrome pide primero
+        que escribas <code>allow pasting</code> + Enter (es una protección normal; la línea
+        solo copia tu token a tu portapapeles, no envía nada):
         <button class="btn btn-ghost" id="btnCopiarSnippet" style="padding:4px 8px;margin:4px 0;">Copiar línea</button><br>
         <code id="scSnippet" style="user-select:all">copy(document.cookie.match(/oauth_token=([^;]+)/)?.[1] || "no encontrado")</code><br>
         <b>3)</b> Pegá el resultado abajo en OAuth Token. El Client ID se completa solo.
@@ -1547,6 +1549,11 @@
       const oauth = document.getElementById("scOauthInput").value.trim();
       const clientId = document.getElementById("scClientInput").value.trim();
       const statusEl = document.getElementById("scVerifyStatus");
+      if (/no encontrado/i.test(oauth)) {
+        statusEl.textContent = "✗ La consola no pudo leer el token. Usá el método de Network (header Authorization).";
+        statusEl.className = "sc-status-line off";
+        return;
+      }
       if (!oauth || !clientId) {
         statusEl.textContent = "Completá ambos campos";
         statusEl.className = "sc-status-line off";
