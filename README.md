@@ -16,17 +16,27 @@ Aplicación de escritorio para descargar música de **SoundCloud y YouTube**, co
 - **SoundCloud API Integration**
   - Descarga automática de tus likes de SoundCloud
   - Sincronización periódica (manual o programada con el Task Scheduler de Windows)
-  - Explorador de "Mis Likes" con estado de descarga y fecha
+  - Explorador de "Mis Likes" con estado de descarga, fecha y **carpeta donde quedó cada canción** (clic para abrirla); avisa con ⚠ si un like quedó enlazado a un archivo que no se le parece
+  - **Si SoundCloud no deja descargar un tema** (DRM, restringido), la app lo busca en YouTube y lo baja de ahí si encuentra una coincidencia confiable (misma duración y título parecido); también hay un botón "Probar desde YouTube" en el panel de fallos
+  - Asistente de conexión: inicias sesión en SoundCloud desde la app y el Client ID se detecta solo
+
+- **Descubrir música sin descargar a ciegas**
+  - Al pegar un link de **lista, perfil o set** (YouTube o SoundCloud) se abre una ventana para elegir cuáles temas agregar, en vez de bajarlos todos
+  - **"Parecidos"**: temas recomendados a partir de un like, un video o tus últimos likes (**"✦ Descubrir temas"**), con tope de 50
+  - **Vista previa** con ▶ en cada fila, desde el 35% del tema, para decidir sin descargar
+  - Nada se descarga solo: las sugerencias solo se bajan si las marcas
 
 - **Organización automática por subgénero**
   - Cada descarga va sola a la carpeta de su género (`Schranz/`, `Hardgroove/`, `Industrial Techno/`…), sin elegir nada por canción
   - El subgénero se resuelve leyendo los **tags** de SoundCloud, no solo el campo `genre`, que el uploader suele dejar en algo genérico. Medido sobre una biblioteca real de 402 canciones: 34% tenían género genérico mientras el subgénero estaba en los tags, y *schranz* aparecía 57 veces en los tags contra 14 en `genre`
+  - Cadena de respaldo cuando el tema no trae género: tags y descripción (YouTube), **otros temas del mismo artista** y búsqueda en SoundCloud; solo se acepta si hay consenso suficiente, si no va a "Sin género"
   - Reusa las carpetas que ya tengas (ignorando mayúsculas) y descarta basura como categorías de YouTube (`Music`, `Entertainment`) o volcados de tags
   - Panel **"Ordenar la música que ya tengo"**: vista previa de a qué carpeta iría cada canción antes de mover nada, con archivo de deshacer
 
 - **Detección de duplicados en dos capas**
   - Matching difuso de nombre de archivo contra toda tu biblioteca (no solo la carpeta de destino), ignorando archivos basura (`.DS_Store`, `._*` de macOS) que si no se cuentan como canciones reales
   - **Huella de audio (Chromaprint)** como red de seguridad: si el nombre no coincide con nada, compara el audio real de un preview antes de descargar — atrapa el caso de "mismo tema, nombre de archivo muy distinto" sin generar falsos positivos con remixes/edits de título parecido
+  - Distingue remixes: si el título lleva el nombre del remixer (`(SX2 Remix)`) no se da por duplicado de otra versión, y un tema de duración distinta tampoco
   - Soporta MP3, WAV, FLAC, M4A, AAC, OGG, OPUS, AIFF
 
 - **BPM y tonalidad para DJs**
@@ -40,13 +50,16 @@ Aplicación de escritorio para descargar música de **SoundCloud y YouTube**, co
 - **Post-procesamiento**
   - Metadatos, género y carátula incrustados en **MP3, WAV y AIFF** (no solo MP3)
   - La carátula se normaliza a JPEG y máx. 600px: SoundCloud a veces entrega miniaturas de 100×100 y YouTube las da en WebP, que Serato no muestra
-  - Normalización de volumen, eliminación de silencios
+  - Normalización de volumen y eliminación de silencios al inicio y al final, sin cortar temas con pausas en medio
+  - Tags **ID3v2.3**, para que la carátula y los datos se vean también en el Explorador de Windows y Windows Media Player
+  - **"Completar tags rotos"** (opcional): con una API key gratuita de AcoustID, rellena título y artista de archivos sin tags (nunca pisa los que ya existen)
 
 - **Interfaz de escritorio**
   - GUI moderna (pywebview) con tema oscuro y detalles neón
   - Cola de descargas en tiempo real, pausa/cancelación
-  - Panel de "Últimas descargas" y de fallos permanentes (DRM/geo-bloqueo)
-  - Empaquetada como **.exe standalone para Windows** — no requiere Python instalado
+  - Panel de "Últimas descargas" (con la carpeta de cada una) y de fallos permanentes (DRM/geo-bloqueo)
+  - Historial fiable: "ya descargada" exige que el archivo exista, y los contadores cuentan solo descargas reales
+  - Empaquetada como **.exe standalone para Windows** y como **.app para macOS** — no requiere Python instalado
 
 ## 📋 Requisitos
 
