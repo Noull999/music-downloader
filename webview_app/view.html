@@ -642,11 +642,21 @@
       <button class="btn btn-blood btn-block" id="btnScLogin">1 · Iniciar sesión en SoundCloud</button>
       <div class="hint">
         Se abre una ventana con la página de SoundCloud. Iniciá sesión ahí
-        (la app no ve tu contraseña) y se conecta sola al terminar. Si entrás
-        con Google/Apple y no te deja, usá el modo manual de abajo.
+        con tu <b>correo</b> (la app no ve tu contraseña) y se conecta sola al
+        terminar. <b>Google, Facebook y Apple no funcionan en esa ventana</b>
+        (necesitan ventanas emergentes): si tu cuenta es de esas, usá el modo
+        manual de abajo.
       </div>
       <details id="scManual">
-      <summary class="hint" style="cursor:pointer;margin:8px 0;">Modo manual (si el inicio de sesión no funciona)</summary>
+      <summary class="hint" style="cursor:pointer;margin:8px 0;">Modo manual (Google/Facebook/Apple o si falla)</summary>
+      <div class="hint" style="margin-bottom:8px;">
+        1) <a href="#" id="scAbrirWeb" style="color:var(--amber)">Abrí soundcloud.com en tu navegador</a>
+        e iniciá sesión como siempre. 2) Apretá F12, andá a <b>Console</b>, pegá
+        esta línea y Enter; copia tu token: <br>
+        <code id="scSnippet" style="user-select:all">copy(document.cookie.match(/oauth_token=([^;]+)/)?.[1] || "no encontrado")</code>
+        <br>3) Pegalo abajo en OAuth Token (si dice "no encontrado", usá el
+        método de Network que explica el final). El Client ID se completa solo.
+      </div>
       <div class="form-row">
         <label>OAuth Token</label>
         <div class="form-row-inline">
@@ -1484,6 +1494,11 @@
           if (r.ok && !inp.value) inp.value = r.client_id;
         });
       }
+    });
+
+    document.getElementById("scAbrirWeb").addEventListener("click", (e) => {
+      e.preventDefault();
+      api().open_external_url("https://soundcloud.com/");
     });
 
     document.getElementById("btnScLogin").addEventListener("click", async () => {

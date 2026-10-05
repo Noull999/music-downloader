@@ -802,6 +802,10 @@ class WebViewAPI:
         """
         oauth_token = (oauth_token or "").strip()
         client_id = (client_id or "").strip()
+        if oauth_token and not oauth_token.lower().startswith("oauth "):
+            oauth_token = f"OAuth {oauth_token}"   # pegado sin el prefijo (p. ej. desde la cookie)
+        if oauth_token and not client_id:
+            client_id = self.detect_soundcloud_client_id().get("client_id", "")
         if not oauth_token or not client_id:
             return {"ok": False, "error": "Completa OAuth Token y Client ID"}
 
