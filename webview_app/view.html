@@ -719,6 +719,7 @@
         <label class="check-row"><input type="checkbox" id="cfgArtwork"><span>Incrustar carátula</span></label>
         <label class="check-row"><input type="checkbox" id="cfgMetadata"><span>Incrustar metadatos (artista, título)</span></label>
         <label class="check-row"><input type="checkbox" id="cfgGenre"><span>Incrustar género</span></label>
+        <label class="check-row"><input type="checkbox" id="cfgAutoStart"><span>Descargar al agregar (links y temas elegidos de una lista)</span></label>
         <label class="check-row"><input type="checkbox" id="cfgNormalize"><span>Normalizar volumen</span></label>
         <label class="check-row"><input type="checkbox" id="cfgSilence"><span>Eliminar silencios</span></label>
       </div>
@@ -1844,6 +1845,7 @@
         embed_artwork: document.getElementById("cfgArtwork").checked,
         embed_metadata: document.getElementById("cfgMetadata").checked,
         embed_genre: document.getElementById("cfgGenre").checked,
+        auto_start_downloads: document.getElementById("cfgAutoStart").checked,
         normalize_volume: document.getElementById("cfgNormalize").checked,
         remove_silence: document.getElementById("cfgSilence").checked,
         filename_pattern: document.getElementById("cfgPattern").value.trim() || "{artist} - {title}",
@@ -2114,6 +2116,7 @@
     document.getElementById("cfgArtwork").checked = !!cfg.embed_artwork;
     document.getElementById("cfgMetadata").checked = !!cfg.embed_metadata;
     document.getElementById("cfgGenre").checked = !!cfg.embed_genre;
+    document.getElementById("cfgAutoStart").checked = cfg.auto_start_downloads !== false;
     document.getElementById("cfgNormalize").checked = !!cfg.normalize_volume;
     document.getElementById("cfgSilence").checked = !!cfg.remove_silence;
     document.getElementById("cfgPattern").value = cfg.filename_pattern || "{artist} - {title}";
