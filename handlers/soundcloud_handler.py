@@ -90,7 +90,12 @@ class SoundCloudHandler(BaseHandler):
 
         # Single track — re-fetch with full info para detectar calidad
         full = self._full_info(url)
-        return [self._parse(full or info, url)]
+        track = self._parse(full or info, url)
+        if track.track_id.isdigit():
+            # Los temas parecidos salen de la API de SoundCloud por id de tema,
+            # no de una URL: se guarda como una referencia propia ("sc-related:").
+            track._radio_url = f"sc-related:{track.track_id}"  # type: ignore[attr-defined]
+        return [track]
 
     def _full_info(self, url: str) -> dict | None:
         opts = {"quiet": True, "no_warnings": True, "skip_download": True}

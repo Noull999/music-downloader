@@ -571,7 +571,7 @@
 <div class="modal-overlay" id="modalPlaylist">
   <div class="modal pixel-corners-lg" style="max-width: 640px;">
     <div class="modal-head">
-      <span class="modal-title">Elegir temas de la lista</span>
+      <span class="modal-title" id="playlistTitle">Elegir temas de la lista</span>
       <button class="modal-close" data-close="modalPlaylist">✕</button>
     </div>
     <div class="modal-body">
@@ -850,6 +850,13 @@
         upsertTrack(payload);
         renderQueueRow(payload.url, true);
         break;
+      case "abrir_lista":
+        // Un link de lista (playlist, perfil, set): en vez de llenar la cola,
+        // se abre la ventana para elegir cuales temas agregar.
+        removeRow(payload.url);
+        tracks.delete(payload.url);
+        abrirLista(payload.url);
+        break;
       case "track_replaced":
         // Si la URL canónica difiere de la pegada, la fila vieja se
         // descarta. Si es la misma (caso común), se actualiza en el
@@ -956,7 +963,7 @@
     btnLista.hidden = !t.playlist_url;
     // list=RD... es la "radio" de temas parecidos que YouTube arma para
     // cualquier video; el resto (OLAK5uy..., PL...) es un álbum o una lista.
-    btnLista.textContent = /[?&]list=RD/.test(t.playlist_url || "") ? "Ver parecidos…" : "Ver lista…";
+    btnLista.textContent = /[?&]list=RD|^sc-related:/.test(t.playlist_url || "") ? "Ver parecidos…" : "Ver lista…";
 
     updateProgress(url, t.progress || 0);
   }
@@ -1091,7 +1098,7 @@
       t.textContent = e.artist ? `${e.artist} — ${e.title}` : e.title;
       const s = document.createElement("span");
       s.className = "hrow-sub";
-      s.textContent = e.ya_descargada ? "ya la tenés" : (e.en_cola ? "ya está en la cola" : "");
+      s.textContent = e.ya_descargada ? "ya la tenés" : (e.en_cola ? "ya está en la cola" : (e.genero || ""));
       main.append(t, s);
       const dur = document.createElement("span");
       dur.className = "hrow-sub";
@@ -1105,6 +1112,10 @@
   async function abrirLista(playlistUrl) {
     if (!playlistUrl) return;
     openModal("modalPlaylist");
+    // La ventana siempre muestra UNA plataforma: la del tema o link de donde se abrió.
+    const esRadio = /[?&]list=RD|^sc-related:/.test(playlistUrl);
+    const plataforma = /^sc-related:|soundcloud\.com/.test(playlistUrl) ? "SoundCloud" : "YouTube";
+    document.getElementById("playlistTitle").textContent = `${esRadio ? "Parecidos" : "Lista"} en ${plataforma}`;
     const intro = document.getElementById("playlistIntro");
     document.getElementById("playlistFilterRow").style.display = "none";
     document.getElementById("playlistTools").style.display = "none";
@@ -1122,7 +1133,7 @@
     listaActual = { url: playlistUrl, entradas: r.entradas };
     const nuevas = r.entradas.filter(e => !e.en_cola && !e.ya_descargada).length;
     intro.textContent = r.es_radio
-      ? `Los ${r.entradas.length} temas más parecidos que sugiere YouTube (${nuevas} disponibles). Marcá los que quieras.`
+      ? `Los ${r.entradas.length} temas más parecidos que sugiere ${r.plataforma} (${nuevas} disponibles). Marcá los que quieras.`
       : `${r.entradas.length} temas en la lista (${nuevas} disponibles). Marcá los que quieras.`;
     document.getElementById("playlistFilterRow").style.display = "";
     document.getElementById("playlistTools").style.display = "flex";

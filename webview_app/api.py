@@ -33,7 +33,7 @@ from models import (
     STATUS_DONE, STATUS_ERROR, STATUS_SKIP, STATUS_CANCELLED,
 )
 from quality.presets import get_preset
-from sync import genre_utils, match_utils, playlist_export, task_scheduler, upgrade_links
+from sync import genre_utils, match_utils, playlist_export, soundcloud_lists, task_scheduler, upgrade_links
 from sync.genre_chain import ResolutorDeGenero
 from sync.soundcloud_api import SoundCloudAPIClient
 from sync.sync_manager import SyncManager
@@ -204,7 +204,28 @@ class WebViewAPI:
 
         return {"ok": True, "queued": len(new_urls), "skipped": len(urls) - len(new_urls)}
 
+    def _es_link_de_lista(self, url: str) -> bool:
+        """
+        Un link que es una lista y no un tema: playlist de YouTube (sin un video
+        puntual), o un perfil / set de SoundCloud. Antes agregaban todos sus
+        temas a la cola; ahora se elige cuales.
+        """
+        try:
+            handler = detect_handler(url)
+        except ValueError:
+            return False
+        if isinstance(handler, SoundCloudHandler):
+            return soundcloud_lists.es_url_de_lista(url)
+        es_lista_yt = getattr(handler, "url_has_playlist", None)
+        es_video_yt = getattr(handler, "url_has_video", None)
+        return bool(es_lista_yt and es_video_yt and es_lista_yt(url) and not es_video_yt(url))
+
     def _fetch_worker(self, original_url: str) -> None:
+        if self._es_link_de_lista(original_url):
+            with self._lock:
+                self._tracks.pop(original_url, None)
+            self._push("abrir_lista", {"url": original_url})
+            return
         try:
             handler = detect_handler(original_url)
             metas = handler.get_metadata(original_url)
@@ -262,14 +283,24 @@ class WebViewAPI:
         entera como antes con las playlists puras.
         """
         try:
-            handler = detect_handler(playlist_url)
-            obtener = getattr(handler, "get_playlist_tracks", None)
-            if obtener is None:
-                return {"ok": False, "error": "Esta plataforma no tiene listas."}
-            # Una radio de parecidos (list=RD...) es casi interminable: se
-            # piden solo los más cercanos.
-            es_radio = "list=RD" in playlist_url
-            metas = obtener(playlist_url, limite=LIMITE_RADIO) if es_radio else obtener(playlist_url)
+            if soundcloud_lists.es_parecidos(playlist_url) or "soundcloud.com" in playlist_url:
+                plataforma = "SoundCloud"
+                cli = self._sc_client()
+                if cli is None:
+                    return {"ok": False, "error": "Conectá tu cuenta de SoundCloud (botón "
+                                                  "«Conectar cuenta») para ver listas y parecidos."}
+                es_radio = soundcloud_lists.es_parecidos(playlist_url)
+                metas = soundcloud_lists.obtener(cli, playlist_url)
+            else:
+                plataforma = "YouTube"
+                handler = detect_handler(playlist_url)
+                obtener = getattr(handler, "get_playlist_tracks", None)
+                if obtener is None:
+                    return {"ok": False, "error": "Esta plataforma no tiene listas."}
+                # Una radio de parecidos (list=RD...) es casi interminable: se
+                # piden solo los más cercanos.
+                es_radio = "list=RD" in playlist_url
+                metas = obtener(playlist_url, limite=LIMITE_RADIO) if es_radio else obtener(playlist_url)
         except (ValueError, RuntimeError) as exc:
             return {"ok": False, "error": str(exc)[:200]}
         except Exception as exc:
@@ -293,8 +324,11 @@ class WebViewAPI:
                 "duration_str": info.duration_str(),
                 "en_cola": m.url in en_cola,
                 "ya_descargada": self.controller.is_track_downloaded(m.url),
+                # SoundCloud trae el genero de cada tema (YouTube no): se ve
+                # antes de decidir si bajarlo.
+                "genero": genre_utils.resolve_genre(m.genre, m.tags, None) or "",
             })
-        return {"ok": True, "entradas": entradas, "es_radio": es_radio}
+        return {"ok": True, "entradas": entradas, "es_radio": es_radio, "plataforma": plataforma}
 
     def add_playlist_selection(self, playlist_url: str, urls: list) -> dict:
         """Agrega a la cola solo los temas marcados de una lista ya abierta."""
