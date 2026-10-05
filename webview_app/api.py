@@ -405,7 +405,10 @@ class WebViewAPI:
         if not likes:
             raise RuntimeError("Todavía no hay likes guardados: tocá «Sincronizar» primero.")
         semillas = [l["id"] for l in likes[:soundcloud_lists.SEMILLAS_DESCUBRIR] if l.get("id")]
-        ya_tenes = {l["url"] for l in likes}
+        # Ni lo que ya es like ni lo que ya bajaste (aunque no le hayas dado
+        # like): si no, esos temas, que SoundCloud recomienda mucho, quedan
+        # arriba de la lista ocupando lugar.
+        ya_tenes = {l["url"] for l in likes} | self.controller.history.get_downloaded_urls()
         return soundcloud_lists.descubrir(cli, semillas, ya_tenes)
 
     def add_playlist_selection(self, playlist_url: str, urls: list) -> dict:

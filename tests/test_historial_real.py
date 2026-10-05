@@ -95,3 +95,21 @@ class TestArchivoNoSeParece(unittest.TestCase):
     def test_lo_ya_catalogado_y_lo_vacio_no_se_marca(self):
         assert self._f("A", "Tema largo", None) is False
         assert self._f("A", "Tema largo", "local://D:/x/otro.mp3") is False
+
+
+class TestUrlsDescargadas(unittest.TestCase):
+    """Descubrir no sugiere lo que ya bajaste (aunque no sea un like)."""
+
+    def test_solo_las_que_tienen_archivo(self):
+        d = Path(tempfile.mkdtemp())
+        h = HistoryManager(db_path=str(d / "h.db"))
+        real = d / "a.mp3"
+        real.write_bytes(b"x")
+        borrado = d / "b.mp3"
+        borrado.write_bytes(b"x")
+        h.add_download("u-real", title="A", local_path=str(real))
+        h.add_download("u-borrado", title="B", local_path=str(borrado))
+        h.add_download("u-vacio", title="C", local_path="")
+        h.add_download("local://x", title="D", local_path=str(real))
+        os.remove(borrado)
+        assert h.get_downloaded_urls() == {"u-real"}
