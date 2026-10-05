@@ -1370,7 +1370,8 @@ class WebViewAPI:
             cands = match_utils.like_candidates(lk.get("artist") or "", lk.get("title") or "")
             if not cands:
                 continue
-            path, _ = match_utils.find_best_match(cands, index, match_utils.MATCH_THRESHOLD)
+            path, _ = match_utils.find_best_match(cands, index, match_utils.MATCH_THRESHOLD,
+                                                  titulo=lk.get("title") or "")
             if path is not None and path not in por_archivo:
                 por_archivo[path] = lk
 
@@ -1605,7 +1606,7 @@ class WebViewAPI:
                     like.get("artist") or "", like.get("title") or ""
                 )
                 best_file, best_score = match_utils.find_best_match(
-                    candidates, files, threshold
+                    candidates, files, threshold, titulo=like.get("title") or ""
                 )
                 if best_file is not None:
                     pending.append((best_score, like, best_file))

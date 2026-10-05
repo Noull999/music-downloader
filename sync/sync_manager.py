@@ -414,7 +414,17 @@ class SyncManager:
             fp = audio_fingerprint.fingerprint_file(preview_path)
             if not fp:
                 return None
-            return index.find_best_match(fp)
+            encontrado = index.find_best_match(fp)
+            if encontrado and not match_utils.duracion_compatible(
+                encontrado[0], (getattr(track, "duration_ms", 0) or 0) / 1000
+            ):
+                # La huella mira solo 30 s: un remix o bootleg que comparte la
+                # voz con otro tema suena igual ahi. Si el archivo dura otra
+                # cosa, es otra version y no un duplicado.
+                logger.info("Misma huella pero distinta duracion, se descarga igual: %s (%s)",
+                            track.title, Path(encontrado[0]).name)
+                return None
+            return encontrado
         except Exception:
             logger.exception("Error en pre-chequeo de huella de audio (%s)", track.url)
             return None

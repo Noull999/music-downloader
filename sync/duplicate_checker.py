@@ -60,7 +60,8 @@ class DuplicateChecker:
         track_url: str,
         track_title: str,
         artist: str,
-        folder: str
+        folder: str,
+        duration_s: float = 0,
     ) -> tuple[bool, str]:
         """
         Verifica si una canción ya la tenés.
@@ -79,7 +80,7 @@ class DuplicateChecker:
             logger.debug("Duplicado por historial: %s", track_url)
             return True, "Ya descargada anteriormente (historial)"
 
-        match = self._find_similar_file(track_title, artist, folder)
+        match = self._find_similar_file(track_title, artist, folder, duration_s)
         if match:
             return True, f"Archivo similar encontrado: {match}"
 
@@ -108,7 +109,8 @@ class DuplicateChecker:
 
         for track in all_likes:
             is_dup, reason = self.is_duplicate(
-                track.url, track.title, track.artist, download_folder
+                track.url, track.title, track.artist, download_folder,
+                (getattr(track, "duration_ms", 0) or 0) / 1000,
             )
             if is_dup:
                 duplicates.append((track, reason))
@@ -146,7 +148,8 @@ class DuplicateChecker:
             logger.info("Índice listo: %d archivos de audio", len(self._index))
         return self._index
 
-    def _find_similar_file(self, title: str, artist: str, folder: str) -> Optional[str]:
+    def _find_similar_file(self, title: str, artist: str, folder: str,
+                           duration_s: float = 0) -> Optional[str]:
         """
         Busca el archivo MÁS parecido de la biblioteca (no el primero que
         supere el umbral). Devuelve su nombre, o None si ninguno alcanza.
@@ -156,10 +159,18 @@ class DuplicateChecker:
         if not candidates:
             return None
 
+        # `titulo` hace que no se tome por duplicada una version de OTRO
+        # remixer, y la duracion que no se tome un edit mas largo/corto.
         path, score = match_utils.find_best_match(
-            candidates, index, self.similarity_threshold
+            candidates, index, self.similarity_threshold, titulo=title
         )
         if path is None:
+            return None
+        if not match_utils.duracion_compatible(path, duration_s):
+            logger.info(
+                "Parecido por nombre pero distinta duracion, se descarga igual: '%s' ≈ %s - %s",
+                path.name, artist, title,
+            )
             return None
 
         logger.info(
