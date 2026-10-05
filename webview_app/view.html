@@ -585,6 +585,16 @@
         <span class="hint" id="playlistCount" style="margin-left:auto">0 marcados</span>
       </div>
       <div class="log" id="playlistList" style="max-height:300px"></div>
+      <div id="playlistPlayer" style="display:none; flex-direction:column; gap:6px">
+        <span class="hrow-sub" id="playerTitulo"></span>
+        <div class="form-row-inline">
+          <button class="mini-btn" id="playerToggle" type="button">❚❚</button>
+          <input type="range" id="playerSeek" min="0" max="1000" value="0" style="accent-color: var(--ember)">
+          <span class="hrow-sub" id="playerTiempo">0:00 / 0:00</span>
+          <button class="mini-btn" id="playerInicio" type="button" title="Volver al principio">Inicio</button>
+        </div>
+      </div>
+      <audio id="playerAudio" preload="metadata"></audio>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" data-close="modalPlaylist">Cancelar</button>
@@ -1103,11 +1113,119 @@
       const dur = document.createElement("span");
       dur.className = "hrow-sub";
       dur.textContent = e.duration_str;
-      row.append(caja, main, dur);
+      const derecha = document.createElement("div");
+      derecha.style.cssText = "display:flex; align-items:center; gap:8px";
+      const prev = document.createElement("button");
+      prev.type = "button";
+      prev.className = "mini-btn";
+      prev.dataset.prev = e.url;
+      prev.textContent = "▶";
+      prev.title = "Escuchar un fragmento, sin descargar";
+      // La fila es un <label>: sin esto, tocar ▶ también marcaría la casilla.
+      prev.addEventListener("click", (ev) => { ev.preventDefault(); ev.stopPropagation(); escuchar(e, prev); });
+      derecha.append(prev, dur);
+      row.append(caja, main, derecha);
       cont.appendChild(row);
     }
     actualizarContadorLista();
+    marcarFilaEnReproduccion();
   }
+
+  // ---- Escuchar un fragmento antes de bajar ----
+  // Siempre una sola reproducción a la vez. Arranca al 35% del tema (donde
+  // suele estar el desarrollo o el drop) y no al segundo cero, que casi
+  // siempre es una intro que no dice nada.
+  const FRACCION_INICIO = 0.35;
+  const audioPrevia = document.getElementById("playerAudio");
+  const previa = { url: null, token: 0 };
+
+  function fmtTiempo(s) {
+    if (!isFinite(s)) return "0:00";
+    const m = Math.floor(s / 60);
+    return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  }
+
+  function marcarFilaEnReproduccion() {
+    document.querySelectorAll("#playlistList [data-prev]").forEach(b => {
+      const suena = b.dataset.prev === previa.url && !audioPrevia.paused;
+      b.textContent = suena ? "❚❚" : "▶";
+    });
+    document.getElementById("playerToggle").textContent = audioPrevia.paused ? "▶" : "❚❚";
+  }
+
+  function mostrarReproductor(titulo) {
+    document.getElementById("playlistPlayer").style.display = "flex";
+    document.getElementById("playerTitulo").textContent = titulo;
+  }
+
+  function detenerVistaPrevia() {
+    previa.token++;
+    previa.url = null;
+    audioPrevia.pause();
+    audioPrevia.removeAttribute("src");
+    audioPrevia.load();
+    document.getElementById("playlistPlayer").style.display = "none";
+    marcarFilaEnReproduccion();
+  }
+
+  async function escuchar(entrada, boton) {
+    if (previa.url === entrada.url && audioPrevia.getAttribute("src")) {
+      // El mismo tema: pausar o seguir.
+      if (audioPrevia.paused) audioPrevia.play(); else audioPrevia.pause();
+      return;
+    }
+    const token = ++previa.token;
+    audioPrevia.pause();
+    previa.url = entrada.url;
+    document.querySelectorAll("#playlistList [data-prev]").forEach(b => { b.textContent = "▶"; });
+    boton.textContent = "…";
+    mostrarReproductor(`${entrada.artist ? entrada.artist + " — " : ""}${entrada.title}  ·  buscando el audio…`);
+    document.getElementById("playerSeek").value = 0;
+    document.getElementById("playerTiempo").textContent = "0:00 / 0:00";
+
+    let r;
+    try { r = await api().get_preview_url(entrada.url); } catch (e) { r = { ok: false, error: String(e) }; }
+    if (token !== previa.token) return;       // mientras tanto eligió otro tema
+    if (!r.ok) {
+      previa.url = null;
+      boton.textContent = "▶";
+      mostrarReproductor(`${entrada.title}  ·  ${r.error || "No se puede escuchar"}`);
+      return;
+    }
+    mostrarReproductor(`${entrada.artist ? entrada.artist + " — " : ""}${entrada.title}`);
+    audioPrevia.src = r.url;
+    // Sin load() explicito el navegador puede no pedir ni la duración (con
+    // preload="none" nunca), y entonces "loadedmetadata" -que dispara el salto
+    // al 35% y el play- no llega nunca.
+    audioPrevia.load();
+  }
+
+  audioPrevia.addEventListener("loadedmetadata", () => {
+    if (isFinite(audioPrevia.duration)) audioPrevia.currentTime = audioPrevia.duration * FRACCION_INICIO;
+    audioPrevia.play().catch(() => {});
+  });
+  audioPrevia.addEventListener("timeupdate", () => {
+    const d = audioPrevia.duration;
+    if (isFinite(d) && d > 0) document.getElementById("playerSeek").value = Math.round(audioPrevia.currentTime / d * 1000);
+    document.getElementById("playerTiempo").textContent = `${fmtTiempo(audioPrevia.currentTime)} / ${fmtTiempo(d)}`;
+  });
+  audioPrevia.addEventListener("play", marcarFilaEnReproduccion);
+  audioPrevia.addEventListener("pause", marcarFilaEnReproduccion);
+  audioPrevia.addEventListener("ended", marcarFilaEnReproduccion);
+  audioPrevia.addEventListener("error", () => {
+    if (!audioPrevia.getAttribute("src")) return;     // se vació a propósito al cerrar
+    previa.url = null;
+    document.getElementById("playerTitulo").textContent += "  ·  no se pudo reproducir";
+    marcarFilaEnReproduccion();
+  });
+  document.getElementById("playerSeek").addEventListener("input", (e) => {
+    if (isFinite(audioPrevia.duration)) audioPrevia.currentTime = e.target.value / 1000 * audioPrevia.duration;
+  });
+  document.getElementById("playerToggle").addEventListener("click", () => {
+    if (!audioPrevia.getAttribute("src")) return;
+    if (audioPrevia.paused) audioPrevia.play(); else audioPrevia.pause();
+  });
+  document.getElementById("playerInicio").addEventListener("click", () => { audioPrevia.currentTime = 0; });
 
   async function abrirLista(playlistUrl) {
     if (!playlistUrl) return;
@@ -1669,7 +1787,10 @@
   // ------------------------------------------------------------------ //
 
   function openModal(id) { document.getElementById(id).classList.add("open"); }
-  function closeModal(id) { document.getElementById(id).classList.remove("open"); }
+  function closeModal(id) {
+    if (id === "modalPlaylist") detenerVistaPrevia();
+    document.getElementById(id).classList.remove("open");
+  }
 
   // ------------------------------------------------------------------ //
   // SoundCloud: estado, sync, likes                                      //

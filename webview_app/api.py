@@ -58,6 +58,20 @@ _STATUS_EMOJI = {
 }
 
 
+def _motivo_sin_vista_previa(error: str) -> str:
+    """Mensaje corto y legible para un tema que no se puede escuchar."""
+    e = error.lower()
+    if "drm" in e:
+        return "Este tema está protegido (DRM): no hay vista previa."
+    if "geo" in e or "location" in e or "country" in e:
+        return "Este tema está bloqueado en tu país."
+    if "age" in e or "sign in" in e:
+        return "Este tema pide iniciar sesión (restricción de edad)."
+    if "private" in e or "unavailable" in e or "404" in e or "not found" in e:
+        return "Este tema ya no está disponible."
+    return "No se pudo obtener el audio."
+
+
 def _track_to_dict(track: TrackInfo) -> dict:
     d = asdict(track)
     # La descripcion solo sirve para sacar hashtags de genero: no hace falta
@@ -329,6 +343,44 @@ class WebViewAPI:
                 "genero": genre_utils.resolve_genre(m.genre, m.tags, None) or "",
             })
         return {"ok": True, "entradas": entradas, "es_radio": es_radio, "plataforma": plataforma}
+
+    def get_preview_url(self, url: str) -> dict:
+        """
+        Enlace directo al audio de un tema, para escuchar un fragmento en la
+        ventana de seleccion sin descargarlo (no se guarda ningun archivo).
+
+        El formato se elige para que un reproductor de pagina lo toque:
+        SoundCloud ofrece un MP3 directo (su formato principal, HLS, no se puede
+        reproducir asi) y YouTube un m4a. Los enlaces vencen a las ~6 horas.
+        """
+        import yt_dlp
+
+        es_sc = "soundcloud.com" in url
+        opts = {
+            "quiet": True, "no_warnings": True, "skip_download": True,
+            "noplaylist": True, "socket_timeout": 15,
+            "format": ("http_mp3_1_0/bestaudio[protocol^=http]/bestaudio" if es_sc
+                       else "bestaudio[ext=m4a]/bestaudio"),
+        }
+        if es_sc:
+            cfg = self.controller.get_config_value("soundcloud", {}) or {}
+            token = cfg.get("oauth_token", "") or self.controller.get_config_value("oauth_token", "")
+            if token:
+                opts["extractor_args"] = {"soundcloud": {"oauth_token": [token]}}
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+        except Exception as exc:
+            return {"ok": False, "error": _motivo_sin_vista_previa(str(exc))}
+
+        stream = (info or {}).get("url")
+        if not stream and (info or {}).get("requested_formats"):
+            stream = info["requested_formats"][0].get("url")
+        if not stream:
+            return {"ok": False, "error": "No se pudo obtener el audio."}
+        if str(info.get("protocol", "")).startswith("m3u8"):
+            return {"ok": False, "error": "Este tema solo ofrece un formato que no se puede escuchar aquí."}
+        return {"ok": True, "url": stream, "duracion": info.get("duration") or 0}
 
     def add_playlist_selection(self, playlist_url: str, urls: list) -> dict:
         """Agrega a la cola solo los temas marcados de una lista ya abierta."""
