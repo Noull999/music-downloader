@@ -647,6 +647,7 @@
         (necesitan ventanas emergentes): si tu cuenta es de esas, usá el modo
         manual de abajo.
       </div>
+      <div class="sc-status-line" style="margin:8px 0;min-height:18px" id="scVerifyStatus"></div>
       <details id="scManual">
       <summary class="hint" style="cursor:pointer;margin:8px 0;">Modo manual (Google/Facebook/Apple o si falla)</summary>
       <div class="hint" style="margin-bottom:8px;">
@@ -668,7 +669,6 @@
         <label>Client ID</label>
         <input type="text" id="scClientInput" placeholder="XXXXXXXXXXXXXXXX">
       </div>
-      <span class="sc-status-line" id="scVerifyStatus"></span>
       <div class="hint">
         F12 en soundcloud.com → pestaña Network → filtrá "api-v2" → recargá →
         abrí cualquier request: el header <b>Authorization</b> es el OAuth Token,
@@ -891,7 +891,7 @@
           st.className = "sc-status-line on";
           renderScStatus(true, payload.user_info);
           setStatus("SoundCloud conectado", "ok");
-          setTimeout(() => closeModal("modalConnect"), 1200);
+          mostrarConectado(payload.user_info);
         } else {
           st.textContent = `✗ ${payload.error}`;
           st.className = "sc-status-line off";
@@ -1487,6 +1487,10 @@
       document.getElementById("scOauthInput").value = sc.oauth_token || "";
       document.getElementById("scClientInput").value = sc.client_id || "";
       document.getElementById("scVerifyStatus").textContent = "";
+      document.getElementById("scVerifyStatus").style.fontSize = "";
+      document.getElementById("btnScVerify").style.display = "";
+      document.getElementById("btnScLogin").style.display = "";
+      document.querySelector('#modalConnect .modal-foot [data-close]').textContent = "Ahora no";
       openModal("modalConnect");
       if (!document.getElementById("scClientInput").value) {
         api().detect_soundcloud_client_id().then(r => {
@@ -1537,7 +1541,7 @@
         statusEl.className = "sc-status-line on";
         renderScStatus(true, r.user_info);
         setStatus("SoundCloud conectado", "ok");
-        setTimeout(() => closeModal("modalConnect"), 900);
+        mostrarConectado(r.user_info);
       } else {
         statusEl.textContent = `✗ ${r.error}`;
         statusEl.className = "sc-status-line off";
@@ -1863,6 +1867,19 @@
   // ------------------------------------------------------------------ //
   // SoundCloud: estado, sync, likes                                      //
   // ------------------------------------------------------------------ //
+
+  // Confirmacion que se queda a la vista (antes el modal se cerraba solo y
+  // no quedaba claro si habia funcionado).
+  function mostrarConectado(info) {
+    const st = document.getElementById("scVerifyStatus");
+    st.textContent = `✅ ¡Conectado! Cuenta: ${info.username} · ${info.likes_count} likes`;
+    st.className = "sc-status-line on";
+    st.style.fontSize = "14px";
+    document.getElementById("btnScVerify").style.display = "none";
+    document.getElementById("btnScLogin").style.display = "none";
+    const cerrar = document.querySelector('#modalConnect .modal-foot [data-close]');
+    cerrar.textContent = "Listo";
+  }
 
   function renderScStatus(connected, userInfo) {
     const line = document.getElementById("scStatusLine");
