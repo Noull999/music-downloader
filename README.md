@@ -91,9 +91,7 @@ pip install -r requirements.txt
 python main_webview.py
 ```
 
-La GUI antigua de CustomTkinter (`python main.py`) sigue en el repo y funciona, pero `main_webview.py` es la interfaz activa.
-
-Para instrucciones detalladas por sistema operativo, ver [SETUP.md](SETUP.md).
+ffmpeg y Chromaprint (`fpcalc`) tienen que estar instalados y en el PATH al correr desde código fuente (en Windows: `winget install Gyan.FFmpeg`; en macOS: `brew install ffmpeg chromaprint`). Los ejecutables ya los traen incluidos.
 
 ## ⚙️ Configuración de SoundCloud
 
@@ -128,7 +126,7 @@ music-downloader/
 ├── webview_app/            # Interfaz activa (pywebview)
 │   ├── api.py              # Puente Python <-> JS
 │   └── view.html           # UI completa (HTML/CSS/JS)
-├── gui/                    # GUI legacy (CustomTkinter, sigue funcional)
+├── gui/ui_controller.py    # Controlador compartido (config, historial, descargas)
 ├── handlers/                # Descargadores (SoundCloud, YouTube)
 ├── sync/                    # Sincronización de likes
 │   ├── soundcloud_api.py
@@ -141,9 +139,8 @@ music-downloader/
 │   └── fingerprint.py        # Duplicados por audio (Chromaprint)
 ├── db/                       # Historial en SQLite
 ├── quality/                  # Post-procesamiento (ffmpeg, tags)
-├── scripts/build.py          # Empaquetado del .exe
-├── main_webview.py           # Entry point (GUI activa)
-└── main.py                   # Entry point (GUI legacy)
+├── scripts/build.py          # Empaquetado (.exe en Windows, .app en macOS)
+└── main_webview.py           # Entry point
 ```
 
 ## 🔧 Configuración avanzada

@@ -1,9 +1,4 @@
-# GUI
-customtkinter>=5.2.2
-
-# GUI experimental (vista HTML/CSS embebida, ver main_webview.py)
-# No requerida para main.py / gui/ (CustomTkinter). Instalar solo si
-# se quiere probar la vista alternativa.
+# Interfaz (vista HTML/CSS embebida, ver main_webview.py)
 pywebview>=5.0
 
 # Descarga (YouTube y SoundCloud)

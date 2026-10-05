@@ -1,8 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
 # Empaqueta la interfaz pywebview (main_webview.py), que es la app actual.
-# La GUI vieja de CustomTkinter (main.py) sigue en el repo y se puede correr
-# con `python main.py`, pero ya no es la que se distribuye.
 import os
 import sys
 from PyInstaller.utils.hooks import collect_all
@@ -25,7 +23,6 @@ binaries = []
 hiddenimports = [
     'webview',
     'yt_dlp', 'mutagen', 'PIL', 'thefuzz', 'Levenshtein',
-    'customtkinter',  # gui/ sigue importándose desde utils compartidos
     'librosa',  # análisis de BPM/tonalidad (analysis/audio_analysis.py)
 ]
 
@@ -48,7 +45,7 @@ if os.path.isfile(_fpcalc_bundle):
 
 # pywebview trae backends por plataforma y assets propios que no se detectan
 # siguiendo imports.
-_paquetes = ['webview', 'customtkinter', 'yt_dlp']
+_paquetes = ['webview', 'yt_dlp']
 if IS_WIN:
     _paquetes += ['win11toast', 'winrt']
 for _pkg in _paquetes:
