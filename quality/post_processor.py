@@ -105,8 +105,16 @@ class PostProcessor:
             filters.append("loudnorm=I=-14:LRA=11:TP=-1")
 
         if self.remove_silence:
-            filters.append("silenceremove=start_periods=1:start_silence=0.5:start_threshold=-50dB")
-            filters.append("silenceremove=stop_periods=1:stop_silence=0.5:stop_threshold=-50dB")
+            # Solo el silencio del INICIO y del FINAL, nunca el del medio.
+            # El final se recorta invirtiendo el audio para que el filtro de
+            # "inicio" actue sobre el final real. NO usar stop_periods=1: con
+            # ese valor ffmpeg toma el primer silencio de 0.5 s como el fin
+            # del archivo y descarta todo lo que sigue. En musica de baile
+            # (cortes, breaks, intros) eso dejo canciones de 0.7 s en lugar
+            # de 4 minutos: 5 de 14 temas sanos de la biblioteca se
+            # truncaron al reproducir el filtro.
+            recorte = "silenceremove=start_periods=1:start_silence=0.5:start_threshold=-50dB"
+            filters.extend([recorte, "areverse", recorte, "areverse"])
 
         if not filters:
             return input_file
@@ -131,6 +139,18 @@ class PostProcessor:
             )
 
             if result.returncode == 0 and os.path.exists(temp_file):
+                # Red de seguridad: recortar silencios o normalizar casi no
+                # cambia la duracion. Si el resultado quedo mucho mas corto,
+                # el filtro rompio el archivo y se conserva el original.
+                antes, despues = self._duracion(input_file), self._duracion(temp_file)
+                if antes and despues is not None and (antes - despues) > max(15.0, antes * 0.10):
+                    logger.error(
+                        "El filtro ffmpeg acorto %s de %.0fs a %.0fs: se descarta "
+                        "el resultado y se conserva el original",
+                        os.path.basename(input_file), antes, despues,
+                    )
+                    os.remove(temp_file)
+                    return input_file
                 os.replace(temp_file, input_file)
                 logger.info(f"✓ Filtros ffmpeg aplicados: {filter_chain}")
                 return input_file
@@ -163,6 +183,16 @@ class PostProcessor:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
             raise DownloadError(f"Post-procesado falló: {e}")
+
+    @staticmethod
+    def _duracion(path: str):
+        """Duracion en segundos segun mutagen, o None si no se puede leer."""
+        try:
+            from mutagen import File as MFile
+            f = MFile(path)
+            return float(f.info.length) if f and f.info else None
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------ #
     # Embebido de tags con mutagen                                         #
