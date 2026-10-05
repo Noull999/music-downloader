@@ -653,8 +653,9 @@
       <div class="hint" style="margin-bottom:8px;">
         <b>1)</b> <a href="#" id="scAbrirWeb" style="color:var(--amber)">Abrir soundcloud.com en mi navegador</a>
         e iniciá sesión como siempre.<br>
-        <b>2)</b> Con esa pestaña abierta apretá <b id="scAtajo">Ctrl+Mayús+J</b>
-        (abre la consola directo) y pegá esta línea con Enter:
+        <b>2)</b> Con esa pestaña abierta apretá <b id="scAtajo">Ctrl + Shift (⇧) + J</b>
+        (Shift es la flecha ⇧ hacia arriba, <u>no</u> Bloq Mayús; o apretá F12 y
+        elegí la pestaña <b>Console</b>) y pegá esta línea con Enter:
         <button class="btn btn-ghost" id="btnCopiarSnippet" style="padding:4px 8px;margin:4px 0;">Copiar línea</button><br>
         <code id="scSnippet" style="user-select:all">copy(document.cookie.match(/oauth_token=([^;]+)/)?.[1] || "no encontrado")</code><br>
         <b>3)</b> Pegá el resultado abajo en OAuth Token. El Client ID se completa solo.
@@ -1504,7 +1505,7 @@
     });
 
     if (/Mac/i.test(navigator.platform || navigator.userAgent)) {
-      document.getElementById("scAtajo").textContent = "Cmd+Opción+J";
+      document.getElementById("scAtajo").textContent = "Cmd + Opción + J";
     }
     document.getElementById("btnCopiarSnippet").addEventListener("click", async () => {
       const txt = document.getElementById("scSnippet").textContent;
