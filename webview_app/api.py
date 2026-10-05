@@ -104,6 +104,9 @@ class WebViewAPI:
         self.download_manager.start(self.controller.get_config_value("max_workers", 3))
 
         self._tracks: dict[str, TrackInfo] = {}
+        # URLs ya mandadas a descargar y todavia sin terminar: evita mandar dos
+        # veces la misma (p. ej. "Descargar pendientes" con la cola ya corriendo).
+        self._enviadas: set[str] = set()
         self._lock = threading.Lock()
         # Temas de las listas que el usuario abrió para elegir (por URL de la
         # lista), para no volver a pedirlos a YouTube al agregar la selección.
@@ -287,6 +290,7 @@ class WebViewAPI:
             self._push("track_added", _track_to_dict(info))
 
         self._asegurar_generos_en_segundo_plano([first] + extra_added)
+        self._auto_iniciar([first] + extra_added)
 
     def get_playlist_entries(self, playlist_url: str) -> dict:
         """
@@ -432,6 +436,7 @@ class WebViewAPI:
         for info in nuevas:
             self._push("track_added", _track_to_dict(info))
         self._asegurar_generos_en_segundo_plano(nuevas)
+        self._auto_iniciar(nuevas)
         return {"ok": True, "agregadas": len(nuevas)}
 
     def _mark_fetch_error(self, url: str, message: str) -> None:
@@ -458,15 +463,40 @@ class WebViewAPI:
         if not dest:
             return {"ok": False, "error": "Selecciona una carpeta de destino primero."}
 
+        with self._lock:
+            if url in self._enviadas:
+                return {"ok": False, "error": "Ya está en la cola de descarga"}
+            self._enviadas.add(url)
         self._submit_one(track, dest)
         return {"ok": True}
+
+    def _auto_iniciar(self, tracks: list) -> None:
+        """
+        Manda a descargar lo que la persona acaba de agregar: si un tema se
+        agrega a la cola (por link, o marcado en una lista de recomendados) es
+        porque se quiere bajar. Las sugerencias que NO se marcan no pasan por
+        aca, asi que nunca se baja nada que no se haya elegido.
+        """
+        if not self.controller.get_config_value("auto_start_downloads", True):
+            return
+        dest = self.controller.get_config_value("dest_folder", "")
+        if not dest:
+            return
+        for track in tracks:
+            with self._lock:
+                if track.status != STATUS_PENDING or track.url in self._enviadas:
+                    continue
+                self._enviadas.add(track.url)
+            self._submit_one(track, dest)
 
     def start_all_pending(self) -> dict:
         with self._lock:
             pending = [
                 t for t in self._tracks.values()
                 if t.status not in (STATUS_DOWNLOADING, STATUS_FETCHING, STATUS_DONE, STATUS_SKIP)
+                and t.url not in self._enviadas
             ]
+            self._enviadas.update(t.url for t in pending)
         dest = self.controller.get_config_value("dest_folder", "")
         if not dest:
             return {"ok": False, "error": "Selecciona una carpeta de destino primero."}
@@ -534,6 +564,8 @@ class WebViewAPI:
             if track:
                 track.status = status
                 track.error_msg = error_msg
+            if status in (STATUS_DONE, STATUS_ERROR, STATUS_SKIP, STATUS_CANCELLED):
+                self._enviadas.discard(url)   # ya termino: se puede reintentar
         self._push("track_status", {
             "url": url,
             "status": status,

@@ -33,6 +33,7 @@ class ConfigManager:
         # carpeta de biblioteca aparte (ver WebViewAPI.genre_root).
         "subfolder_by_genre": True,
         "embed_genre": True,
+        "auto_start_downloads": True,
         "normalize_volume": False,
         "remove_silence": False,
         "embed_artwork": True,

@@ -69,6 +69,8 @@ def _api(likes, cliente):
     api._lock = threading.Lock()
     api._window = None
     api._playlist_cache = {}
+    api._enviadas = set()
+    api._auto_iniciar = MagicMock()   # el inicio automatico se prueba en test_auto_inicio.py
     api.controller = MagicMock()
     api.controller.is_track_downloaded.return_value = False
     api._push = MagicMock()
