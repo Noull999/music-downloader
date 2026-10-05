@@ -35,7 +35,12 @@ jobs:
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-build.txt
+          if [ "${{ matrix.nombre }}" = "intel" ]; then
+            # Mac Intel = Macs viejos: versiones que aun soportan macOS 10.13+
+            pip install -r requirements-build.txt -c constraints-mac-intel.txt
+          else
+            pip install -r requirements-build.txt
+          fi
 
       - name: Tests
         run: |
@@ -47,14 +52,16 @@ jobs:
 
       - name: Version minima de macOS que exige la app
         run: |
-          # Lista el macOS minimo de cada binario de la app (LC_BUILD_VERSION /
-          # LC_VERSION_MIN) y muestra el mas exigente: es la version mas vieja de
-          # macOS en la que puede abrir.
-          find dist/MusicDownloader.app -type f \( -name "*.so" -o -name "*.dylib" -o -perm -u+x \) 2>/dev/null | while read f; do
+          # macOS minimo (minos) de cada binario de la app. Se muestran los que
+          # pasan de 10.15 (el tope de un MacBook de 2012) y el peor de todos.
+          find dist/MusicDownloader.app -type f | while read f; do
             file "$f" | grep -q "Mach-O" || continue
             v=$(otool -l "$f" 2>/dev/null | awk '/LC_BUILD_VERSION/{b=1} b&&/minos/{print $2; b=0} /LC_VERSION_MIN_MACOSX/{m=1} m&&/version/{print $2; m=0}' | head -1)
             [ -n "$v" ] && echo "$v $f"
-          done | sort -t. -k1,1n -k2,2n | tail -15
+          done > /tmp/minos.txt
+          echo "== Binarios que exigen mas que macOS 10.15:"
+          awk '{split($1,a,"."); if (a[1]+0>10 || (a[1]+0==10 && a[2]+0>15)) print}' /tmp/minos.txt | sed 's#dist/MusicDownloader.app/Contents/##' | sort -u | head -40
+          echo "== Peor caso:"; sort -t. -k1,1n -k2,2n /tmp/minos.txt | tail -1
 
       - name: Renombrar
         run: mv dist/MusicDownloader-mac.zip dist/MusicDownloader-mac-${{ matrix.nombre }}.zip

@@ -1,0 +1,11 @@
+# Versiones que todavia publican binarios para macOS 10.9-10.13 (Intel). Las mas
+# nuevas exigen macOS 11-14 y no abren en Macs viejos (MacBook de 2012: hasta
+# Catalina 10.15). Solo se aplican al build para Mac Intel.
+numpy==1.26.4
+scipy==1.13.1
+scikit-learn==1.5.2
+numba==0.59.1
+llvmlite==0.42.0
+librosa==0.10.2.post1
+Pillow==10.4.0
+imageio-ffmpeg==0.4.9
