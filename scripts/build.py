@@ -205,6 +205,8 @@ def ensure_quickjs() -> Path | None:
     if target.exists() and target.stat().st_size > 500_000:
         print(f"✓ QuickJS ya presente en {target}")
         return target
+    if SYSTEM == "Darwin" and _compilar_quickjs_mac(target):
+        return target
     url = f"https://github.com/quickjs-ng/quickjs/releases/download/{QUICKJS_VERSION}/{asset}"
     try:
         import urllib.request
@@ -215,6 +217,40 @@ def ensure_quickjs() -> Path | None:
     except Exception as e:
         print(f"⚠️  No se pudo descargar QuickJS ({e}); YouTube usará Node/Deno si están instalados")
         return None
+
+
+def _compilar_quickjs_mac(target: Path) -> bool:
+    """
+    El qjs precompilado para Mac exige macOS 26 y no corre en Macs viejos
+    (un MacBook de 2012 llega a Catalina 10.15). Se compila desde el codigo
+    fuente para macOS 10.13 en adelante; tarda menos de un minuto.
+    """
+    import tarfile
+    import tempfile
+    import urllib.request
+    try:
+        tmp = Path(tempfile.mkdtemp())
+        tgz = tmp / "src.tar.gz"
+        urllib.request.urlretrieve(
+            f"https://github.com/quickjs-ng/quickjs/archive/refs/tags/{QUICKJS_VERSION}.tar.gz", tgz)
+        with tarfile.open(tgz) as tf:
+            tf.extractall(tmp)
+        src = next(p for p in tmp.iterdir() if p.is_dir())
+        env = dict(os.environ, MACOSX_DEPLOYMENT_TARGET="10.13")
+        r1 = run(["cmake", "-S", str(src), "-B", str(src / "b"), "-DCMAKE_BUILD_TYPE=Release",
+                  "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.13"], env=env)
+        r2 = run(["cmake", "--build", str(src / "b"), "--target", "qjs_exe", "-j", "4"], env=env)
+        hecho = next((p for p in (src / "b").rglob("qjs") if p.is_file()), None)
+        if r1.returncode or r2.returncode or not hecho:
+            print("⚠️  No se pudo compilar QuickJS; se usa el precompilado")
+            return False
+        shutil.copy(hecho, target)
+        target.chmod(0o755)
+        print(f"✓ QuickJS compilado para macOS 10.13+ en {target}")
+        return True
+    except Exception as e:
+        print(f"⚠️  No se pudo compilar QuickJS ({e}); se usa el precompilado")
+        return False
 
 
 def build(console: bool, no_ffmpeg: bool, clean: bool):
