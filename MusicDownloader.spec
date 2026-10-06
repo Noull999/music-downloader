@@ -45,7 +45,7 @@ if os.path.isfile(_fpcalc_bundle):
 
 # pywebview trae backends por plataforma y assets propios que no se detectan
 # siguiendo imports.
-_paquetes = ['webview', 'yt_dlp']
+_paquetes = ['webview', 'yt_dlp', 'yt_dlp_ejs']
 if IS_WIN:
     _paquetes += ['win11toast', 'winrt']
 for _pkg in _paquetes:
@@ -57,6 +57,12 @@ for _pkg in _paquetes:
     except Exception:
         # Paquete opcional ausente: la app degrada sola (p.ej. notificaciones)
         pass
+
+# QuickJS: motor JavaScript que yt-dlp usa para descifrar los links de
+# YouTube (utils/js_runtime.py lo busca en sys._MEIPASS/quickjs/).
+_qjs_bundle = os.path.join('build', 'quickjs', 'qjs' + _EXE_EXT)
+if os.path.isfile(_qjs_bundle):
+    binaries.append((_qjs_bundle, 'quickjs'))
 
 # ffmpeg embebido (onefile): scripts/build.py lo descarga/copia a build/ffmpeg
 # antes de invocar PyInstaller. Se extrae a sys._MEIPASS/ffmpeg/ en runtime.

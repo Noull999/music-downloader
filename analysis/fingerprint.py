@@ -24,6 +24,7 @@ import numpy as np
 
 from sync import match_utils
 from utils.subprocess_utils import NO_WINDOW
+from utils import js_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -348,7 +349,7 @@ def download_preview(
         ydl_opts["extractor_args"] = {"soundcloud": {"oauth_token": [oauth_token]}}
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(js_runtime.aplicar(ydl_opts)) as ydl:
             ydl.download([url])
     except Exception as e:
         logger.debug("No se pudo bajar preview de %s: %s", url, e)

@@ -2,7 +2,9 @@
 pywebview>=5.0
 
 # Descarga (YouTube y SoundCloud)
-yt-dlp>=2024.1.1
+yt-dlp>=2026.8.19
+# Scripts que descifran los links de YouTube (los ejecuta un motor JS, ver utils/js_runtime.py)
+yt-dlp-ejs>=0.8.0
 
 # Metadatos de audio
 mutagen>=1.47.0

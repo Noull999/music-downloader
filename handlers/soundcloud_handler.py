@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 import yt_dlp
 
+from utils import js_runtime
 from handlers.base_handler import BaseHandler, TrackMetadata, ffmpeg_location
 
 logger = logging.getLogger(__name__)
@@ -72,7 +73,7 @@ class SoundCloudHandler(BaseHandler):
             "extract_flat": "in_playlist",
             "skip_download": True,
         }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(js_runtime.aplicar(ydl_opts)) as ydl:
             try:
                 info = ydl.extract_info(url, download=False)
             except yt_dlp.utils.DownloadError as exc:
@@ -100,7 +101,7 @@ class SoundCloudHandler(BaseHandler):
     def _full_info(self, url: str) -> dict | None:
         opts = {"quiet": True, "no_warnings": True, "skip_download": True}
         try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
+            with yt_dlp.YoutubeDL(js_runtime.aplicar(opts)) as ydl:
                 return ydl.extract_info(url, download=False)
         except Exception:
             return None
@@ -209,7 +210,7 @@ class SoundCloudHandler(BaseHandler):
             }
 
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with yt_dlp.YoutubeDL(js_runtime.aplicar(ydl_opts)) as ydl:
                 ydl.download([url])
         except yt_dlp.utils.DownloadError as exc:
             err = str(exc)
