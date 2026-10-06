@@ -448,6 +448,7 @@
         <button class="btn btn-ghost" id="btnScLikes"><svg class="picon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M13 22h-2v-2h2v2Zm-2-2H9v-2h2v2Zm4 0h-2v-2h2v2Zm-6-2H7v-2h2v2Zm8 0h-2v-2h2v2ZM7 16H5v-2h2v2Zm12 0h-2v-2h2v2ZM5 14H3v-2h2v2Zm16 0h-2v-2h2v2ZM3 12H1V6h2v6Zm20 0h-2V6h2v6ZM13 8h-2V6h2v2ZM5 6H3V4h2v2Zm6 0H9V4h2v2Zm4 0h-2V4h2v2Zm6 0h-2V4h2v2ZM9 4H5V2h4v2Zm10 0h-4V2h4v2Z"/></svg>Mis Likes</button>
       </div>
       <button class="btn btn-ghost btn-block" id="btnDiscover" title="Temas que SoundCloud recomienda a partir de tus últimos likes">✦ Descubrir temas</button>
+      <button class="btn btn-ghost btn-block" id="btnArtistas" title="Lo que subieron, desde la última vez que miraste, los artistas que más likeas">🔔 Nuevos de mis artistas</button>
       <button class="btn btn-ghost btn-block" id="btnUpgrades">📀 Mejor calidad disponible</button>
       <button class="btn btn-ghost btn-block" id="btnScConnect"><svg class="picon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h7v2H4zm0 10h7v2H4zM2 8h2v8H2zm18-2h-7v2h7zm0 10h-7v2h7zm2-8h-2v8h2zM7 11h10v2H7z"/></svg>Conectar cuenta</button>
     </div>
@@ -1158,6 +1159,7 @@
       const s = document.createElement("span");
       s.className = "hrow-sub";
       s.textContent = e.ya_descargada ? "ya la tenés" : (e.en_cola ? "ya está en la cola" : (
+        (e.nota ? e.nota + (e.genero ? " · " : "") : "") +
         (e.coincidencias ? `recomendado por ${e.coincidencias} de tus likes` + (e.genero ? " · " : "") : "") + (e.genero || "")));
       main.append(t, s);
       const dur = document.createElement("span");
@@ -1282,10 +1284,11 @@
     openModal("modalPlaylist");
     // La ventana siempre muestra UNA plataforma: la del tema o link de donde se abrió.
     const esDescubrir = playlistUrl === "sc-discover";
+    const esArtistas = playlistUrl === "sc-artists";
     const esRadio = /[?&]list=RD|^sc-related:/.test(playlistUrl);
-    const plataforma = /^sc-related:|^sc-discover$|soundcloud\.com/.test(playlistUrl) ? "SoundCloud" : "YouTube";
+    const plataforma = /^sc-related:|^sc-discover$|^sc-artists$|soundcloud\.com/.test(playlistUrl) ? "SoundCloud" : "YouTube";
     document.getElementById("playlistTitle").textContent =
-      esDescubrir ? "Descubrir en SoundCloud" : `${esRadio ? "Parecidos" : "Lista"} en ${plataforma}`;
+      esArtistas ? "Nuevos de tus artistas" : esDescubrir ? "Descubrir en SoundCloud" : `${esRadio ? "Parecidos" : "Lista"} en ${plataforma}`;
     const intro = document.getElementById("playlistIntro");
     document.getElementById("playlistFilterRow").style.display = "none";
     document.getElementById("playlistTools").style.display = "none";
@@ -1302,7 +1305,9 @@
     }
     listaActual = { url: playlistUrl, entradas: r.entradas };
     const nuevas = r.entradas.filter(e => !e.en_cola && !e.ya_descargada).length;
-    intro.textContent = r.descubrir
+    intro.textContent = r.artistas
+      ? `Temas que subieron desde el ${r.desde} los artistas que más likeas (${nuevas} disponibles). La próxima vez solo verás lo que se suba después de hoy. Nada se baja solo: marcá los que quieras.`
+      : r.descubrir
       ? `Temas que SoundCloud recomienda a partir de tus últimos likes, primero los que más de ellos recomiendan (${nuevas} disponibles). Nada se baja solo: marcá los que quieras.`
       : r.es_radio
       ? `Los ${r.entradas.length} temas más parecidos que sugiere ${r.plataforma} (${nuevas} disponibles). Marcá los que quieras.`
@@ -1656,6 +1661,7 @@
 
     // ---- Mejor calidad disponible ----
     document.getElementById("btnDiscover").addEventListener("click", () => abrirLista("sc-discover"));
+    document.getElementById("btnArtistas").addEventListener("click", () => abrirLista("sc-artists"));
 
     document.getElementById("btnUpgrades").addEventListener("click", async () => {
       openModal("modalUpgrades");

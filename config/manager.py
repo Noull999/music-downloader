@@ -34,6 +34,7 @@ class ConfigManager:
         "subfolder_by_genre": True,
         "embed_genre": True,
         "auto_start_downloads": True,
+        "artist_watch_last_check": "",
         "normalize_volume": False,
         "remove_silence": False,
         "embed_artwork": True,
