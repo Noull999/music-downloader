@@ -16,6 +16,7 @@ from urllib.parse import urlparse, parse_qs
 
 import yt_dlp
 
+from utils import js_runtime
 from handlers.base_handler import BaseHandler, TrackMetadata, ffmpeg_location
 
 logger = logging.getLogger(__name__)
@@ -140,7 +141,7 @@ class YouTubeHandler(BaseHandler):
             "skip_download": True,
         }
         try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
+            with yt_dlp.YoutubeDL(js_runtime.aplicar(opts)) as ydl:
                 info = ydl.extract_info(url, download=False)
         except yt_dlp.utils.DownloadError as exc:
             raise RuntimeError(self._map_error(str(exc))) from exc
@@ -164,7 +165,7 @@ class YouTubeHandler(BaseHandler):
         if limite:
             opts["playlistend"] = limite
         try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
+            with yt_dlp.YoutubeDL(js_runtime.aplicar(opts)) as ydl:
                 info = ydl.extract_info(url, download=False)
         except yt_dlp.utils.DownloadError as exc:
             raise RuntimeError(self._map_error(str(exc))) from exc
@@ -320,7 +321,7 @@ class YouTubeHandler(BaseHandler):
             ydl_opts["ffmpeg_location"] = loc
 
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with yt_dlp.YoutubeDL(js_runtime.aplicar(ydl_opts)) as ydl:
                 ydl.download([url])
         except yt_dlp.utils.DownloadError as exc:
             err = str(exc)

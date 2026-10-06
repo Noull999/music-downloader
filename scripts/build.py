@@ -183,6 +183,40 @@ def ensure_fpcalc() -> Path | None:
         return None
 
 
+QUICKJS_VERSION = "v0.17.0"
+
+
+def ensure_quickjs() -> Path | None:
+    """
+    QuickJS (motor JavaScript de ~2 MB): yt-dlp lo usa para descifrar los
+    links de YouTube. Va dentro del ejecutable para que YouTube funcione en
+    cualquier equipo sin instalar Node ni Deno (ver utils/js_runtime.py).
+    """
+    import platform as _pf
+    target_dir = BASE / "build" / "quickjs"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if SYSTEM == "Windows":
+        asset, target = "qjs-windows-x86_64.exe", target_dir / "qjs.exe"
+    elif SYSTEM == "Darwin":
+        arch = "arm64" if _pf.machine() == "arm64" else "x86_64"
+        asset, target = f"qjs-darwin-{arch}", target_dir / "qjs"
+    else:
+        asset, target = "qjs-linux-x86_64", target_dir / "qjs"
+    if target.exists() and target.stat().st_size > 500_000:
+        print(f"✓ QuickJS ya presente en {target}")
+        return target
+    url = f"https://github.com/quickjs-ng/quickjs/releases/download/{QUICKJS_VERSION}/{asset}"
+    try:
+        import urllib.request
+        urllib.request.urlretrieve(url, target)
+        target.chmod(0o755)
+        print(f"✓ QuickJS listo en {target}")
+        return target
+    except Exception as e:
+        print(f"⚠️  No se pudo descargar QuickJS ({e}); YouTube usará Node/Deno si están instalados")
+        return None
+
+
 def build(console: bool, no_ffmpeg: bool, clean: bool):
     # 1️⃣ Limpiar si pide
     if clean:
@@ -199,6 +233,7 @@ def build(console: bool, no_ffmpeg: bool, clean: bool):
     # 2️⃣ ffmpeg + fpcalc
     ffmpeg_path = None if no_ffmpeg else ensure_ffmpeg()
     fpcalc_path = ensure_fpcalc()
+    ensure_quickjs()
 
     # 3️⃣ PyInstaller
     # (ffmpeg se embebe leyendo build/ffmpeg/ffmpeg.exe desde el propio .spec,

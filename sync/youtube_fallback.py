@@ -26,6 +26,7 @@ import re
 from typing import Callable, Optional
 
 from sync import match_utils
+from utils import js_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,7 @@ def buscar_en_youtube(query: str) -> list[dict]:
 
     opts = {"quiet": True, "no_warnings": True, "extract_flat": True,
             "skip_download": True}
-    with yt_dlp.YoutubeDL(opts) as ydl:
+    with yt_dlp.YoutubeDL(js_runtime.aplicar(opts)) as ydl:
         info = ydl.extract_info(f"ytsearch{RESULTADOS_A_REVISAR}:{query}", download=False)
     resultados = []
     for r in (info or {}).get("entries") or []:

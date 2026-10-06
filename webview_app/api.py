@@ -41,6 +41,7 @@ from sync.sync_manager import SyncManager
 from url_detector import detect_handler, detect_platform_name
 from utils import disk_usage
 from utils.validators import parse_urls_from_text
+from utils import js_runtime
 
 _AUDIO_EXTENSIONS = match_utils.AUDIO_EXTENSIONS
 
@@ -383,7 +384,7 @@ class WebViewAPI:
             if token:
                 opts["extractor_args"] = {"soundcloud": {"oauth_token": [token]}}
         try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
+            with yt_dlp.YoutubeDL(js_runtime.aplicar(opts)) as ydl:
                 info = ydl.extract_info(url, download=False)
         except Exception as exc:
             return {"ok": False, "error": _motivo_sin_vista_previa(str(exc))}
