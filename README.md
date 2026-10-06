@@ -23,6 +23,7 @@ Aplicación de escritorio para descargar música de **SoundCloud y YouTube**, co
 - **Descubrir música sin descargar a ciegas**
   - Al pegar un link de **lista, perfil o set** (YouTube o SoundCloud) se abre una ventana para elegir cuáles temas agregar, en vez de bajarlos todos
   - **"Parecidos"**: temas recomendados a partir de un like, un video o tus últimos likes (**"✦ Descubrir temas"**), con tope de 50
+  - **"🔔 Nuevos de mis artistas"**: lo que subieron desde la última vez que miraste los artistas a los que les diste 2 o más likes (la lista de artistas cambia sola con tus likes); nunca repite lo ya visto ni lo que ya tienes
   - **Vista previa** con ▶ en cada fila, desde el 35% del tema, para decidir sin descargar
   - Nada se descarga solo: las sugerencias solo se bajan si las marcas
 

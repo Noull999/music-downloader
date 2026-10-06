@@ -21,6 +21,7 @@ import sys
 import threading
 import time
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -34,7 +35,7 @@ from models import (
     STATUS_DONE, STATUS_ERROR, STATUS_SKIP, STATUS_CANCELLED,
 )
 from quality.presets import get_preset
-from sync import genre_utils, match_utils, playlist_export, soundcloud_lists, task_scheduler, upgrade_links
+from sync import artist_watch, genre_utils, match_utils, playlist_export, soundcloud_lists, task_scheduler, upgrade_links
 from sync.genre_chain import ResolutorDeGenero
 from sync.soundcloud_api import SoundCloudAPIClient
 from sync.sync_manager import SyncManager
@@ -303,14 +304,23 @@ class WebViewAPI:
         entera como antes con las playlists puras.
         """
         try:
+            notas: dict = {}
+            desde_artistas = None
             if (soundcloud_lists.es_parecidos(playlist_url) or "soundcloud.com" in playlist_url
-                    or playlist_url == soundcloud_lists.REF_DESCUBRIR):
+                    or playlist_url in (soundcloud_lists.REF_DESCUBRIR, artist_watch.REF_ARTISTAS)):
                 plataforma = "SoundCloud"
                 cli = self._sc_client()
                 if cli is None:
                     return {"ok": False, "error": "Conectá tu cuenta de SoundCloud (botón "
                                                   "«Conectar cuenta») para ver listas y parecidos."}
-                if playlist_url == soundcloud_lists.REF_DESCUBRIR:
+                if playlist_url == artist_watch.REF_ARTISTAS:
+                    nuevos, desde_artistas = self._artistas_nuevos(cli)
+                    metas = [m for m, _f, _n in nuevos]
+                    notas = {m.url: f"subido el {f[:10]} · {n} likes tuyos a este artista"
+                             for m, f, n in nuevos}
+                    coincidencias = {}
+                    es_radio = False
+                elif playlist_url == soundcloud_lists.REF_DESCUBRIR:
                     descubiertos = self._descubrir(cli)
                     metas = [m for m, _ in descubiertos]
                     coincidencias = {m.url: n for m, n in descubiertos}
@@ -335,12 +345,16 @@ class WebViewAPI:
             return {"ok": False, "error": str(exc)[:200]}
 
         if not metas:
+            if desde_artistas is not None:
+                return {"ok": False, "error": "No hay temas nuevos de tus artistas desde el "
+                                              f"{desde_artistas.date().isoformat()}."}
             return {"ok": False, "error": "La lista está vacía."}
 
         with self._lock:
             self._playlist_cache[playlist_url] = {m.url: m for m in metas}
             en_cola = set(self._tracks)
         es_descubrir = playlist_url == soundcloud_lists.REF_DESCUBRIR
+        es_artistas = playlist_url == artist_watch.REF_ARTISTAS
 
         entradas = []
         for m in metas:
@@ -356,9 +370,11 @@ class WebViewAPI:
                 # antes de decidir si bajarlo.
                 "genero": genre_utils.resolve_genre(m.genre, m.tags, None) or "",
                 "coincidencias": coincidencias.get(m.url, 0) if es_descubrir else 0,
+                "nota": notas.get(m.url, ""),
             })
         return {"ok": True, "entradas": entradas, "es_radio": es_radio, "plataforma": plataforma,
-                "descubrir": es_descubrir}
+                "descubrir": es_descubrir, "artistas": es_artistas,
+                "desde": desde_artistas.date().isoformat() if desde_artistas else ""}
 
     def get_preview_url(self, url: str) -> dict:
         """
@@ -415,6 +431,27 @@ class WebViewAPI:
         # arriba de la lista ocupando lugar.
         ya_tenes = {l["url"] for l in likes} | self.controller.history.get_downloaded_urls()
         return soundcloud_lists.descubrir(cli, semillas, ya_tenes)
+
+    def _artistas_nuevos(self, cli):
+        """
+        Temas nuevos de los artistas que mas likeas (ver sync/artist_watch.py).
+        Recuerda cuando se miro por ultima vez para no repetir lo ya visto.
+        Devuelve (resultados, desde).
+        """
+        if not self._sync_manager:
+            raise RuntimeError("Conectá tu cuenta de SoundCloud y sincronizá primero, "
+                               "así hay likes de dónde partir.")
+        likes = self._sync_manager.history.load_likes()
+        ids = [l["id"] for l in likes if l.get("id")]
+        if not ids:
+            raise RuntimeError("Todavía no hay likes guardados: tocá «Sincronizar» primero.")
+        ahora = datetime.now(timezone.utc)
+        desde = artist_watch.calcular_desde(
+            self.controller.get_config_value("artist_watch_last_check", ""), ahora)
+        excluir = {l["url"] for l in likes} | self.controller.history.get_downloaded_urls()
+        resultado = artist_watch.nuevos_de_artistas(cli, ids, excluir, desde)
+        self.controller.set_config_value("artist_watch_last_check", ahora.isoformat())
+        return resultado, desde
 
     def add_playlist_selection(self, playlist_url: str, urls: list) -> dict:
         """Agrega a la cola solo los temas marcados de una lista ya abierta."""
