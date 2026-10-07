@@ -58,6 +58,42 @@ if not os.path.isfile(_CONFIG_PATH):
         shutil.copy2(_legacy_config, _CONFIG_PATH)
 
 
+def _error_fatal(titulo: str, detalle: str) -> None:
+    """
+    Muestra el error en una ventana del sistema, lo guarda en
+    ~/.music_downloader/error_arranque.txt y cierra la app.
+
+    Antes, si algo fallaba al arrancar, la app se cerraba sin mostrar nada
+    (sobre todo en macOS, donde no hay consola): imposible saber por que.
+    """
+    texto = f"{titulo}\n\n{detalle}".strip()
+    archivo = Path.home() / ".music_downloader" / "error_arranque.txt"
+    try:
+        archivo.parent.mkdir(parents=True, exist_ok=True)
+        archivo.write_text(texto, encoding="utf-8")
+    except OSError:
+        archivo = None
+    aviso = texto[-1500:]
+    if archivo:
+        aviso += f"\n\n(Guardado en {archivo})"
+    try:
+        if sys.platform == "darwin":
+            import subprocess
+            seguro = aviso.replace("\\", "\\\\").replace('"', '\\"')
+            subprocess.run(
+                ["osascript", "-e",
+                 f'display alert "Music Downloader no pudo abrir" message "{seguro}" as critical'],
+                timeout=600,
+            )
+        elif sys.platform == "win32":
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None, aviso, "Music Downloader no pudo abrir", 0x10)
+    except Exception:
+        pass
+    print(texto, file=sys.stderr)
+    sys.exit(1)
+
+
 def validate_startup() -> bool:
     try:
         print("🔍 Validando dependencias...")
@@ -69,11 +105,10 @@ def validate_startup() -> bool:
             print(f"  {status} {dep}{version}")
         return True
     except DependencyNotFoundError as e:
-        print(f"\n❌ ERROR DE DEPENDENCIA:\n{e}\n")
-        return False
+        _error_fatal("Falta una dependencia", str(e))
     except Exception as e:
-        print(f"\n❌ ERROR AL VALIDAR:\n{e}\n")
-        return False
+        _error_fatal("Error al validar las dependencias", str(e))
+    return False
 
 
 def _limpiar_cache_de_imagenes() -> None:
@@ -123,8 +158,7 @@ def main():
         sys.exit(1)
 
     if not os.path.exists(_VIEW_HTML):
-        print(f"\n❌ No se encontró la vista: {_VIEW_HTML}")
-        sys.exit(1)
+        _error_fatal("Falta un archivo de la app", f"No se encontró la vista: {_VIEW_HTML}")
 
     logger = setup_logging(log_level="INFO")
     logger.info("=" * 60)
@@ -154,4 +188,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException:
+        import traceback
+        _error_fatal("Error inesperado al abrir la app", traceback.format_exc())

@@ -10,7 +10,7 @@ from pathlib import Path
 
 def setup_logging(
     log_level: str = "INFO",
-    log_file: str = "music_downloader.log",
+    log_file: str = str(Path.home() / ".music_downloader" / "music_downloader.log"),
     max_bytes: int = 5_242_880,  # 5 MB
     backup_count: int = 3,
 ) -> logging.Logger:
@@ -19,7 +19,10 @@ def setup_logging(
 
     Args:
         log_level: DEBUG, INFO, WARNING, ERROR (default: INFO)
-        log_file: nombre del archivo de log (se guarda en proyecto root)
+        log_file: archivo de log. Va en ~/.music_downloader/ y no en la
+                  carpeta actual: al abrir la app desde el Finder de macOS la
+                  carpeta actual es "/", que es de solo lectura, y la app se
+                  cerraba sola al intentar crear el log ahi.
         max_bytes: tamaño máximo antes de rotar (default: 5 MB)
         backup_count: número de backups a mantener (default: 3)
 
@@ -45,16 +48,20 @@ def setup_logging(
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
-    # 2️⃣ Handler: Archivo con rotación
-    file_handler = RotatingFileHandler(
-        filename=str(log_path),
-        maxBytes=max_bytes,
-        backupCount=backup_count,
-        encoding="utf-8"
-    )
-    file_handler.setLevel(logging.DEBUG)  # Archivo siempre captura TODO
-    file_handler.setFormatter(formatter)
-    root_logger.addHandler(file_handler)
+    # 2️⃣ Handler: Archivo con rotación. Si no se puede escribir el log, la
+    # app sigue igual (sin log en archivo) en vez de no abrir.
+    try:
+        file_handler = RotatingFileHandler(
+            filename=str(log_path),
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding="utf-8"
+        )
+        file_handler.setLevel(logging.DEBUG)  # Archivo siempre captura TODO
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+    except OSError as e:
+        root_logger.warning("No se pudo crear el log en %s: %s", log_path, e)
 
     # Log inicial
     root_logger.info(

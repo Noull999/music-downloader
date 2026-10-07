@@ -92,7 +92,10 @@ class FFmpegValidator:
             result = subprocess.run(
                 [ffmpeg_path, "-version"],
                 capture_output=True,
-                timeout=5,
+                # Generoso: la primera vez, macOS revisa cada binario de una
+                # app descargada antes de dejarlo correr, y en un Mac viejo eso
+                # tarda varios segundos.
+                timeout=60,
                 text=True,
                 creationflags=NO_WINDOW,
             )
