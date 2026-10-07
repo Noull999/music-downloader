@@ -63,6 +63,25 @@ jobs:
           awk '{split($1,a,"."); if (a[1]+0>10 || (a[1]+0==10 && a[2]+0>15)) print}' /tmp/minos.txt | sed 's#dist/MusicDownloader.app/Contents/##' | sort -u | head -40
           echo "== Peor caso:"; sort -t. -k1,1n -k2,2n /tmp/minos.txt | tail -1
 
+      - name: Prueba de arranque (como al abrirla desde el Finder)
+        run: |
+          # El Finder abre las apps con la carpeta actual en "/", que en macOS
+          # es de solo lectura. Se arranca igual y se mira si la app sigue viva.
+          APP="$PWD/dist/MusicDownloader.app/Contents/MacOS/MusicDownloader"
+          cd /
+          "$APP" > /tmp/arranque.txt 2>&1 &
+          PID=$!
+          for i in $(seq 1 45); do sleep 1; kill -0 $PID 2>/dev/null || break; done
+          if kill -0 $PID 2>/dev/null; then
+            echo "OK: la app sigue abierta despues de 45 s"
+            kill $PID || true
+            tail -15 /tmp/arranque.txt
+          else
+            echo "FALLA: la app se cerro sola al arrancar. Salida:"
+            cat /tmp/arranque.txt
+            exit 1
+          fi
+
       - name: Renombrar
         run: mv dist/MusicDownloader-mac.zip dist/MusicDownloader-mac-${{ matrix.nombre }}.zip
 
