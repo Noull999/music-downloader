@@ -75,15 +75,22 @@ def ensure_ffmpeg() -> Path | None:
         target = target_dir / "ffmpeg"
         if target.exists() and target.stat().st_size > 1_000_000:
             return target
-        try:
-            import imageio_ffmpeg
-            shutil.copy(imageio_ffmpeg.get_ffmpeg_exe(), target)
-            target.chmod(0o755)
-            print(f"✓ ffmpeg estático copiado a {target}")
-            return target
-        except Exception as e:
-            print(f"⚠️  No se pudo obtener un ffmpeg estático ({e}); pip install imageio-ffmpeg")
+        # Se toma el binario directo de la carpeta del paquete, SIN importarlo:
+        # imageio-ffmpeg 0.4.x (el que funciona en Macs viejos) importa
+        # pkg_resources, que ya no existe en setuptools nuevo, y eso hacia que
+        # el build saliera sin ffmpeg y la app se cerrara al abrir.
+        import importlib.util
+        spec = importlib.util.find_spec("imageio_ffmpeg")
+        carpetas = list(spec.submodule_search_locations or []) if spec else []
+        binarios = [p for c in carpetas for p in (Path(c) / "binaries").glob("ffmpeg-*")
+                    if p.is_file() and p.stat().st_size > 1_000_000]
+        if not binarios:
+            print("⚠️  No se encontró el ffmpeg estático de imageio-ffmpeg (pip install imageio-ffmpeg)")
             return None
+        shutil.copy(binarios[0], target)
+        target.chmod(0o755)
+        print(f"✓ ffmpeg estático copiado a {target} (desde {binarios[0].name})")
+        return target
 
     else:
         # Linux: usa el del sistema
@@ -268,6 +275,11 @@ def build(console: bool, no_ffmpeg: bool, clean: bool):
 
     # 2️⃣ ffmpeg + fpcalc
     ffmpeg_path = None if no_ffmpeg else ensure_ffmpeg()
+    if not no_ffmpeg and SYSTEM in ("Windows", "Darwin") and not (ffmpeg_path and ffmpeg_path.exists()):
+        # Sin ffmpeg la app no abre (lo valida al arrancar): mejor que el
+        # build falle aca que entregar una app que se cierra sola.
+        print("❌ ffmpeg no quedó listo para empaquetar; se cancela el build")
+        raise SystemExit(1)
     fpcalc_path = ensure_fpcalc()
     ensure_quickjs()
 
