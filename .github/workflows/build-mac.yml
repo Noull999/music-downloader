@@ -69,7 +69,7 @@ jobs:
           # es de solo lectura. Se arranca igual y se mira si la app sigue viva.
           APP="$PWD/dist/MusicDownloader.app/Contents/MacOS/MusicDownloader"
           cd /
-          "$APP" > /tmp/arranque.txt 2>&1 &
+          MD_FORZAR_INFORME=1 "$APP" > /tmp/arranque.txt 2>&1 &
           PID=$!
           for i in $(seq 1 45); do sleep 1; kill -0 $PID 2>/dev/null || break; done
           if kill -0 $PID 2>/dev/null; then
@@ -78,6 +78,8 @@ jobs:
             kill $PID || true
             echo "== Lo que dice el log sobre la interfaz:"
             grep -E "Sistema:|Interfaz" ~/.music_downloader/music_downloader.log || echo "(nada)"
+            echo "== Informe de diagnostico (prueba) en el Escritorio:"
+            head -12 ~/Desktop/MusicDownloader-informe.txt || echo "(no se genero el informe)"
             tail -15 /tmp/arranque.txt
           else
             echo "FALLA: la app se cerro sola al arrancar. Salida:"

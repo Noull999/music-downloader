@@ -8,6 +8,7 @@ DownloadManager.
 Requiere: pip install pywebview
 """
 import io
+import json
 import logging
 import os
 import shutil
@@ -32,6 +33,7 @@ from config.manager import DEFAULT_CONFIG_PATH
 from utils.logger import setup_logging
 from utils.dependencies import validate_all_dependencies
 from utils.exceptions import DependencyNotFoundError
+from utils import informe
 
 # ── Base portable: desarrollo (.py) y PyInstaller (.exe) ───────────────
 if getattr(sys, "frozen", False):
@@ -73,9 +75,13 @@ def _error_fatal(titulo: str, detalle: str) -> None:
         archivo.write_text(texto, encoding="utf-8")
     except OSError:
         archivo = None
+    try:
+        archivo = informe.escribir_informe(titulo, detalle)
+    except Exception:
+        pass
     aviso = texto[-1500:]
     if archivo:
-        aviso += f"\n\n(Guardado en {archivo})"
+        aviso += f"\n\n(Informe guardado en {archivo}: mándaselo a quien te pasó la app)"
     try:
         if sys.platform == "darwin":
             import subprocess
@@ -126,10 +132,23 @@ def _vigilar_carga(window, logger) -> None:
             logger.info("Interfaz cargada: %s", estado)
         except Exception:
             logger.exception("La interfaz cargó pero no se pudo leer su estado")
+            return
+        try:
+            errores = json.loads(estado or "{}").get("errores") or []
+        except ValueError:
+            errores = []
+        if errores:
+            informe.informar("La interfaz cargó con errores", "\n".join(errores))
+        elif os.environ.get("MD_FORZAR_INFORME") == "1":   # para probar el informe en el build
+            informe.informar("Informe de prueba", estado or "", mostrar=False)
 
     def vigia():
         if not cargada.wait(30):
             logger.error("La interfaz NO terminó de cargar en 30 s (ventana en blanco o negro)")
+            # Un Mac viejo puede tardar en abrir la primera vez: se espera mas
+            # antes de molestar con el aviso.
+            if not cargada.wait(60):
+                informe.informar("La ventana no terminó de cargar en 90 segundos (se ve en blanco o negro)")
 
     window.events.loaded += al_cargar
     threading.Thread(target=vigia, daemon=True).start()
