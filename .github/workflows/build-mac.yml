@@ -74,13 +74,23 @@ jobs:
           for i in $(seq 1 45); do sleep 1; kill -0 $PID 2>/dev/null || break; done
           if kill -0 $PID 2>/dev/null; then
             echo "OK: la app sigue abierta despues de 45 s"
+            screencapture -x /tmp/pantalla.png || echo "(no se pudo capturar la pantalla)"
             kill $PID || true
+            echo "== Lo que dice el log sobre la interfaz:"
+            grep -E "Sistema:|Interfaz" ~/.music_downloader/music_downloader.log || echo "(nada)"
             tail -15 /tmp/arranque.txt
           else
             echo "FALLA: la app se cerro sola al arrancar. Salida:"
             cat /tmp/arranque.txt
             exit 1
           fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pantalla-${{ matrix.nombre }}
+          path: /tmp/pantalla.png
+          if-no-files-found: ignore
 
       - name: Renombrar
         run: mv dist/MusicDownloader-mac.zip dist/MusicDownloader-mac-${{ matrix.nombre }}.zip
