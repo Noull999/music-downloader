@@ -127,6 +127,8 @@ def _vigilar_carga(window, logger) -> None:
                 "           dom: t.domContentLoadedEventEnd - o, carga: t.loadEventEnd - o}; })(),"
                 " lentos: performance.getEntriesByType('resource').filter(function (r) { return r.duration > 500; })"
                 "   .map(function (r) { return r.name.split('/').pop() + ' ' + Math.round(r.duration) + 'ms'; }),"
+                " fuentes: (function () { var n = 0; if (document.fonts) document.fonts.forEach("
+                "   function (f) { if (f.status === 'loaded') n++; }); return n; })(),"
                 " errores: (window.__erroresJS || []).slice(0, 8), ua: navigator.userAgent})"
             )
             logger.info("Interfaz cargada: %s", estado)
@@ -230,10 +232,20 @@ def main():
     api = WebViewAPI(base_dir=_BASE, config_path=_CONFIG_PATH)
     _limpiar_cache_de_imagenes()
 
+    # La pagina entera (con las tipografias adentro) en vez de su ruta: asi
+    # pywebview no levanta un servidor local, cuya conexion podia tardar
+    # decenas de segundos o quedar bloqueada (ventana en negro). Con
+    # MD_VISTA_SERVIDOR=1 se usa el modo anterior, por si hiciera falta comparar.
+    if os.environ.get("MD_VISTA_SERVIDOR") == "1":
+        contenido = {"url": _VIEW_HTML}
+    else:
+        from webview_app.armar_vista import armar_html
+        contenido = {"html": armar_html(_VIEW_HTML)}
+
     window = webview.create_window(
         "Music Downloader",
-        _VIEW_HTML,
         js_api=api,
+        **contenido,
         width=1180,
         height=760,
         min_size=(860, 580),
