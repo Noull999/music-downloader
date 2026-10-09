@@ -115,6 +115,9 @@ def _vigilar_carga(window, logger) -> None:
         try:
             estado = window.evaluate_js(
                 "JSON.stringify({url: location.href, texto: document.body ? document.body.innerText.length : -1,"
+                " ms: Math.round(performance.now()),"
+                " lentos: performance.getEntriesByType('resource').filter(function (r) { return r.duration > 500; })"
+                "   .map(function (r) { return r.name.split('/').pop() + ' ' + Math.round(r.duration) + 'ms'; }),"
                 " errores: (window.__erroresJS || []).slice(0, 8), ua: navigator.userAgent})"
             )
             logger.info("Interfaz cargada: %s", estado)

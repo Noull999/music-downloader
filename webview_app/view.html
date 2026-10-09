@@ -12,9 +12,10 @@
     window.__erroresJS.push(String(msg) + " @" + linea + ":" + col);
   };
 </script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=Silkscreen:wght@400;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<!-- Tipografias incluidas en la app (webview_app/fonts). Antes se pedian a
+     Google Fonts al abrir: la pagina no se dibuja hasta recibirlas, y con una
+     conexion lenta o un macOS viejo la ventana quedaba en negro. -->
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
   :root {
     --void:    #060507;
@@ -986,7 +987,8 @@
   function renderQueueRow(url, isNew) {
     const t = tracks.get(url);
     if (!t) return;
-    document.querySelector("#queueList .empty-state")?.remove();
+    const vacio = document.querySelector("#queueList .empty-state");
+    if (vacio) vacio.remove();
 
     let el = rows.get(url);
     if (!el) {
@@ -1013,7 +1015,7 @@
         api().cancel_download(url);
       });
       el.querySelector('[data-action="playlist"]').addEventListener("click", () => {
-        abrirLista(tracks.get(url)?.playlist_url);
+        abrirLista((tracks.get(url) || {}).playlist_url);
       });
       document.getElementById("queueList").appendChild(el);
       rows.set(url, el);
@@ -1119,7 +1121,7 @@
 
   async function refreshStats() {
     const stats = await api().get_stats();
-    document.getElementById("statTotal").textContent = stats.total_downloads ?? 0;
+    document.getElementById("statTotal").textContent = stats.total_downloads != null ? stats.total_downloads : 0;
     document.getElementById("statSize").textContent = fmtBytes(stats.total_size_bytes || 0);
   }
 
@@ -2136,7 +2138,7 @@
     document.getElementById("cfgPattern").value = cfg.filename_pattern || "{artist} - {title}";
     document.getElementById("cfgSubArtist").checked = !!cfg.subfolder_by_artist;
     document.getElementById("cfgSubGenre").checked = !!cfg.subfolder_by_genre;
-    document.getElementById("cfgDelay").value = cfg.delay ?? 0.5;
+    document.getElementById("cfgDelay").value = cfg.delay != null ? cfg.delay : 0.5;
     document.getElementById("cfgAnalyzeAudio").checked = !!cfg.analyze_audio;
     document.getElementById("cfgKeyFormat").value = cfg.key_format || "camelot";
     document.getElementById("cfgFingerprintCheck").checked = cfg.fingerprint_check !== false;
