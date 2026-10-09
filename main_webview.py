@@ -116,6 +116,9 @@ def _vigilar_carga(window, logger) -> None:
             estado = window.evaluate_js(
                 "JSON.stringify({url: location.href, texto: document.body ? document.body.innerText.length : -1,"
                 " ms: Math.round(performance.now()),"
+                " etapas: (function () { var t = performance.timing, o = t.navigationStart;"
+                "   return {pedido: t.requestStart - o, respuesta: t.responseStart - o, html: t.responseEnd - o,"
+                "           dom: t.domContentLoadedEventEnd - o, carga: t.loadEventEnd - o}; })(),"
                 " lentos: performance.getEntriesByType('resource').filter(function (r) { return r.duration > 500; })"
                 "   .map(function (r) { return r.name.split('/').pop() + ' ' + Math.round(r.duration) + 'ms'; }),"
                 " errores: (window.__erroresJS || []).slice(0, 8), ua: navigator.userAgent})"
