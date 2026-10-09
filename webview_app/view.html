@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Music Downloader</title>
+<script>
+  // Primero de todo y en JavaScript antiguo, para que funcione en cualquier
+  // WebKit: guarda los errores de la pagina para el log de la app.
+  window.__erroresJS = [];
+  window.onerror = function (msg, src, linea, col) {
+    window.__erroresJS.push(String(msg) + " @" + linea + ":" + col);
+  };
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=Silkscreen:wght@400;700&family=JetBrains+Mono:wght@400;500;700&display=swap">

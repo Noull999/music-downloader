@@ -94,6 +94,41 @@ def _error_fatal(titulo: str, detalle: str) -> None:
     sys.exit(1)
 
 
+def _vigilar_carga(window, logger) -> None:
+    """
+    Deja en el log si la interfaz llego a cargarse y con que errores de
+    JavaScript, mas el sistema operativo. Si en otro equipo la ventana queda
+    en blanco o en negro, el log dice por que (en macOS no hay consola).
+    """
+    import platform
+    import threading
+
+    if sys.platform == "darwin":
+        logger.info("Sistema: macOS %s (%s)", platform.mac_ver()[0], platform.machine())
+    else:
+        logger.info("Sistema: %s %s", platform.system(), platform.release())
+
+    cargada = threading.Event()
+
+    def al_cargar():
+        cargada.set()
+        try:
+            estado = window.evaluate_js(
+                "JSON.stringify({url: location.href, texto: document.body ? document.body.innerText.length : -1,"
+                " errores: (window.__erroresJS || []).slice(0, 8), ua: navigator.userAgent})"
+            )
+            logger.info("Interfaz cargada: %s", estado)
+        except Exception:
+            logger.exception("La interfaz cargó pero no se pudo leer su estado")
+
+    def vigia():
+        if not cargada.wait(30):
+            logger.error("La interfaz NO terminó de cargar en 30 s (ventana en blanco o negro)")
+
+    window.events.loaded += al_cargar
+    threading.Thread(target=vigia, daemon=True).start()
+
+
 def validate_startup() -> bool:
     try:
         print("🔍 Validando dependencias...")
@@ -180,6 +215,7 @@ def main():
         background_color="#060507",
     )
     api.attach_window(window)
+    _vigilar_carga(window, logger)
 
     try:
         webview.start(debug=os.environ.get("MD_WEBVIEW_DEBUG") == "1")
