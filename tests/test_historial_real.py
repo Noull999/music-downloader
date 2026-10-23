@@ -113,3 +113,16 @@ class TestUrlsDescargadas(unittest.TestCase):
         h.add_download("local://x", title="D", local_path=str(real))
         os.remove(borrado)
         assert h.get_downloaded_urls() == {"u-real"}
+
+
+class TestFallidosQueDespuesSeBajan(unittest.TestCase):
+    """Un tema que fallo y despues se bajo bien no queda en 'No se pudieron descargar'."""
+
+    def test_bajarlo_lo_quita_de_fallidos(self):
+        from db.history import DownloadHistory
+        h = DownloadHistory(db_path=str(Path(tempfile.mkdtemp()) / "h.db"))
+        h.mark_failed("u1", "Light Up", "Kobosil", "ffprobe and ffmpeg not found")
+        h.mark_failed("u2", "Otro", "X", "DRM")
+        assert {f["url"] for f in h.get_failed()} == {"u1", "u2"}
+        h.mark_downloaded("u1", "Light Up", "Kobosil", "/m/Light Up.mp3")
+        assert {f["url"] for f in h.get_failed()} == {"u2"}
