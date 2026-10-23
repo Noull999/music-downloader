@@ -35,5 +35,20 @@ class TestVistaPortable(unittest.TestCase):
         assert "??" not in sin_regex_ni_comentarios
 
 
+class TestCssCompatibleConCatalina(unittest.TestCase):
+    """
+    El WebKit que usan las apps en macOS Catalina no soporta `inset` (las
+    ventanas emergentes quedaban fuera de la pantalla) ni `gap` en flexbox
+    (este ultimo lo cubre compatGapFlex en view.html).
+    """
+    def test_no_usa_inset(self):
+        html = (VISTA / "view.html").read_text(encoding="utf-8")
+        assert re.findall(r"inset\s*:", html) == []
+
+    def test_tiene_el_reemplazo_de_gap(self):
+        html = (VISTA / "view.html").read_text(encoding="utf-8")
+        assert "function compatGapFlex()" in html and "compatGapFlex();" in html
+
+
 if __name__ == "__main__":
     unittest.main()

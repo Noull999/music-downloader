@@ -139,6 +139,10 @@ def _vigilar_carga(window, logger) -> None:
             errores = json.loads(estado or "{}").get("errores") or []
         except ValueError:
             errores = []
+        # "Script error. @0:0" es el aviso generico que da WebKit sin ningun
+        # detalle (aparece en Catalina aunque todo funcione): queda en el log,
+        # pero no amerita alarmar con un aviso.
+        errores = [e for e in errores if not e.startswith("Script error.")]
         if errores:
             informe.informar("La interfaz cargó con errores", "\n".join(errores))
         elif os.environ.get("MD_FORZAR_INFORME") == "1":   # para probar el informe en el build
