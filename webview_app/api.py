@@ -1036,6 +1036,11 @@ class WebViewAPI:
                     results = self._sync_manager.sync_recent(count=count, progress_callback=progress_cb)
                 else:
                     results = self._sync_manager.sync_once(progress_callback=progress_cb)
+                if results.get("otra_en_curso"):
+                    self._push("sync_complete", {
+                        "ok": False,
+                        "error": "Ya hay otra sincronización en curso (la automática). Prueba en unos minutos."})
+                    return
                 self._push("sync_complete", {
                     "ok": True,
                     "new": results.get("new", 0),
