@@ -154,6 +154,32 @@ def _vigilar_carga(window, logger) -> None:
 
     window.events.loaded += al_cargar
     threading.Thread(target=vigia, daemon=True).start()
+    if os.environ.get("MD_CONSOLA_JS") == "1":
+        threading.Thread(target=_consola_js, args=(window, logger), daemon=True).start()
+
+
+def _consola_js(window, logger) -> None:
+    """
+    Solo para depurar en otro equipo (se activa con MD_CONSOLA_JS=1): ejecuta
+    en la ventana el JavaScript que aparezca en ~/.music_downloader/consola_in.js
+    y deja el resultado en consola_out.txt. Permite revisar la interfaz de un
+    Mac remoto por SSH sin reconstruir la app en cada prueba.
+    """
+    import time
+    carpeta = Path.home() / ".music_downloader"
+    entrada, salida = carpeta / "consola_in.js", carpeta / "consola_out.txt"
+    logger.warning("Consola JS de depuracion activa (%s)", entrada)
+    while True:
+        time.sleep(1)
+        if not entrada.exists():
+            continue
+        codigo = entrada.read_text(encoding="utf-8")
+        entrada.unlink()
+        try:
+            resultado = repr(window.evaluate_js(codigo))
+        except Exception as e:
+            resultado = f"EXCEPCION: {e!r}"
+        salida.write_text(resultado, encoding="utf-8")
 
 
 def validate_startup() -> bool:
