@@ -12,6 +12,7 @@ from typing import Callable, Optional
 
 from .soundcloud_api import SoundCloudAPIClient, SoundCloudTrack
 from .duplicate_checker import DuplicateChecker
+from .candado import CandadoDeSync
 from . import artist_genre, genre_utils, match_utils, youtube_fallback
 from analysis import fingerprint as audio_fingerprint
 from db.history import DownloadHistory
@@ -136,6 +137,7 @@ class SyncManager:
 
         self._stop_event = threading.Event()
         self._is_syncing = False
+        self._candado = CandadoDeSync()
 
     def _emit_track(self, event: str, track, detail: str = "") -> None:
         """Notifica el estado de una canción concreta a la GUI, si hay callback."""
@@ -716,6 +718,11 @@ class SyncManager:
                 'tracks': [], 'duplicates': []
             }
 
+        if not self._candado.tomar():
+            logger.warning("Otra sincronización está en curso (la app o la automática): se omite esta")
+            return {'new': 0, 'skipped': 0, 'errors': 0, 'tracks': [], 'duplicates': [],
+                    'otra_en_curso': True}
+
         self._is_syncing = True
         self._progress_callback = progress_callback
         self._stop_event.clear()
@@ -916,6 +923,7 @@ class SyncManager:
 
         finally:
             self._is_syncing = False
+            self._candado.soltar()
             self._progress_callback = None
             # Los archivos recién bajados deben contar como duplicados en la
             # próxima verificación.
@@ -942,6 +950,11 @@ class SyncManager:
             logger.warning("Sincronización ya en progreso")
             return {'new': 0, 'skipped': 0, 'errors': 0,
                     'tracks': [], 'duplicates': []}
+
+        if not self._candado.tomar():
+            logger.warning("Otra sincronización está en curso (la app o la automática): se omite esta")
+            return {'new': 0, 'skipped': 0, 'errors': 0, 'tracks': [], 'duplicates': [],
+                    'otra_en_curso': True}
 
         self._is_syncing = True
         self._progress_callback = progress_callback
@@ -1099,6 +1112,7 @@ class SyncManager:
 
         finally:
             self._is_syncing = False
+            self._candado.soltar()
             self._progress_callback = None
             self.checker.invalidate_index()
 
@@ -1123,6 +1137,11 @@ class SyncManager:
                 'new': 0, 'skipped': 0, 'errors': 0,
                 'tracks': [], 'duplicates': []
             }
+
+        if not self._candado.tomar():
+            logger.warning("Otra sincronización está en curso (la app o la automática): se omite esta")
+            return {'new': 0, 'skipped': 0, 'errors': 0, 'tracks': [], 'duplicates': [],
+                    'otra_en_curso': True}
 
         self._is_syncing = True
         self._progress_callback = progress_callback
@@ -1208,6 +1227,7 @@ class SyncManager:
 
         finally:
             self._is_syncing = False
+            self._candado.soltar()
             self._progress_callback = None
 
     def stop(self):

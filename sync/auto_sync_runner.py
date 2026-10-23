@@ -152,6 +152,10 @@ def run(config_path: str = None, validate_only: bool = False) -> int:
         logger.error(f"❌ Error durante la sincronización: {e}")
         return 1
 
+    if results.get("otra_en_curso"):
+        logger.info("⏭️ La app ya está sincronizando: esta vez se omite la automática")
+        return 0
+
     logger.info(
         f"✅ Sync completa: +{results['new']} nuevas | "
         f"{results['skipped']} ya tenías | {results['errors']} errores"
