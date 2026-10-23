@@ -118,3 +118,19 @@ class TestPathConstruction(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestFfmpegIncluidoEnLaApp(unittest.TestCase):
+    """Empaquetada (.exe/.app), la app usa su propio ffmpeg aunque el sistema no tenga."""
+
+    def test_usa_el_ffmpeg_de_la_app_sin_ffmpeg_en_el_sistema(self):
+        import tempfile
+        from pathlib import Path
+        from handlers.base_handler import ffmpeg_location
+        d = Path(tempfile.mkdtemp())
+        (d / "ffmpeg").mkdir()
+        nombre = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+        (d / "ffmpeg" / nombre).write_bytes(b"x")
+        with patch.object(sys, "_MEIPASS", str(d), create=True), \
+             patch("handlers.base_handler.shutil.which", return_value=None):
+            assert ffmpeg_location() == os.path.join(str(d), "ffmpeg")
