@@ -174,6 +174,9 @@ class DownloadHistory:
                     """,
                     (url, title, artist, file_path, platform)
                 )
+                # Si antes habia fallado y ahora se bajo, deja de figurar en
+                # "No se pudieron descargar" (quedaban colgados para siempre).
+                self.conn.execute("DELETE FROM failed_downloads WHERE url = ?", (url,))
                 self.conn.commit()
                 logger.debug(f"✓ Registrada descarga: {artist} - {title}")
             except sqlite3.Error as e:
