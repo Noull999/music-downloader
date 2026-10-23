@@ -242,6 +242,12 @@ def main():
         from webview_app.armar_vista import armar_html
         contenido = {"html": armar_html(_VIEW_HTML)}
 
+    from utils import compat_macos
+    try:
+        compat_macos.aplicar()
+    except Exception:
+        logger.exception("No se pudo aplicar la compatibilidad con macOS viejo")
+
     window = webview.create_window(
         "Music Downloader",
         js_api=api,
