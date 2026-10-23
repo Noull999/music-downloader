@@ -790,6 +790,25 @@
       </div>
 
       <div class="form-group">
+        <span class="form-group-title">Tu biblioteca (para no duplicar)</span>
+        <div class="hint">
+          Carpetas donde ya tienes música. Al sincronizar tus likes (a mano
+          o la sincronización automática), la app revisa todas estas
+          carpetas, con sus subcarpetas, y no baja lo que ya tienes aunque
+          esté guardado en otro lado. No mueve ni cambia tus archivos: solo
+          los compara.
+        </div>
+        <div class="log" id="libList" style="max-height:220px"></div>
+        <button class="btn btn-ghost btn-block" id="btnBuscarMusica">🔍 Buscar música en este equipo</button>
+        <div class="hint">
+          Revisa tu carpeta personal (y en Windows tus otros discos) y te
+          muestra en qué carpetas hay canciones. Marca las que son tuyas y
+          quedan guardadas al instante. Tarda unos segundos.
+        </div>
+        <span class="sc-status-line" id="libStatus"></span>
+      </div>
+
+      <div class="form-group">
         <span class="form-group-title">Duplicados por audio</span>
         <label class="check-row"><input type="checkbox" id="cfgFingerprintCheck"><span>Comprobar por huella de audio antes de descargar</span></label>
         <div class="hint">
@@ -1721,6 +1740,85 @@
     document.getElementById("btnSettings").addEventListener("click", async () => {
       await loadSettingsIntoModal();
       openModal("modalSettings");
+      cargarBiblioteca();
+    });
+
+    // ---- Biblioteca para no duplicar ----
+    // filas: [{ruta, canciones|null, incluida}]
+    function dibujarBiblioteca(filas) {
+      const cont = document.getElementById("libList");
+      cont.innerHTML = "";
+      if (!filas.length) {
+        cont.innerHTML = '<div class="hint" style="padding:8px 12px">Todavía no hay carpetas: usa el botón de abajo.</div>';
+        return;
+      }
+      filas.forEach(f => {
+        const row = document.createElement("label");
+        row.className = "hrow";
+        row.style.cursor = "pointer";
+        const caja = document.createElement("input");
+        caja.type = "checkbox";
+        caja.checked = !!f.incluida;
+        caja.dataset.ruta = f.ruta;
+        caja.addEventListener("change", guardarBiblioteca);
+        const main = document.createElement("div");
+        main.className = "hrow-main";
+        const t = document.createElement("span");
+        t.className = "hrow-title";
+        t.textContent = f.ruta;
+        t.title = f.ruta;
+        main.appendChild(t);
+        const n = document.createElement("span");
+        n.className = "hrow-sub";
+        n.textContent = f.canciones != null ? `${f.canciones} canciones` : "";
+        row.append(caja, main, n);
+        cont.appendChild(row);
+      });
+    }
+
+    async function cargarBiblioteca() {
+      const actuales = await api().get_library_folders();
+      document.getElementById("libStatus").textContent = "";
+      dibujarBiblioteca((actuales || []).map(r => ({ ruta: r, canciones: null, incluida: true })));
+    }
+
+    async function guardarBiblioteca() {
+      const marcadas = Array.prototype.map.call(
+        document.querySelectorAll("#libList input:checked"), c => c.dataset.ruta);
+      const st = document.getElementById("libStatus");
+      const r = await api().set_library_folders(marcadas);
+      if (r.ok) {
+        st.textContent = marcadas.length
+          ? `✓ Guardado: ${marcadas.length} carpeta(s) en tu biblioteca`
+          : "✓ Sin carpetas marcadas: se usará la carpeta que contiene a la de destino";
+        st.className = "sc-status-line on";
+      } else {
+        st.textContent = `✗ ${r.error || "No se pudo guardar"}`;
+        st.className = "sc-status-line off";
+      }
+    }
+
+    document.getElementById("btnBuscarMusica").addEventListener("click", async () => {
+      const btn = document.getElementById("btnBuscarMusica");
+      const st = document.getElementById("libStatus");
+      btn.disabled = true;
+      st.textContent = "Buscando música en este equipo… (puede tardar un poco)";
+      st.className = "sc-status-line";
+      const r = await api().buscar_musica_en_equipo();
+      btn.disabled = false;
+      if (!r.ok) { st.textContent = `✗ ${r.error}`; st.className = "sc-status-line off"; return; }
+      // Lo encontrado, mas las carpetas ya elegidas que no aparecieron (p. ej.
+      // un disco externo desconectado), para no perderlas al guardar.
+      const filas = r.carpetas.map(c => ({ ruta: c.ruta, canciones: c.canciones, incluida: c.incluida }));
+      (r.actuales || []).forEach(a => {
+        if (!filas.some(f => f.ruta === a)) filas.push({ ruta: a, canciones: null, incluida: true });
+      });
+      dibujarBiblioteca(filas);
+      const total = r.carpetas.reduce((s, c) => s + c.canciones, 0);
+      st.textContent = `Encontré ${total} canciones en ${r.carpetas.length} carpeta(s) en ${r.segundos} s` +
+        (r.incompleto ? " (búsqueda cortada por tiempo: puede faltar alguna)" : "") +
+        ". Marca las que son tuyas.";
+      st.className = "sc-status-line on";
     });
 
     document.getElementById("btnOrganize").addEventListener("click", async () => {

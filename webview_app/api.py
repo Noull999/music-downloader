@@ -1679,6 +1679,28 @@ class WebViewAPI:
     def get_library_folders(self) -> list[str]:
         return self._library_folders()
 
+    def buscar_musica_en_equipo(self) -> dict:
+        """
+        Carpetas del equipo con canciones (ver sync/buscar_musica.py), marcando
+        cuales ya cuentan como biblioteca para la deteccion de duplicados.
+        """
+        from sync import buscar_musica
+
+        def clave(ruta: str) -> str:
+            return os.path.normcase(os.path.normpath(ruta))
+
+        actuales = [clave(f) for f in self._library_folders()]
+        try:
+            r = buscar_musica.buscar()
+        except Exception as e:
+            logger.exception("Error buscando música en el equipo")
+            return {"ok": False, "error": str(e)[:200]}
+        for c in r["carpetas"]:
+            k = clave(c["ruta"])
+            # Ya cubierta si es una de las elegidas o esta dentro de una.
+            c["incluida"] = any(k == a or k.startswith(a.rstrip(os.sep) + os.sep) for a in actuales)
+        return {"ok": True, **r, "actuales": self._library_folders()}
+
     def set_library_folders(self, folders: list[str]) -> dict:
         """Fija las carpetas de biblioteca y reconstruye el índice de duplicados."""
         folders = [f for f in (folders or []) if f]
