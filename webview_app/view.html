@@ -190,7 +190,7 @@
   }
   .scanlines::before {
     content: "";
-    position: absolute; inset: 0; pointer-events: none;
+    position: absolute; top: 0; right: 0; bottom: 0; left: 0; pointer-events: none;
     background: repeating-linear-gradient(
       0deg, rgba(255,255,255,.025) 0px, rgba(255,255,255,.025) 1px,
       transparent 1px, transparent 3px
@@ -277,7 +277,7 @@
   .task-pct { font-family: var(--f-display); font-weight: 700; font-size: 14px; color: var(--ember); font-variant-numeric: tabular-nums; }
 
   .cells { height: 8px; background: repeating-linear-gradient(90deg, var(--iron-hi) 0 5px, transparent 5px 7px); position: relative; }
-  .cells > i { position: absolute; inset: 0 auto 0 0; display: block; background: repeating-linear-gradient(90deg, var(--ember) 0 5px, transparent 5px 7px); transition: width 150ms linear; }
+  .cells > i { position: absolute; top: 0; bottom: 0; left: 0; display: block; background: repeating-linear-gradient(90deg, var(--ember) 0 5px, transparent 5px 7px); transition: width 150ms linear; }
 
   .task-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
   .task-sub { font-family: var(--f-label); font-size: 9px; letter-spacing: .08em; color: var(--smoke); text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -336,14 +336,14 @@
   .sc-status-line.on { color: var(--venom); }
   .sc-status-line.off { color: var(--smoke); }
   .sc-progress { height: 6px; background: var(--iron-hi); position: relative; overflow: hidden; }
-  .sc-progress > i { position: absolute; inset: 0 auto 0 0; display: block; background: var(--amber); transition: width 200ms linear; width: 0%; }
+  .sc-progress > i { position: absolute; top: 0; bottom: 0; left: 0; display: block; background: var(--amber); transition: width 200ms linear; width: 0%; }
   .sc-progress-msg { font-family: var(--f-label); font-size: 8px; letter-spacing: .06em; color: var(--smoke); text-transform: uppercase; }
 
   /* ---------- Modales ---------- */
 
   .modal-overlay {
     display: none;
-    position: fixed; inset: 0; z-index: 50;
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 50;
     background: rgba(4,3,5,.72);
     align-items: center; justify-content: center;
     padding: 24px;
@@ -2179,7 +2179,73 @@
     }
   }
 
+  // ---- Compatibilidad: gap en flexbox (WebKit de macOS Catalina y anteriores) ----
+  // Las apps de Catalina usan un WebKit que no soporta `gap` en contenedores
+  // flex: botones y bloques quedaban pegados. Si falta, se reemplaza por
+  // margenes equivalentes, tambien en lo que se agrega o se muestra despues.
+  function compatGapFlex() {
+    var prueba = document.createElement("div");
+    prueba.style.cssText = "display:flex;flex-direction:column;row-gap:7px;position:absolute;visibility:hidden";
+    prueba.appendChild(document.createElement("div"));
+    prueba.appendChild(document.createElement("div"));
+    document.body.appendChild(prueba);
+    var soportado = prueba.scrollHeight === 7;
+    prueba.parentNode.removeChild(prueba);
+    if (soportado) return;
+
+    function ajustar(el) {
+      var cs = getComputedStyle(el);
+      if (cs.display !== "flex" && cs.display !== "inline-flex") return;
+      var col = cs.flexDirection.indexOf("column") === 0, wrap = cs.flexWrap !== "nowrap";
+      if (col) {
+        // Ese mismo WebKit encoge los elementos de una columna con altura
+        // limitada por debajo de su contenido y quedan montados unos sobre
+        // otros (Configuracion, barra lateral). Solo se dejan encoger las
+        // zonas que se desplazan.
+        Array.prototype.forEach.call(el.children, function (h) {
+          var ch = getComputedStyle(h);
+          if (!/(auto|scroll)/.test(ch.overflowY) && ch.flexShrink !== "0") h.style.flexShrink = "0";
+        });
+      }
+      var rg = parseFloat(cs.rowGap) || 0, cg = parseFloat(cs.columnGap) || 0;
+      if (!rg && !cg) return;
+      var hijos = Array.prototype.filter.call(el.children, function (h) {
+        var ch = getComputedStyle(h);
+        return ch.position !== "absolute" && ch.position !== "fixed" && ch.display !== "none";
+      });
+      hijos.forEach(function (h, i) {
+        var ch = getComputedStyle(h);
+        function poner(lado, valor) {
+          // No pisar margenes propios (auto, o los que ya tenga el elemento).
+          if (h.dataset.gapCompat || parseFloat(ch[lado]) === 0) {
+            if (h.style[lado] !== valor + "px") h.style[lado] = valor + "px";
+            h.dataset.gapCompat = "1";
+          }
+        }
+        if (wrap) { poner("marginRight", cg); poner("marginBottom", rg); }
+        else if (i > 0) { poner(col ? "marginTop" : "marginLeft", col ? rg : cg); }
+      });
+    }
+    function ajustarTodo(raiz) {
+      if (raiz.nodeType !== 1) return;
+      ajustar(raiz);
+      Array.prototype.forEach.call(raiz.querySelectorAll("*"), ajustar);
+    }
+    ajustarTodo(document.body);
+    var pendientes = [], programado = false;
+    new MutationObserver(function (cambios) {
+      cambios.forEach(function (c) { pendientes.push(c.target); });
+      if (programado) return;
+      programado = true;
+      setTimeout(function () {
+        var lista = pendientes; pendientes = []; programado = false;
+        lista.forEach(ajustarTodo);
+      }, 30);
+    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
+  }
+
   async function init() {
+    try { compatGapFlex(); } catch (e) { window.__erroresJS.push("compatGapFlex: " + e); }
     document.getElementById("bannerStatus").textContent = "● Sistema listo";
     document.getElementById("sbState").textContent = "listo";
     setStatus("listo", "ok");
