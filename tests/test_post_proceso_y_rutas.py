@@ -137,13 +137,15 @@ class TestRuteoPorGenero(unittest.TestCase):
 
     def test_reusa_la_carpeta_existente_ignorando_mayusculas(self):
         # Con "hard techno" ya creada, no debe aparecer otra "Hard Techno".
-        (self.raiz / "hard techno").mkdir()
+        (self.dest / "hard techno").mkdir()
         assert self._carpeta(_TrackFalso("Hard Techno")) == "hard techno"
 
-    def test_las_carpetas_van_a_la_raiz_no_a_la_de_descarga(self):
-        # Si no, quedarían dos juegos de carpetas separados.
+    def test_las_carpetas_van_dentro_de_la_de_descarga(self):
+        # La biblioteca (aca, la carpeta padre) es solo para buscar
+        # duplicados: si se usara para guardar, los generos aparecian fuera
+        # de la carpeta elegida (en un Mac, sueltos en el Escritorio).
         ruta = Path(self.sm._build_output_path("A", "T", _TrackFalso("Techno", "schranz")))
-        assert ruta.parent.parent == self.raiz
+        assert ruta.parent.parent == self.dest
 
     def test_desactivado_baja_a_la_carpeta_de_siempre(self):
         sm = SyncManager("OAuth x", "x", str(self.dest), downloader=None,
