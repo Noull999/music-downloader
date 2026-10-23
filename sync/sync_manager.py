@@ -120,14 +120,12 @@ class SyncManager:
         # porque carpeta y tag de género lo piden por separado.
         self._artist_genre = artist_genre.ArtistGenreResolver(self._buscar_tracks_de)
         self._genero_cache: dict[str, Optional[str]] = {}
-        # Raíz de las carpetas de género: la biblioteca configurada si la
-        # hay (así caen junto a la música ya ordenada), y si no la carpeta
-        # de descarga misma. Antes se usaba la carpeta PADRE del destino,
-        # que hacía aparecer carpetas de género fuera de la carpeta que el
-        # usuario eligió.
-        self.genre_root = (
-            self.library_folders[0] if self.library_folders else download_folder
-        )
+        # Raíz de las carpetas de género: SIEMPRE la carpeta de descarga. Las
+        # carpetas de biblioteca solo sirven para buscar duplicados; antes se
+        # usaba la primera de ellas como raíz y, con el Escritorio como
+        # biblioteca, las carpetas de género aparecían sueltas en el
+        # Escritorio en vez de dentro de la carpeta elegida.
+        self.genre_root = download_folder
         self.oauth_token = oauth_token
         self._fingerprint_index: Optional[audio_fingerprint.LibraryFingerprintIndex] = None
         # Callback de progreso de la sync en curso, para que el análisis de

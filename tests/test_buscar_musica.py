@@ -81,3 +81,22 @@ class TestEnLaApi(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDondeSeGuarda(unittest.TestCase):
+    """Las carpetas de biblioteca son para buscar duplicados, no para guardar."""
+
+    def test_los_generos_van_dentro_de_la_carpeta_de_descarga(self):
+        from webview_app.api import WebViewAPI
+        api = object.__new__(WebViewAPI)
+        api.controller = MagicMock()
+        api.controller.get_config_value.side_effect = lambda k, d=None: {
+            "dest_folder": "/Users/x/Desktop/All Music/musik_app",
+            "library_folders": ["/Users/x/Desktop", "/Users/x/Music"]}.get(k, d)
+        assert api.genre_root() == "/Users/x/Desktop/All Music/musik_app"
+
+    def test_la_sync_tambien(self):
+        from sync.sync_manager import SyncManager
+        sm = SyncManager("OAuth x", "y" * 32, "/dest/musik_app", MagicMock(),
+                         library_folders=["/Users/x/Desktop", "/Users/x/Music"])
+        assert sm.genre_root == "/dest/musik_app"

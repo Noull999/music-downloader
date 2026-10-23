@@ -1373,10 +1373,8 @@ class WebViewAPI:
         usaba su carpeta padre, y eso hacía aparecer carpetas de género
         fuera del destino elegido, mezcladas con lo que hubiera al lado.
         """
-        configurada = self.controller.get_config_value("library_folders", []) or []
-        configurada = [f for f in configurada if f]
-        if configurada:
-            return configurada[0]
+        # Siempre la carpeta de descarga (ver SyncManager.genre_root): la
+        # biblioteca es solo para buscar duplicados, no para guardar.
         return self.controller.get_config_value("dest_folder", "")
 
     def _sc_client(self):
