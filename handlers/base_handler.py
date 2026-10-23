@@ -33,6 +33,14 @@ def ffmpeg_location() -> str | None:
     candidates = _FFMPEG_CANDIDATES.get(platform, [])
     ffmpeg_name = "ffmpeg.exe" if platform == "win32" else "ffmpeg"
 
+    # Primero el ffmpeg incluido en la app (.exe / .app). Antes no se miraba:
+    # en un equipo sin ffmpeg instalado aparte (un Mac, o un Windows ajeno)
+    # yt-dlp fallaba con "ffprobe and ffmpeg not found" aunque la app lo
+    # trajera adentro. yt-dlp no necesita ffprobe para convertir a MP3.
+    meipass = getattr(sys, "_MEIPASS", "")
+    if meipass and os.path.isfile(os.path.join(meipass, "ffmpeg", ffmpeg_name)):
+        return os.path.join(meipass, "ffmpeg")
+
     # Buscar en rutas conocidas
     for path in candidates:
         if os.path.isfile(os.path.join(path, ffmpeg_name)):
