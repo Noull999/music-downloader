@@ -198,6 +198,17 @@ class SyncManager:
         """
         preset = get_preset(self.quality_preset)
         cancelar = lambda: self._stop_event.is_set()
+        if getattr(track, "fragmento", False) is True:
+            # SoundCloud solo da 30 s de este tema (Go+): no se baja el
+            # fragmento; se busca el tema completo en YouTube.
+            error_sc = RuntimeError(
+                "SoundCloud solo ofrece un fragmento de 30 s de este tema (SoundCloud Go+)")
+            if not self.youtube_fallback_enabled:
+                raise error_sc
+            archivo = self._respaldo_youtube(track, output_path, error_sc)
+            if archivo is None:
+                raise error_sc
+            return archivo, "youtube"
         try:
             archivo = self.downloader.download(
                 track.url, output_path, quality_preset=preset,

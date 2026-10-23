@@ -36,6 +36,19 @@ class SoundCloudTrack:
     # "Download" real, no un link externo): ahí yt-dlp ya se lleva el
     # archivo original, no el stream. No hace falta gate para estos.
     downloadable: bool = False
+    # SoundCloud Go+ ("policy": "SNIP"): para esta cuenta solo se puede bajar
+    # un fragmento de 30 s. `duration_ms` guarda igual la duracion real
+    # (full_duration): si no, el fragmento se guardaba como si fuera el tema
+    # y despues se lo daba por "ya descargado".
+    fragmento: bool = False
+
+
+def _duracion_y_fragmento(track_data: dict) -> tuple[int, bool]:
+    fragmento = track_data.get("policy") == "SNIP"
+    duracion = track_data.get("duration", 0) or 0
+    if fragmento:
+        duracion = track_data.get("full_duration") or duracion
+    return duracion, fragmento
 
     def __repr__(self) -> str:
         return f"<SoundCloudTrack '{self.artist}' - '{self.title}' ({self.duration_ms}ms)>"
@@ -295,7 +308,8 @@ class SoundCloudAPIClient:
                         url=track_data.get("permalink_url", ""),
                         title=track_data.get("title", "Unknown"),
                         artist=track_data.get("user", {}).get("username", "Unknown"),
-                        duration_ms=track_data.get("duration", 0),
+                        duration_ms=_duracion_y_fragmento(track_data)[0],
+                        fragmento=_duracion_y_fragmento(track_data)[1],
                         artwork_url=track_data.get("artwork_url"),
                         genre=track_data.get("genre"),
                         created_at=track_data.get("created_at", ""),
@@ -375,7 +389,8 @@ class SoundCloudAPIClient:
                     url=track_data.get("permalink_url", ""),
                     title=track_data.get("title", "Unknown"),
                     artist=track_data.get("user", {}).get("username", "Unknown"),
-                    duration_ms=track_data.get("duration", 0),
+                    duration_ms=_duracion_y_fragmento(track_data)[0],
+                    fragmento=_duracion_y_fragmento(track_data)[1],
                     artwork_url=track_data.get("artwork_url"),
                     genre=track_data.get("genre"),
                     created_at=track_data.get("created_at", ""),
