@@ -127,6 +127,11 @@ def aplicar(cambios: list[dict]) -> dict:
                 if valor and valor != c["antes"][clave]:
                     audio.tags.setall(frame.__name__, [frame(encoding=3, text=[valor])])
             audio.save(v2_version=3)   # v2.3: ver quality/post_processor.py
+            # Releer: hay WAV con bloques 'id3' duplicados donde guardar "funciona"
+            # pero no escribe nada.
+            _, t, a = _leer(c["ruta"])
+            if (t, a) != (c["despues"]["title"], c["despues"]["artist"]):
+                raise OSError("las etiquetas no quedaron escritas")
             aplicados += 1
         except Exception:
             logger.exception("No se pudieron escribir las etiquetas de %s", c["ruta"])
