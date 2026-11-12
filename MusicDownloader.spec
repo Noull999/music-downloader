@@ -80,7 +80,11 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # Librerias pesadas de IA/datos que la app no usa pero que pueden estar
+    # instaladas en el Python que arma el exe (visto: torch + sentencepiece
+    # hacian caer a PyInstaller y agrandaban el ejecutable).
+    excludes=['torch', 'torchvision', 'torchaudio', 'transformers', 'sentencepiece', 'tokenizers',
+              'pandas', 'tensorflow', 'onnxruntime', 'matplotlib', 'IPython', 'jupyter', 'notebook'],
     noarchive=False,
     optimize=0,
 )
