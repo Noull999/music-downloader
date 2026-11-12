@@ -1142,6 +1142,26 @@ class WebViewAPI:
             logger.exception("Error obteniendo likes")
             return []
 
+    def preview_tag_cleanup(self) -> dict:
+        """Qué etiquetas cambiarían para que Serato encuentre las canciones. No escribe nada."""
+        from analysis import tag_cleanup
+        try:
+            cambios = tag_cleanup.buscar_cambios(self._library_folders())
+        except Exception as e:
+            logger.exception("Error revisando etiquetas")
+            return {"ok": False, "error": str(e)[:200]}
+        return {"ok": True, "total": len(cambios), "cambios": cambios[:300]}
+
+    def apply_tag_cleanup(self) -> dict:
+        """Aplica lo que muestra preview_tag_cleanup (con respaldo de lo anterior)."""
+        from analysis import tag_cleanup
+        try:
+            r = tag_cleanup.aplicar(tag_cleanup.buscar_cambios(self._library_folders()))
+        except Exception as e:
+            logger.exception("Error arreglando etiquetas")
+            return {"ok": False, "error": str(e)[:200]}
+        return {"ok": True, **r}
+
     def preview_missing_tags(self) -> dict:
         """
         Archivos de la biblioteca sin título o sin artista, candidatos a
