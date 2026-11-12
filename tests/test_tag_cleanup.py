@@ -72,3 +72,16 @@ class TestEnArchivoReal(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestVerificaLoEscrito(unittest.TestCase):
+    def test_si_no_quedo_escrito_cuenta_como_error(self):
+        d = Path(tempfile.mkdtemp())
+        wav = d / "Veseli - Bass Gets Moved.wav"
+        with wave.open(str(wav), "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000); w.writeframes(b"\0\0" * 800)
+        cambios = tc.buscar_cambios([str(d)])
+        with patch.object(tc, "CARPETA_RESPALDO", d), \
+             patch("mutagen.wave.WAVE.save", lambda *a, **k: None):   # "guarda" sin escribir
+            r = tc.aplicar(cambios)
+        assert (r["aplicados"], r["errores"]) == (0, 1)
