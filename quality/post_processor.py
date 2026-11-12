@@ -230,10 +230,13 @@ class PostProcessor:
 
             if self.embed_metadata:
                 try:
+                    # Limpios para que Serato los encuentre al buscar
+                    # (ver analysis/tag_cleanup.py).
+                    from analysis.tag_cleanup import limpiar
                     if metadata.get("title"):
-                        audio.tags.add(TIT2(encoding=3, text=metadata["title"]))
+                        audio.tags.add(TIT2(encoding=3, text=limpiar(metadata["title"])))
                     if metadata.get("artist"):
-                        audio.tags.add(TPE1(encoding=3, text=metadata["artist"]))
+                        audio.tags.add(TPE1(encoding=3, text=limpiar(metadata["artist"])))
                     if metadata.get("album"):
                         audio.tags.add(TALB(encoding=3, text=metadata["album"]))
                     if metadata.get("year"):
